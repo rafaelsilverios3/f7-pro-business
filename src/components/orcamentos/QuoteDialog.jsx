@@ -5,9 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Trash2, Search } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
-import { createQuote } from '@/lib/quotes';
+import { quotesService } from '@/services/quotesService';
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Rascunho' },
@@ -36,8 +36,9 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
   useEffect(() => {
     if (!open || !company) return;
     (async () => {
-      setCustomers(await base44.entities.Customer.filter({ company_id: company.id }, '-created_date', 500));
-      setProducts(await base44.entities.Product.filter({ company_id: company.id }, '-created_date', 500));
+      const provider = getDataProvider();
+      setCustomers(await provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500));
+      setProducts(await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500));
       const d = new Date(); d.setDate(d.getDate() + 15);
       setValidUntil(d.toISOString().slice(0, 10));
     })();
@@ -75,7 +76,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
     if (items.length === 0 || submitting) return;
     setSubmitting(true);
     try {
-      await createQuote(company.id, {
+      await quotesService.create(company.id, {
         customer_id: customerId || null,
         customer_name: customer?.name || 'Cliente',
         items,

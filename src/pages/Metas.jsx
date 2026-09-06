@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Trash2, Trophy, Target, TrendingUp } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
 import { fmtMoney, periodKey } from '@/lib/business';
 import { getCommissionSummary } from '@/lib/commissions';
+import { commissionsService } from '@/services/commissionsService';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -25,7 +25,7 @@ export default function Metas() {
     const [g, s, c] = await Promise.all([
       base44.entities.Goal.filter({ company_id: company.id }, '-created_date', 200),
       base44.entities.Sale.filter({ company_id: company.id, status: 'paid' }, '-sale_date', 500),
-      getCommissionSummary(company.id),
+      import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? commissionsService.summary(company.id) : getCommissionSummary(company.id),
     ]);
     setGoals(g);
     setSales(s);

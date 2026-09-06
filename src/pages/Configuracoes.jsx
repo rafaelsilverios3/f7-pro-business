@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Building2, Save, Check } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,7 @@ export default function Configuracoes() {
 
   const save = async (e) => {
     e.preventDefault();
-    await base44.entities.Company.update(form.id, {
+    await getDataProvider().entity('Company').update(form.id, {
       name: form.name, legal_name: form.legal_name, document: form.document,
       phone: form.phone, whatsapp: form.whatsapp, email: form.email,
       address: form.address, currency: form.currency,

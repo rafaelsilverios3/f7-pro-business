@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Edit2, Trash2, PackageCheck, Eye } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { fmtMoney, fmtDate } from '@/lib/business';
+import { suppliersRepository } from '@/data/repositories/suppliersRepository';
 import { purchasesService } from '@/services/purchasesService';
+import { fmtMoney, fmtDate } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import SupplierDialog from '@/components/compras/SupplierDialog';
 import PurchaseDialog from '@/components/compras/PurchaseDialog';
@@ -31,8 +31,8 @@ export default function Compras() {
   const load = async () => {
     if (!company) return;
     const [s, p] = await Promise.all([
-      base44.entities.Supplier.filter({ company_id: company.id }, '-created_date', 500),
-      base44.entities.PurchaseOrder.filter({ company_id: company.id }, '-created_date', 500),
+      suppliersRepository.list(company.id),
+      purchasesService.list(company.id),
     ]);
     setSuppliers(s);
     setPurchases(p);
@@ -60,7 +60,7 @@ export default function Compras() {
 
   const handleDeleteSupplier = async (s) => {
     if (!confirm('Excluir fornecedor?')) return;
-    await base44.entities.Supplier.delete(s.id);
+    await suppliersRepository.remove(s.id, company.id);
     load();
   };
 

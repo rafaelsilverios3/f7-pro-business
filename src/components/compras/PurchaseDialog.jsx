@@ -5,9 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Trash2, Search } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
-import { createPurchase } from '@/lib/purchases';
+import { purchasesService } from '@/services/purchasesService';
 
 export default function PurchaseDialog({ open, onClose, company, onDone }) {
   const [suppliers, setSuppliers] = useState([]);
@@ -22,8 +22,9 @@ export default function PurchaseDialog({ open, onClose, company, onDone }) {
   useEffect(() => {
     if (!open || !company) return;
     (async () => {
-      setSuppliers(await base44.entities.Supplier.filter({ company_id: company.id, active: true }, '-created_date', 500));
-      setProducts(await base44.entities.Product.filter({ company_id: company.id }, '-created_date', 500));
+      const provider = getDataProvider();
+      setSuppliers(await provider.entity('Supplier').filter({ company_id: company.id, active: true }, '-created_date', 500));
+      setProducts(await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500));
     })();
   }, [open, company]);
 
@@ -54,7 +55,7 @@ export default function PurchaseDialog({ open, onClose, company, onDone }) {
     if (items.length === 0 || !supplier || submitting) return;
     setSubmitting(true);
     try {
-      await createPurchase(company.id, {
+      await purchasesService.create(company.id, {
         supplier_id: supplierId,
         supplier_name: supplier.name,
         items,

@@ -1,4 +1,6 @@
 import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
+import { commissionsRepository } from '@/data/repositories/commissionsRepository';
 
 export async function createCommissionsForSale(sale) {
   const seller = sale.seller;
@@ -7,7 +9,7 @@ export async function createCommissionsForSale(sale) {
   let totalRate = 0;
   const productCommissions = (sale.items || []).map((item) => {
     if (!item.product_id) return 0;
-    return base44.entities.Product.get(item.product_id)
+    return getDataProvider().entity('Product').get(item.product_id)
       .then((p) => (p.commission || 0))
       .catch(() => 0);
   });
@@ -21,7 +23,7 @@ export async function createCommissionsForSale(sale) {
 
   if (amount <= 0) return [];
 
-  const commission = await base44.entities.Commission.create({
+  const commission = await getDataProvider().entity('Commission').create({
     company_id: sale.company_id,
     sale_id: sale.id,
     seller,
@@ -36,16 +38,16 @@ export async function createCommissionsForSale(sale) {
 }
 
 export async function reverseCommissionsForSale(saleId) {
-  const commissions = await base44.entities.Commission.filter({ sale_id: saleId }, '-created_date', 100).catch(() => []);
+  const commissions = await getDataProvider().entity('Commission').filter({ sale_id: saleId }, '-created_date', 100).catch(() => []);
   await Promise.all(
     commissions
       .filter((commission) => commission.status !== 'reversed')
-      .map((commission) => base44.entities.Commission.update(commission.id, { status: 'reversed', reversed_date: new Date().toISOString() }))
+      .map((commission) => getDataProvider().entity('Commission').update(commission.id, { status: 'reversed' }))
   );
 }
 
 export async function getCommissionSummary(companyId) {
-  const all = await base44.entities.Commission.filter({ company_id: companyId }, '-sale_date', 500);
+  const all = await commissionsRepository.list(companyId, '-created_date', 500);
   const bySeller = {};
   for (const c of all) {
     if (c.status === 'reversed') continue;

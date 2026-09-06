@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { base44 } from '@/api/base44Client';
+import { suppliersRepository } from '@/data/repositories/suppliersRepository';
 
 export default function SupplierDialog({ open, onClose, company, onDone, editing }) {
   const [form, setForm] = useState({ name: '', legal_name: '', document: '', contact_name: '', phone: '', whatsapp: '', email: '', address: '', category: '', notes: '' });
@@ -19,9 +19,9 @@ export default function SupplierDialog({ open, onClose, company, onDone, editing
   const submit = async (e) => {
     e.preventDefault();
     if (editing) {
-      await base44.entities.Supplier.update(editing.id, { ...form, company_id: company.id });
+      await suppliersRepository.update(editing.id, form, company.id);
     } else {
-      await base44.entities.Supplier.create({ ...form, company_id: company.id, active: true });
+      await suppliersRepository.create({ ...form, active: true }, company.id);
     }
     onDone?.();
     onClose();

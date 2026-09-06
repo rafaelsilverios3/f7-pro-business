@@ -7,3 +7,5 @@ drop policy if exists company_member_update on companies;
 create policy company_member_update on companies
   for update using (is_company_member(id))
   with check (is_company_member(id));
+
+grant select, insert, update, delete on table suppliers, purchases, purchase_items to authenticated;

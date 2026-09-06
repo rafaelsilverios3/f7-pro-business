@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Eye, FileCheck, Trash2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { quotesRepository } from '@/data/repositories/quotesRepository';
 import { fmtMoney, fmtDate } from '@/lib/business';
-import { updateQuoteStatus, convertQuoteToSale } from '@/lib/quotes';
+import { quotesService } from '@/services/quotesService';
 import { runAutomations } from '@/lib/automations';
 import PageHeader from '@/components/layout/PageHeader';
 import QuoteDialog from '@/components/orcamentos/QuoteDialog';
@@ -34,7 +34,7 @@ export default function Orcamentos() {
 
   const load = async () => {
     if (!company) return;
-    setItems(await base44.entities.Quote.filter({ company_id: company.id }, '-created_date', 500));
+    setItems(await quotesRepository.list(company.id));
   };
   useEffect(() => { load(); }, [company]);
 
@@ -54,17 +54,15 @@ export default function Orcamentos() {
   }, [items, filter]);
 
   const handleStatusChange = async (quote, status) => {
-    await updateQuoteStatus(quote.id, status);
-    if (status === 'approved') {
-      await runAutomations(company.id, 'quote_approved', { ...quote, _type: 'quote', customer_name: quote.customer_name });
-    }
+    await quotesService.updateStatus(company.id, quote.id, status);
+    if (status === 'approved' && import.meta.env.VITE_DATA_PROVIDER !== 'supabase') await runAutomations(company.id, 'quote_approved', { ...quote, _type: 'quote', customer_name: quote.customer_name });
     load();
   };
 
   const handleConvert = async (quote) => {
     if (!confirm('Converter este orçamento em venda? O estoque e o financeiro serão atualizados automaticamente.')) return;
     try {
-      const sale = await convertQuoteToSale(quote);
+      const sale = await quotesService.convertToSale(quote);
       alert(`Venda criada com sucesso! Total: ${fmtMoney(sale.total)}`);
       load();
     } catch (err) {
@@ -74,7 +72,7 @@ export default function Orcamentos() {
 
   const handleDelete = async (quote) => {
     if (!confirm('Excluir este orçamento?')) return;
-    await base44.entities.Quote.delete(quote.id);
+    await quotesService.remove(company.id, quote.id);
     load();
   };
 
