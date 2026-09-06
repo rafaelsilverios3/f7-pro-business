@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,9 +11,10 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const { resetPassword } = useAuth();
   const handleSubmit = async (event) => {
     event.preventDefault(); setLoading(true);
-    try { await base44.auth.resetPasswordRequest(email); }
+    try { await resetPassword(email); }
     finally { setLoading(false); setSent(true); }
   };
   return <AuthLayout icon={Mail} title="Reset password" subtitle="We'll send you a link to reset it" footer={<Link to="/login" className="text-primary font-medium hover:underline"><ArrowLeft className="w-3 h-3 inline mr-1" />Back to log in</Link>}>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { Building2, Users, Package, ShoppingCart, LayoutDashboard, Check, ChevronRight } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
 import { createSale } from '@/lib/business';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useCompany } from '@/lib/useCompany';
+import { getDataProvider } from '@/data/providerSelector';
 
 const STEPS = [
   { id: 'company', label: 'Configurar empresa', icon: Building2 },
@@ -17,12 +18,16 @@ const STEPS = [
 
 export default function Onboarding() {
   const { company } = useOutletContext();
+  const { createCompany } = useCompany();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [done, setDone] = useState({});
   const [form, setForm] = useState({ customerName: '', customerPhone: '', productName: '', productPrice: '', productCost: '' });
   const [createdCustomer, setCreatedCustomer] = useState(null);
   const [createdProduct, setCreatedProduct] = useState(null);
+  const [companyName, setCompanyName] = useState('');
+  const [companyError, setCompanyError] = useState('');
+  const [creatingCompany, setCreatingCompany] = useState(false);
 
   useEffect(() => {
     if (company?.onboarding_completed) {
@@ -38,7 +43,7 @@ export default function Onboarding() {
   };
 
   const saveCompany = async () => {
-    await base44.entities.Company.update(company.id, { onboarding_completed: true });
+    await getDataProvider().entity('Company').update(company.id, { onboarding_completed: true });
     completeStep('company');
   };
 
@@ -81,12 +86,27 @@ export default function Onboarding() {
   };
 
   const skipAll = () => {
-    base44.entities.Company.update(company.id, { onboarding_completed: true });
+    getDataProvider().entity('Company').update(company.id, { onboarding_completed: true });
     navigate('/');
   };
 
   const current = STEPS[step];
   const allDone = STEPS.every((s) => done[s.id]);
+
+  if (!company) return (
+    <div className="mx-auto max-w-lg px-5 py-16">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h1 className="text-2xl font-bold text-slate-900">Crie sua empresa</h1>
+        <p className="mt-2 text-sm text-slate-500">Sua conta ainda não possui uma empresa. Informe o nome para iniciar o F7 PRO BUSINESS.</p>
+        {companyError && <p className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{companyError}</p>}
+        <form className="mt-5 space-y-3" onSubmit={async (event) => { event.preventDefault(); setCompanyError(''); setCreatingCompany(true); try { await createCompany(companyName); } catch (error) { setCompanyError(error.message || 'Não foi possível criar a empresa.'); } finally { setCreatingCompany(false); } }}>
+          <Label htmlFor="company-name">Nome da empresa</Label>
+          <Input id="company-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Ex: F7 Comércio" required minLength={2} />
+          <Button type="submit" className="w-full" disabled={creatingCompany}>{creatingCompany ? 'Criando...' : 'Criar empresa e continuar'}</Button>
+        </form>
+      </div>
+    </div>
+  );
 
   return (
     <div className="mx-auto max-w-2xl px-5 py-8">

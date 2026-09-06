@@ -1,11 +1,13 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
+import { getAuthProvider } from '@/auth/authProviderSelector';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
@@ -15,9 +17,17 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     checkAppState();
+    const subscription = getAuthProvider().onAuthStateChange?.((_event, next) => {
+      setUser(next?.user || null); setSession(next?.session || null); setIsAuthenticated(Boolean(next?.user));
+    });
+    return () => subscription?.data?.subscription?.unsubscribe?.();
   }, []);
 
   const checkAppState = async () => {
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+      try { const { user: currentUser, session } = await getAuthProvider().getSession(); setUser(currentUser); setSession(session); setIsAuthenticated(Boolean(currentUser)); } catch (error) { setAuthError({ type: 'auth_required', message: error.message }); setIsAuthenticated(false); } finally { setIsLoadingPublicSettings(false); setIsLoadingAuth(false); setAuthChecked(true); }
+      return;
+    }
     try {
       setIsLoadingPublicSettings(true);
       setAuthError(null);
@@ -81,8 +91,9 @@ export const AuthProvider = ({ children }) => {
     try {
       // Now check if the user is authenticated
       setIsLoadingAuth(true);
-      const currentUser = await base44.auth.me();
+      const { user: currentUser, session } = await getAuthProvider().getSession();
       setUser(currentUser);
+      setSession(session);
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
       setAuthChecked(true);
@@ -108,21 +119,28 @@ export const AuthProvider = ({ children }) => {
     
     if (shouldRedirect) {
       // Use the SDK's logout method which handles token cleanup and redirect
-      base44.auth.logout(window.location.href);
+      getAuthProvider().signOut();
     } else {
       // Just remove the token without redirect
-      base44.auth.logout();
+      getAuthProvider().signOut();
     }
   };
 
   const navigateToLogin = () => {
-    // Use the SDK's redirectToLogin method
-    base44.auth.redirectToLogin(window.location.href);
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') window.location.assign('/login');
+    else base44.auth.redirectToLogin(window.location.href);
   };
+
+  const signIn = (email, password) => getAuthProvider().signIn(email, password);
+  const signUp = (email, password) => getAuthProvider().signUp(email, password);
+  const resetPassword = (email) => getAuthProvider().resetPassword(email);
+  const signInWithProvider = (provider, redirectTo) => getAuthProvider().signInWithProvider(provider, redirectTo);
+  const updatePassword = (password, resetToken) => getAuthProvider().updatePassword({ resetToken, newPassword: password });
 
   return (
     <AuthContext.Provider value={{ 
       user, 
+      session,
       isAuthenticated, 
       isLoadingAuth,
       isLoadingPublicSettings,
@@ -133,6 +151,7 @@ export const AuthProvider = ({ children }) => {
       navigateToLogin,
       checkUserAuth,
       checkAppState
+      ,signIn, signUp, resetPassword, signInWithProvider, updatePassword
     }}>
       {children}
     </AuthContext.Provider>

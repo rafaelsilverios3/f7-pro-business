@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Eye, Ban } from 'lucide-react';
 import { salesRepository } from '@/data/repositories/salesRepository';
-import { fmtMoney, fmtDate, cancelSale } from '@/lib/business';
+import { fmtMoney, fmtDate } from '@/lib/business';
+import { salesService } from '@/services/salesService';
 import PageHeader from '@/components/layout/PageHeader';
 import SaleDialog from '@/components/vendas/SaleDialog';
 import { Button } from '@/components/ui/button';
@@ -42,7 +43,7 @@ export default function Vendas() {
 
   const handleCancel = async (sale) => {
     if (!confirm('Cancelar esta venda? O estoque será devolvido.')) return;
-    await cancelSale(sale);
+    await salesService.cancel(sale);
     load();
   };
 

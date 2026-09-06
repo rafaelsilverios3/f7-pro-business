@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Trash2, Search } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { fmtMoney } from '@/lib/business';
-import { createSale } from '@/lib/business';
+import { salesService } from '@/services/salesService';
 
 const PAYMENT_OPTIONS = ['Dinheiro', 'Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Boleto', 'Transferência'];
 
@@ -66,7 +66,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     if (items.length === 0 || submitting) return;
     setSubmitting(true);
     try {
-      await createSale(company.id, {
+      await salesService.finalize(company.id, {
         customer_id: customerId || null,
         customer_name: customer?.name || 'Cliente',
         items,

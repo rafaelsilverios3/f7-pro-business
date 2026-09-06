@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, Edit2, Trash2, PackageCheck, Eye } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { fmtMoney, fmtDate } from '@/lib/business';
-import { receivePurchase } from '@/lib/purchases';
+import { purchasesService } from '@/services/purchasesService';
 import PageHeader from '@/components/layout/PageHeader';
 import SupplierDialog from '@/components/compras/SupplierDialog';
 import PurchaseDialog from '@/components/compras/PurchaseDialog';
@@ -51,7 +51,7 @@ export default function Compras() {
   const handleReceive = async (po) => {
     if (!confirm('Confirmar recebimento? O estoque será atualizado e uma conta a pagar será gerada.')) return;
     try {
-      await receivePurchase(po);
+      await purchasesService.receive(po);
       load();
     } catch (err) {
       alert('Erro: ' + err.message);

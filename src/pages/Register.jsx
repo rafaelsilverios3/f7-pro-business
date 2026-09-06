@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
+  const { signUp, signInWithProvider } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,8 +31,11 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await base44.auth.register({ email, password });
-      setShowOtp(true);
+      const result = await signUp(email, password);
+      if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+        if (result?.session) window.location.href = safeReturnTo();
+        else setError("Conta criada. Confirme seu e-mail para entrar.");
+      } else setShowOtp(true);
     } catch (err) {
       setError(err.message || "Registration failed");
     } finally {
@@ -68,7 +73,7 @@ export default function Register() {
   };
 
   const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", safeReturnTo());
+    signInWithProvider("google", window.location.origin + safeReturnTo()).catch((err) => setError(err.message));
   };
 
   if (showOtp) {

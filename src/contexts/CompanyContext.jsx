@@ -21,7 +21,8 @@ export function CompanyProvider({ children }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
-  const value = useMemo(() => ({ company, companyId: company?.id || null, companies, loading, error, switchCompany: (next) => { localStorage.setItem('f7_company_id', next.id); setCompany(next); }, refresh: load }), [company, companies, loading, error, load]);
+  const createCompany = useCallback(async (name) => { const created = await getDataProvider().rpc('create_company_with_owner', { company_name: name }); await load(); return created; }, [load]);
+  const value = useMemo(() => ({ company, companyId: company?.id || null, companies, loading, error, switchCompany: (next) => { localStorage.setItem('f7_company_id', next.id); setCompany(next); }, createCompany, refresh: load }), [company, companies, loading, error, load, createCompany]);
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 }
 
