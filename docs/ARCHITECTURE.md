@@ -15,3 +15,9 @@ O provider atual ainda usa o SDK Base44. Repositories não permitem trocar `comp
 A migration `0010_smart_modules.sql` adiciona conversas, mensagens, oportunidades, automações, execuções idempotentes e insights. Todas as tabelas têm `company_id`, RLS e grants para o Data API.
 
 `conversationsService`, `opportunitiesService`, `automationService` e `intelligenceService` isolam os fluxos das páginas. A automação suporta ações determinísticas de notificação e usa `idempotency_key` em `automation_runs`. O Intelligence atual gera apenas alertas determinísticos de estoque, clientes inativos e contas vencidas; não há IA generativa ou WhatsApp nesta etapa.
+
+## Etapa 12.1 — hardening
+
+A migration `0012_saas_security_hardening.sql` mantém a 0011 intacta e revoga INSERT/UPDATE/DELETE diretos de assinaturas e convites. Policies de leitura são específicas: assinatura para membros ativos e convites para admin/gestor.
+
+Foram adicionados `current_company_role`, `company_within_limit`, `company_has_feature`, `create_company_invite` e `cancel_company_invite`. `accept_company_invite` agora valida o e-mail real em `auth.users`, expiração, uso único, associação existente e limite de usuários, registrando eventos de auditoria sem token.

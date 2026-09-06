@@ -127,7 +127,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const navigateToLogin = () => {
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') window.location.assign('/login');
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') window.location.assign(`/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     else base44.auth.redirectToLogin(window.location.href);
   };
 

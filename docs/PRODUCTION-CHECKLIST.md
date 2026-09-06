@@ -9,3 +9,7 @@
 - Testar isolamento entre empresas, usuários desativados, limites de plano e convites expirados.
 - Monitorar RLS, falhas de automação e erros de rede antes dos primeiros clientes.
 - Gateway de cobrança, WhatsApp e IA permanecem fora desta etapa.
+
+## Hardening obrigatório
+
+Antes do go-live, aplicar a 0012, validar as RPCs com usuários de cada role e configurar a Edge Function de convites. Não usar service role, tokens puros ou alteração de plano pelo navegador.

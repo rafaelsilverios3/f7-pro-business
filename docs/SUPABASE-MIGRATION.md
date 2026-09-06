@@ -32,3 +32,7 @@ Migration 0009 cria `profiles`, `goals` e `notifications`, além das RPCs de ger
 Aplicar `supabase/migrations/0010_smart_modules.sql` no projeto Supabase real antes de habilitar os módulos. A migration cria tabelas com isolamento por `company_id` e políticas RLS. O frontend não usa `service_role`.
 
 A automação atual executa somente ações internas determinísticas e registra sucesso/erro; integrações externas e IA ficam para uma etapa posterior. Antes da produção, revisar políticas de role no backend e configurar observabilidade para `automation_runs` e `intelligence_insights`.
+
+## Migration 0012
+
+Aplicar após a 0011. Ela é incremental e não remove dados. Confirme grants, policies e RPCs no Supabase real. O frontend deve apenas ler `company_subscriptions`; upgrades e downgrades futuros devem vir de backend/webhook de billing.
