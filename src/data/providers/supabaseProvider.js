@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 let client;
-const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights' };
+const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
 const sortColumns = { created_date: 'created_at', updated_date: 'updated_at' };
 const normalize = (name, row) => {
   if (!row) return row;
@@ -27,6 +27,8 @@ const columns = {
   Automation: ['company_id', 'name', 'active', 'trigger_type', 'conditions', 'actions', 'created_by'],
   AutomationRun: ['company_id', 'automation_id', 'status', 'trigger_data', 'result', 'error_message', 'idempotency_key'],
   IntelligenceInsight: ['company_id', 'type', 'severity', 'title', 'description', 'entity', 'entity_id', 'data', 'status', 'resolved_at'],
+  CompanySubscription: ['company_id', 'plan', 'status', 'trial_ends_at', 'current_period_start', 'current_period_end'],
+  CompanyInvite: ['company_id', 'email', 'role', 'token_hash', 'status', 'expires_at', 'invited_by'],
 };
 const payloadFor = (name, payload = {}) => {
   let mapped = payload;

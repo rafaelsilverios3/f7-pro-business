@@ -30,6 +30,7 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
+import Invite from './pages/Invite.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 
@@ -43,7 +44,7 @@ const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
   const location = useLocation();
   const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password'];
-  if (publicPaths.includes(location.pathname)) return <Routes><Route path="/login" element={<Login />} /><Route path="/register" element={<Register />} /><Route path="/forgot-password" element={<ForgotPassword />} /><Route path="/reset-password" element={<ResetPassword />} /></Routes>;
+  if (publicPaths.includes(location.pathname) || location.pathname.startsWith('/invite/')) return <Routes><Route path="/login" element={<Login />} /><Route path="/register" element={<Register />} /><Route path="/forgot-password" element={<ForgotPassword />} /><Route path="/reset-password" element={<ResetPassword />} /><Route path="/invite/:token" element={<Invite />} /></Routes>;
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
@@ -72,6 +73,7 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/invite/:token" element={<Invite />} />
         <Route element={<CompanyGuard />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/dashboard" element={<Dashboard />} />

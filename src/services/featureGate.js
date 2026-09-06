@@ -1,0 +1,2 @@
+import { canUseFeature, getPlanLimits, withinLimit } from './planService';
+export function featureGate({ subscription, feature, resource, current = 0 }) { const plan = subscription?.plan || 'free'; if (feature && !canUseFeature(plan, feature)) return { allowed: false, reason: 'Recurso não disponível no plano atual.' }; if (resource && !withinLimit(plan, resource, current)) return { allowed: false, reason: `Limite do plano atingido para ${resource}.` }; return { allowed: true, limits: getPlanLimits(plan) }; }
