@@ -23,6 +23,8 @@ alter table goals enable row level security;
 alter table notifications enable row level security;
 drop policy if exists profile_self on profiles;
 create policy profile_self on profiles for all using (id = auth.uid()) with check (id = auth.uid());
+drop policy if exists profile_company_select on profiles;
+create policy profile_company_select on profiles for select using (id = auth.uid() or exists (select 1 from company_users member where member.user_id = profiles.id and is_company_member(member.company_id)));
 drop policy if exists goals_company on goals;
 create policy goals_company on goals for all using (is_company_member(company_id)) with check (is_company_member(company_id));
 drop policy if exists notifications_company on notifications;
