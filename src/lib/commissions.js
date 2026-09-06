@@ -36,9 +36,11 @@ export async function createCommissionsForSale(sale) {
 }
 
 export async function reverseCommissionsForSale(saleId) {
-  await base44.entities.Commission.updateMany(
-    { sale_id: saleId, status: { "$ne": "reversed" } },
-    { $set: { status: 'reversed' } }
+  const commissions = await base44.entities.Commission.filter({ sale_id: saleId }, '-created_date', 100).catch(() => []);
+  await Promise.all(
+    commissions
+      .filter((commission) => commission.status !== 'reversed')
+      .map((commission) => base44.entities.Commission.update(commission.id, { status: 'reversed', reversed_date: new Date().toISOString() }))
   );
 }
 

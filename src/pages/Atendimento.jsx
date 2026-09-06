@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Send, Bot, User, Headset, MessageSquare, Phone, Mail, Tag, AlertCircle, Sparkles, UserPlus } from 'lucide-react';
+import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
-import { fmtDate } from '@/lib/business';
-import { runAutomations } from '@/lib/automations';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Bell, Check, Trash2, Package, Wallet, FileText, Target, ShoppingCart, Truck, MessageSquare, Users } from 'lucide-react';
+import { Bell, Check, Trash2, Package, Wallet, FileText, Target, ShoppingCart, Truck, MessageSquare } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { fmtDate } from '@/lib/business';
 import { generateSystemNotifications } from '@/lib/notifications';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Trash2, Zap, Play, History, Settings2 } from 'lucide-react';
+import { Plus, Trash2, Zap, History } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { fmtDate } from '@/lib/business';
 import { TRIGGER_LABELS, ACTION_LABELS } from '@/lib/automations';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Eye, FileCheck, Ban, Trash2 } from 'lucide-react';
+import { Plus, Eye, FileCheck, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import { updateQuoteStatus, convertQuoteToSale } from '@/lib/quotes';

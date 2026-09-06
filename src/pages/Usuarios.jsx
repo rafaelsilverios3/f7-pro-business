@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { UserPlus, Trash2, Shield, ShieldCheck, ShieldOff, Mail } from 'lucide-react';
+import { UserPlus, Shield, ShieldCheck, ShieldOff } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
-import { fmtDate } from '@/lib/business';
 import { ROLE_LABELS, ROLE_COLORS, PERMISSION_LABELS, ROLE_DEFAULTS, resolvePermissions } from '@/lib/permissions';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';

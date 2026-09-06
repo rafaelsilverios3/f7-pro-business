@@ -62,6 +62,7 @@ export function periodKeyPrev(saleDate, period) {
 
 // Cria uma venda e integra estoque, financeiro e cliente automaticamente
 export async function createSale(companyId, data) {
+  if (!companyId) throw new Error('Empresa não identificada.');
   const items = (data.items || []).map((i) => ({
     product_id: i.product_id,
     name: i.name,
@@ -70,6 +71,21 @@ export async function createSale(companyId, data) {
     cost: Number(i.cost) || 0,
     total: (Number(i.qty) || 0) * (Number(i.price) || 0),
   }));
+  if (!items.length || items.some((item) => !item.product_id || item.qty <= 0 || item.price < 0)) {
+    throw new Error('Adicione pelo menos um produto com quantidade válida.');
+  }
+  // Pré-valida o estoque antes de persistir a venda para evitar venda criada sem baixa correspondente.
+  const products = new Map();
+  for (const item of items) {
+    if (products.has(item.product_id)) continue;
+    const product = await base44.entities.Product.get(item.product_id);
+    if (!product || product.company_id !== companyId) throw new Error(`Produto inválido: ${item.name || item.product_id}`);
+    products.set(item.product_id, product);
+  }
+  for (const item of items) {
+    const requested = items.filter((i) => i.product_id === item.product_id).reduce((sum, i) => sum + i.qty, 0);
+    if ((products.get(item.product_id).stock || 0) < requested) throw new Error(`Estoque insuficiente para ${item.name || 'o produto'}.`);
+  }
   const subtotal = items.reduce((s, i) => s + i.total, 0);
   const discount = Number(data.discount) || 0;
   const addition = Number(data.addition) || 0;
@@ -99,7 +115,7 @@ export async function createSale(companyId, data) {
   // Baixa de estoque + movimentações
   for (const item of items) {
     if (!item.product_id) continue;
-    const prod = await base44.entities.Product.get(item.product_id).catch(() => null);
+    const prod = products.get(item.product_id);
     if (prod) {
       await base44.entities.Product.update(item.product_id, {
         stock: Math.max(0, (prod.stock || 0) - item.qty),
@@ -158,6 +174,8 @@ export async function createSale(companyId, data) {
 
 // Cancela venda e devolve estoque
 export async function cancelSale(sale) {
+  if (!sale?.id) throw new Error('Venda inválida.');
+  if (sale.status === 'cancelled') return sale;
   await base44.entities.Sale.update(sale.id, { status: 'cancelled' });
   for (const item of (sale.items || [])) {
     if (!item.product_id) continue;
@@ -177,13 +195,25 @@ export async function cancelSale(sale) {
       sale_id: sale.id,
     });
   }
-  await base44.entities.FinancialEntry.updateMany(
-    { sale_id: sale.id, type: 'receivable' },
-    { $set: { status: 'cancelled' } }
-  );
+  const entries = await base44.entities.FinancialEntry.filter({ sale_id: sale.id, type: 'receivable' }, '-created_date', 100).catch(() => []);
+  await Promise.all(entries.map((entry) => base44.entities.FinancialEntry.update(entry.id, { status: 'cancelled', cancelled_date: todayISO() })));
+
+  if (sale.customer_id) {
+    const customer = await base44.entities.Customer.get(sale.customer_id).catch(() => null);
+    if (customer) {
+      const total = Math.max(0, (customer.total_purchased || 0) - (sale.total || 0));
+      const count = Math.max(0, (customer.sale_count || 0) - 1);
+      await base44.entities.Customer.update(customer.id, {
+        total_purchased: total,
+        sale_count: count,
+        avg_ticket: count ? total / count : 0,
+      });
+    }
+  }
 
   // Estorna comissões
   try { await reverseCommissionsForSale(sale.id); } catch {}
+  return { ...sale, status: 'cancelled' };
 }
 
 export async function adjustStock(companyId, product, newStock, reason) {

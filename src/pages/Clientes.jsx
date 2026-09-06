@@ -5,7 +5,7 @@ import { Plus, Search, Trash2, Pencil, MessageCircle, Mail } from 'lucide-react'
 import { base44 } from '@/api/base44Client';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
-import CustomerDialog from '@/components/clientes/CustomerDialog';
+import CustomerDialog from '@/components/clients/CustomerDialog';
 import { Button } from '@/components/ui/button';
 
 const STATUS_STYLE = {

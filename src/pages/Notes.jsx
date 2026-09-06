@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { StickyNote, Loader2, Plus } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import NoteCard from "@/components/notes/NoteCard";

@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Package, Boxes, ShoppingCart, FileText,
   Wallet, Truck, MessageSquare, Zap, BrainCircuit, BarChart3,
-  Settings, Bell, ChevronDown, Target, Shield,
+  Settings, Bell, Target, Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

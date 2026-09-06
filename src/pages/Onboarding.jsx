@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { Building2, Users, Package, ShoppingCart, LayoutDashboard, Check, ChevronRight } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
-import { todayISO, createSale } from '@/lib/business';
+import { createSale } from '@/lib/business';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer,
 } from 'recharts';
 import {
   DollarSign, TrendingUp, Wallet, Users, Package, ShoppingCart, AlertTriangle, Trophy,
@@ -14,7 +14,7 @@ import KpiCard from '@/components/dashboard/KpiCard';
 import PageHeader from '@/components/layout/PageHeader';
 import { subMonths, format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Target, GitBranch, Activity, ArrowRight, Clock, BrainCircuit } from 'lucide-react';
+import { Target, GitBranch, Activity, Clock, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const PERIODS = [
