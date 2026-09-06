@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { base44Provider } from '@/data/providers/base44Provider';
+import { getDataProvider } from '@/data/providerSelector';
 
 const CompanyContext = createContext(null);
 
@@ -11,7 +11,7 @@ export function CompanyProvider({ children }) {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const list = await base44Provider.entity('Company').list();
+      const list = await getDataProvider().entity('Company').list();
       setCompanies(list || []);
       const stored = localStorage.getItem('f7_company_id');
       const active = (list || []).find((item) => item.id === stored) || list?.[0] || null;

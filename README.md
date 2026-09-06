@@ -71,7 +71,7 @@ npm install
 copy .env.example .env
 ```
 
-Preencha `VITE_BASE44_APP_ID` e, quando necessário, `VITE_BASE44_APP_BASE_URL` no `.env`. Variáveis `VITE_*` são públicas no navegador; nunca coloque token, senha ou chave privada nelas. Tokens de sessão são obtidos pelo fluxo de autenticação do Base44.
+Preencha `VITE_BASE44_APP_ID` e, quando necessário, `VITE_BASE44_APP_BASE_URL` no `.env`. Para testar o provider próprio, configure `VITE_DATA_PROVIDER=supabase`, `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Variáveis `VITE_*` são públicas no navegador; nunca coloque token, senha, `service_role` ou chave privada nelas.
 
 ## Desenvolvimento e validação
 
