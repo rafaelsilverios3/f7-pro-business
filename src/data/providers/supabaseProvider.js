@@ -7,6 +7,10 @@ const normalize = (name, row) => {
   if (!row) return row;
   if (name === 'Product') return { ...row, sale_price: row.price, cost_price: row.cost, min_stock: row.minimum_stock, created_date: row.created_at, updated_date: row.updated_at, unit: row.unit || 'un' };
   if (name === 'Goal') return { ...row, scope: row.type === 'seller' ? 'seller' : 'company', target_amount: row.target_value, target_key: row.user_id || 'all', period_value: row.start_date, created_date: row.created_at, updated_date: row.updated_at };
+  if (name === 'Conversation') return { ...row, customer_name: row.lead_name, customer_phone: row.lead_phone, customer_email: row.lead_email, assignee: row.assigned_user_id, ai_enabled: row.status === 'ai_assisting', messages: row.messages || [], created_date: row.created_at, updated_date: row.updated_at };
+  if (name === 'Message') return { ...row, sender: row.sender_type === 'user' ? 'agent' : row.sender_type, text: row.content, timestamp: row.created_at, created_date: row.created_at };
+  if (name === 'Automation') return { ...row, trigger: row.trigger_type, created_date: row.created_at, updated_date: row.updated_at };
+  if (name === 'AutomationRun') return { ...row, trigger: row.trigger_data?.trigger, created_date: row.created_at };
   return { ...row, created_date: row.created_at, updated_date: row.updated_at };
 };
 const columns = {
@@ -17,9 +21,19 @@ const columns = {
   PurchaseItem: ['company_id', 'purchase_id', 'product_id', 'quantity', 'cost'],
   Commission: ['company_id', 'sale_id', 'seller', 'rate', 'amount', 'status'],
   Goal: ['company_id', 'name', 'type', 'target_value', 'period', 'start_date', 'end_date', 'user_id', 'status'],
+  Conversation: ['company_id', 'customer_id', 'lead_name', 'lead_phone', 'lead_email', 'channel', 'status', 'assigned_user_id', 'subject', 'last_message_at'],
+  Message: ['company_id', 'conversation_id', 'sender_type', 'sender_user_id', 'content', 'message_type', 'created_at'],
+  Opportunity: ['company_id', 'customer_id', 'conversation_id', 'title', 'description', 'value', 'stage', 'assigned_user_id', 'source', 'expected_close_date'],
+  Automation: ['company_id', 'name', 'active', 'trigger_type', 'conditions', 'actions', 'created_by'],
+  AutomationRun: ['company_id', 'automation_id', 'status', 'trigger_data', 'result', 'error_message', 'idempotency_key'],
+  IntelligenceInsight: ['company_id', 'type', 'severity', 'title', 'description', 'entity', 'entity_id', 'data', 'status', 'resolved_at'],
 };
 const payloadFor = (name, payload = {}) => {
-  const mapped = name === 'Product' ? { ...payload, price: payload.price ?? payload.sale_price, cost: payload.cost ?? payload.cost_price, minimum_stock: payload.minimum_stock ?? payload.min_stock } : payload;
+  let mapped = payload;
+  if (name === 'Product') mapped = { ...payload, price: payload.price ?? payload.sale_price, cost: payload.cost ?? payload.cost_price, minimum_stock: payload.minimum_stock ?? payload.min_stock };
+  if (name === 'Conversation') mapped = { ...payload, lead_name: payload.lead_name ?? payload.customer_name, lead_phone: payload.lead_phone ?? payload.customer_phone, lead_email: payload.lead_email ?? payload.customer_email, assigned_user_id: payload.assigned_user_id ?? payload.assignee };
+  if (name === 'Message') mapped = { ...payload, sender_type: payload.sender_type ?? (payload.sender === 'agent' ? 'user' : payload.sender), content: payload.content ?? payload.text };
+  if (name === 'Automation') mapped = { ...payload, trigger_type: payload.trigger_type ?? payload.trigger };
   const allowed = columns[name];
   return allowed ? Object.fromEntries(Object.entries(mapped).filter(([key]) => allowed.includes(key))) : mapped;
 };
