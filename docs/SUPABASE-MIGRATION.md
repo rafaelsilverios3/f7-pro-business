@@ -21,3 +21,4 @@ Fases recomendadas:
 7. Teste cliente, produto, venda, estoque e financeiro. As RPCs transacionais exigem usuário autenticado e associação em `company_users`.
 
 O fallback Base44 permanece ativo quando `VITE_DATA_PROVIDER` não é definido. A migração ainda não troca a autenticação nem os fluxos legados que usam o SDK diretamente.
+Migration 0006 adiciona `companies.onboarding_completed` e garante os grants de leitura/atualização para `authenticated`. Empresas de teste criadas durante o diagnóstico são mantidas; nenhuma rotina de limpeza automática deve ser executada.

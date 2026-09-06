@@ -12,6 +12,11 @@ export default function Layout() {
 
   useEffect(() => {
     if (!company) return;
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+      // Notifications are not part of the initial Supabase schema yet.
+      setUnread(0);
+      return undefined;
+    }
     let cancelled = false;
     base44.entities.Notification
       .filter({ company_id: company.id, read: false }, '-created_date', 50)

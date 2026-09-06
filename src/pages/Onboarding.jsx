@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { Building2, Users, Package, ShoppingCart, LayoutDashboard, Check, ChevronRight } from 'lucide-react';
-import { createSale } from '@/lib/business';
+import { salesService } from '@/services/salesService';
+import { customersService } from '@/services/customersService';
+import { productsService } from '@/services/productsService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,7 +51,7 @@ export default function Onboarding() {
 
   const saveCustomer = async () => {
     if (!form.customerName) return;
-    const c = await base44.entities.Customer.create({
+    const c = await customersService.create(company.id, {
       company_id: company.id, name: form.customerName, phone: form.customerPhone,
       status: 'active', type: 'pf', total_purchased: 0, sale_count: 0, avg_ticket: 0,
     });
@@ -59,11 +61,11 @@ export default function Onboarding() {
 
   const saveProduct = async () => {
     if (!form.productName) return;
-    const p = await base44.entities.Product.create({
+    const p = await productsService.create(company.id, {
       company_id: company.id, name: form.productName,
-      sale_price: Number(form.productPrice) || 0,
-      cost_price: Number(form.productCost) || 0,
-      stock: 10, min_stock: 2, unit: 'un', commission: 0, active: true,
+      price: Number(form.productPrice) || 0,
+      cost: Number(form.productCost) || 0,
+      stock: 10, minimum_stock: 2, active: true,
     });
     setCreatedProduct(p);
     completeStep('product');
@@ -71,10 +73,10 @@ export default function Onboarding() {
 
   const saveSale = async () => {
     if (!createdCustomer || !createdProduct) { completeStep('sale'); return; }
-    await createSale(company.id, {
+    await salesService.finalize(company.id, {
       customer_id: createdCustomer.id,
       customer_name: createdCustomer.name,
-      items: [{ product_id: createdProduct.id, name: createdProduct.name, qty: 1, price: createdProduct.sale_price, cost: createdProduct.cost_price }],
+      items: [{ product_id: createdProduct.id, name: createdProduct.name, qty: 1, price: createdProduct.price ?? createdProduct.sale_price ?? 0, cost: createdProduct.cost ?? createdProduct.cost_price ?? 0 }],
       seller: 'Você',
       payment_method: 'Pix',
     });
