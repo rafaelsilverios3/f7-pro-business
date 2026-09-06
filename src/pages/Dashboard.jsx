@@ -7,7 +7,12 @@ import {
 import {
   DollarSign, TrendingUp, Wallet, Users, Package, ShoppingCart, AlertTriangle, Trophy,
 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { salesRepository } from '@/data/repositories/salesRepository';
+import { productsRepository } from '@/data/repositories/productsRepository';
+import { customersRepository } from '@/data/repositories/customersRepository';
+import { financeRepository } from '@/data/repositories/financeRepository';
+import { inventoryRepository } from '@/data/repositories/inventoryRepository';
+import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney, fmtMoneyShort, fmtNum, periodKey, periodKeyPrev } from '@/lib/business';
 import { generateInsights } from '@/lib/intelligence';
 import KpiCard from '@/components/dashboard/KpiCard';
@@ -27,21 +32,28 @@ export default function Dashboard() {
   const { company } = useOutletContext();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!company) return;
     (async () => {
-      const [sales, products, customers, fin, goals, opportunities, insights, movements] = await Promise.all([
-        base44.entities.Sale.filter({ company_id: company.id }, '-sale_date', 500),
-        base44.entities.Product.filter({ company_id: company.id }, '-created_date', 500),
-        base44.entities.Customer.filter({ company_id: company.id }, '-created_date', 500),
-        base44.entities.FinancialEntry.filter({ company_id: company.id }, '-due_date', 500),
-        base44.entities.Goal.filter({ company_id: company.id, active: true }, '-created_date', 100),
-        base44.entities.Opportunity.filter({ company_id: company.id }, '-created_date', 100),
-        generateInsights(company.id, period),
-        base44.entities.StockMovement.filter({ company_id: company.id }, '-created_date', 10),
-      ]);
-      setData({ sales, products, customers, fin, goals, opportunities, insights, movements });
+      setError(null);
+      try {
+        const isSupabase = import.meta.env.VITE_DATA_PROVIDER === 'supabase';
+        const legacy = isSupabase ? [[], [], []] : await Promise.all([
+          getDataProvider().entity('Goal').filter({ company_id: company.id, active: true }, '-created_date', 100),
+          getDataProvider().entity('Opportunity').filter({ company_id: company.id }, '-created_date', 100),
+          generateInsights(company.id, period),
+        ]);
+        const [sales, products, customers, fin, movements] = await Promise.all([
+          salesRepository.list(company.id, '-sale_date', 500),
+          productsRepository.list(company.id, '-created_date', 500),
+          customersRepository.list(company.id, '-created_date', 500),
+          financeRepository.list(company.id, '-due_date', 500),
+          inventoryRepository.list(company.id, '-created_date', 10),
+        ]);
+        setData({ sales, products, customers, fin, goals: legacy[0], opportunities: legacy[1], insights: legacy[2], movements });
+      } catch (cause) { setError(cause); setData(null); }
     })();
   }, [company, period]);
 
@@ -74,8 +86,8 @@ export default function Dashboard() {
       .filter((f) => f.type === 'payable' && f.status !== 'paid' && f.status !== 'cancelled')
       .reduce((s, f) => s + (f.amount || 0), 0);
 
-    const novosClientes = data.customers.filter((c) => periodKey(c.created_date, period)).length;
-    const estoqueCritico = data.products.filter((p) => (p.stock || 0) <= (p.min_stock || 0)).length;
+    const novosClientes = data.customers.filter((c) => periodKey(c.created_date || c.created_at, period)).length;
+    const estoqueCritico = data.products.filter((p) => (p.stock || 0) <= (p.min_stock ?? p.minimum_stock ?? 0)).length;
 
     // Produtos mais vendidos
     const prodMap = {};
@@ -144,7 +156,7 @@ export default function Dashboard() {
       product: mv.product_name,
       qty: mv.quantity,
       reason: mv.reason,
-      date: mv.created_date,
+      date: mv.created_date || mv.created_at,
     }));
 
     return {
@@ -162,6 +174,7 @@ export default function Dashboard() {
     };
   }, [data, period]);
 
+  if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={() => window.location.reload()}>Tentar novamente</button></div>;
   if (!m) return <div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-800" /></div>;
 
   return (

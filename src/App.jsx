@@ -30,6 +30,7 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 
 const CompanyGuard = () => {
@@ -100,7 +101,7 @@ const AuthenticatedApp = () => {
 function App() {
 
   return (
-    <AuthProvider>
+    <ErrorBoundary><AuthProvider>
       <CompanyProvider>
        <QueryClientProvider client={queryClientInstance}>
         <Router>
@@ -110,7 +111,7 @@ function App() {
         <Toaster />
        </QueryClientProvider>
       </CompanyProvider>
-    </AuthProvider>
+    </AuthProvider></ErrorBoundary>
   )
 }
 

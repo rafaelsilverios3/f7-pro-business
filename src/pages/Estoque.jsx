@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AlertTriangle, Boxes, SlidersHorizontal } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { fmtMoney, fmtNum, fmtDate, adjustStock } from '@/lib/business';
+import { getDataProvider } from '@/data/providerSelector';
+import { inventoryService } from '@/services/inventoryService';
+import { fmtMoney, fmtNum, fmtDate } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -26,8 +27,8 @@ export default function Estoque() {
   const load = async () => {
     if (!company) return;
     const [ps, ms] = await Promise.all([
-      base44.entities.Product.filter({ company_id: company.id }, '-created_date', 500),
-      base44.entities.StockMovement.filter({ company_id: company.id }, '-created_date', 100),
+      inventoryService.list(company.id),
+      getDataProvider().entity('StockMovement').filter({ company_id: company.id }, '-created_date', 100),
     ]);
     setProducts(ps); setMovements(ms);
   };
@@ -44,7 +45,7 @@ export default function Estoque() {
 
   const openAdjust = (p) => { setAdjusting(p); setNewStock(p.stock || 0); setReason(''); };
   const doAdjust = async () => {
-    await adjustStock(company.id, adjusting, newStock, reason);
+    await inventoryService.adjust(company.id, adjusting, newStock, reason);
     setAdjusting(null);
     load();
   };

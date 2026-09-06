@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Search, Pencil, Trash2, AlertTriangle, Package } from 'lucide-react';
 import { productsRepository } from '@/data/repositories/productsRepository';
+import { productsService } from '@/services/productsService';
 import { fmtMoney, fmtNum } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import ProductDialog from '@/components/produtos/ProductDialog';
@@ -28,8 +29,8 @@ export default function Produtos() {
   }, [items, query]);
 
   const handleSave = async (form) => {
-    if (editing) await productsRepository.update(editing.id, form, company.id);
-    else await productsRepository.create(form, company.id);
+    if (editing) await productsService.update(company.id, editing.id, form);
+    else await productsService.create(company.id, form);
     load();
   };
   const handleDelete = async (id) => { await productsRepository.remove(id, company.id); load(); };

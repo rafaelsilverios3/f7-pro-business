@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Trash2, Search } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
 import { salesService } from '@/services/salesService';
 
@@ -29,8 +29,9 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
   useEffect(() => {
     if (!open || !company) return;
     (async () => {
-      setCustomers(await base44.entities.Customer.filter({ company_id: company.id }, '-created_date', 500));
-      setProducts(await base44.entities.Product.filter({ company_id: company.id }, '-created_date', 500));
+      const provider = getDataProvider();
+      setCustomers(await provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500));
+      setProducts(await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500));
     })();
   }, [open, company]);
 
