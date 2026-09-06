@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Search, Pencil, Trash2, AlertTriangle, Package } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { productsRepository } from '@/data/repositories/productsRepository';
 import { fmtMoney, fmtNum } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import ProductDialog from '@/components/produtos/ProductDialog';
@@ -17,7 +17,7 @@ export default function Produtos() {
 
   const load = async () => {
     if (!company) return;
-    setItems(await base44.entities.Product.filter({ company_id: company.id }, '-created_date', 500));
+    setItems(await productsRepository.list(company.id));
   };
   useEffect(() => { load(); }, [company]);
 
@@ -28,11 +28,11 @@ export default function Produtos() {
   }, [items, query]);
 
   const handleSave = async (form) => {
-    if (editing) await base44.entities.Product.update(editing.id, form);
-    else await base44.entities.Product.create({ ...form, company_id: company.id });
+    if (editing) await productsRepository.update(editing.id, form, company.id);
+    else await productsRepository.create(form, company.id);
     load();
   };
-  const handleDelete = async (id) => { await base44.entities.Product.delete(id); load(); };
+  const handleDelete = async (id) => { await productsRepository.remove(id, company.id); load(); };
 
   const stats = useMemo(() => {
     if (!items) return { total: 0, critical: 0, stockValue: 0 };

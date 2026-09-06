@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Search, Trash2, Pencil, MessageCircle, Mail } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { customersService } from '@/services/customersService';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import CustomerDialog from '@/components/clients/CustomerDialog';
@@ -25,7 +25,7 @@ export default function Clientes() {
 
   const load = async () => {
     if (!company) return;
-    setItems(await base44.entities.Customer.filter({ company_id: company.id }, '-created_date', 500));
+    setItems(await customersService.list(company.id));
   };
   useEffect(() => { load(); }, [company]);
 
@@ -40,15 +40,15 @@ export default function Clientes() {
 
   const handleSave = async (form) => {
     if (editing) {
-      await base44.entities.Customer.update(editing.id, form);
+      await customersService.update(company.id, editing.id, form);
     } else {
-      await base44.entities.Customer.create({ ...form, company_id: company.id, total_purchased: 0, sale_count: 0, avg_ticket: 0 });
+      await customersService.create(company.id, { ...form, total_purchased: 0, sale_count: 0, avg_ticket: 0 });
     }
     load();
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.Customer.delete(id);
+    await customersService.remove(company.id, id);
     load();
   };
 

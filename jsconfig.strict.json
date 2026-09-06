@@ -1,5 +1,15 @@
 {
   "extends": "./jsconfig.json",
   "compilerOptions": { "checkJs": true, "allowJs": true, "noEmit": true },
-  "include": ["src/lib/calculations.js"]
+  "include": [
+    "src/lib/calculations.js",
+    "src/lib/business.js",
+    "src/lib/permissions.js",
+    "src/lib/statuses.js",
+    "src/lib/domainErrors.js",
+    "src/data/**/*.js",
+    "src/services/**/*.js",
+    "src/schemas/**/*.js"
+    ,"src/vite-env.d.ts"
+  ]
 }

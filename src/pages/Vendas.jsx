@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Eye, Ban } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { salesRepository } from '@/data/repositories/salesRepository';
 import { fmtMoney, fmtDate, cancelSale } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import SaleDialog from '@/components/vendas/SaleDialog';
@@ -26,7 +26,7 @@ export default function Vendas() {
 
   const load = async () => {
     if (!company) return;
-    setItems(await base44.entities.Sale.filter({ company_id: company.id }, '-sale_date', 500));
+    setItems(await salesRepository.list(company.id, '-sale_date'));
   };
   useEffect(() => { load(); }, [company]);
 

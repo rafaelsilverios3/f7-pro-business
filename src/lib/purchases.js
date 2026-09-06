@@ -26,6 +26,7 @@ export async function createPurchase(companyId, data) {
 }
 
 export async function receivePurchase(po) {
+  if (!po?.id || po.status === 'received') return null;
   for (const item of (po.items || [])) {
     if (!item.product_id) continue;
     const prod = await base44.entities.Product.get(item.product_id).catch(() => null);

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Check, Trash2, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { financeService } from '@/services/financeService';
 import { fmtMoney, fmtDate, todayISO } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,7 @@ export default function Financeiro() {
 
   const load = async () => {
     if (!company) return;
-    setItems(await base44.entities.FinancialEntry.filter({ company_id: company.id }, '-due_date', 500));
+    setItems(await financeService.list(company.id));
   };
   useEffect(() => { load(); }, [company]);
 
@@ -45,7 +45,7 @@ export default function Financeiro() {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    await base44.entities.FinancialEntry.create({
+    await financeService.create(company.id, {
       ...form, type: tab, company_id: company.id, amount: Number(form.amount) || 0, status: 'pending',
     });
     setForm({ description: '', category: 'Outros', amount: 0, due_date: todayISO(), payment_method: 'Pix', account: 'Caixa' });
@@ -54,10 +54,10 @@ export default function Financeiro() {
   };
 
   const markPaid = async (entry) => {
-    await base44.entities.FinancialEntry.update(entry.id, { status: 'paid', paid_date: todayISO() });
+    await financeService.settle(company.id, entry);
     load();
   };
-  const handleDelete = async (id) => { await base44.entities.FinancialEntry.delete(id); load(); };
+  const handleDelete = async (id) => { await financeService.remove(company.id, id); load(); };
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">

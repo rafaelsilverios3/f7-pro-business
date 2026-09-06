@@ -106,6 +106,7 @@ export async function createSale(companyId, data) {
     payment_method: data.payment_method || 'Dinheiro',
     installments: Number(data.installments) || 1,
     notes: data.notes || '',
+    idempotency_key: data.idempotency_key || null,
     status: 'paid',
     sale_date: todayISO(),
   });
