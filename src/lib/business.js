@@ -3,6 +3,7 @@ import { format, parseISO, isAfter, isBefore, subMonths, startOfMonth, endOfMont
 import { createCommissionsForSale, reverseCommissionsForSale } from '@/lib/commissions';
 import { runAutomations } from '@/lib/automations';
 import { ptBR } from 'date-fns/locale';
+import { calculateSaleTotals, roundMoney } from '@/lib/calculations';
 
 export const fmtMoney = (v) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
@@ -69,7 +70,7 @@ export async function createSale(companyId, data) {
     qty: Number(i.qty) || 0,
     price: Number(i.price) || 0,
     cost: Number(i.cost) || 0,
-    total: (Number(i.qty) || 0) * (Number(i.price) || 0),
+    total: roundMoney((Number(i.qty) || 0) * (Number(i.price) || 0)),
   }));
   if (!items.length || items.some((item) => !item.product_id || item.qty <= 0 || item.price < 0)) {
     throw new Error('Adicione pelo menos um produto com quantidade válida.');
@@ -86,12 +87,9 @@ export async function createSale(companyId, data) {
     const requested = items.filter((i) => i.product_id === item.product_id).reduce((sum, i) => sum + i.qty, 0);
     if ((products.get(item.product_id).stock || 0) < requested) throw new Error(`Estoque insuficiente para ${item.name || 'o produto'}.`);
   }
-  const subtotal = items.reduce((s, i) => s + i.total, 0);
   const discount = Number(data.discount) || 0;
   const addition = Number(data.addition) || 0;
-  const total = subtotal - discount + addition;
-  const costTotal = items.reduce((s, i) => s + i.qty * i.cost, 0);
-  const profit = total - costTotal;
+  const { subtotal, costTotal, total, profit } = calculateSaleTotals(items, discount, addition);
 
   const sale = await base44.entities.Sale.create({
     company_id: companyId,

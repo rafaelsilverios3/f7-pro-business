@@ -1,0 +1,5 @@
+{
+  "extends": "./jsconfig.json",
+  "compilerOptions": { "checkJs": true, "allowJs": true, "noEmit": true },
+  "include": ["src/lib/calculations.js"]
+}

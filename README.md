@@ -60,3 +60,38 @@ GitHub integration: [https://docs.base44.com/developers/app-code/local-developme
 Local development: [https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview)
 
 Support: [https://app.base44.com/support](https://app.base44.com/support)
+# F7 PRO BUSINESS
+
+Aplicação web para gestão comercial, clientes, produtos, vendas, estoque e financeiro, integrada ao Base44.
+
+## Instalação
+
+```bash
+npm install
+copy .env.example .env
+```
+
+Preencha `VITE_BASE44_APP_ID` e, quando necessário, `VITE_BASE44_APP_BASE_URL` no `.env`. Não coloque tokens reais no repositório.
+
+## Desenvolvimento e validação
+
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run typecheck
+npm run typecheck:strict
+npm test
+```
+
+O `typecheck` valida a estrutura do projeto JavaScript. A camada de cálculos possui verificação estrita adicional em `typecheck:strict` e testes em `tests/`.
+
+## Estrutura
+
+- `src/pages`: telas e rotas.
+- `src/components`: componentes de interface e formulários.
+- `src/lib`: regras de negócio, cálculos e integração entre módulos.
+- `src/api`: cliente Base44.
+- `base44/entities`: definições JSONC das entidades.
+
+As operações de venda, cancelamento, estoque, financeiro, cliente e comissão dependem do SDK e das entidades configuradas no Base44.
