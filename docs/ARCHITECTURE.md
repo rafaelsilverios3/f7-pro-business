@@ -9,3 +9,9 @@ O RPC `finalize_sale` também calcula e grava a comissão na mesma transação d
 Os módulos de gestão usam `profiles`, `goals` e `notifications`. Operações de membros passam por RPCs `SECURITY DEFINER` que validam associação e role; o frontend nunca consulta `auth.users` diretamente.
 
 O provider atual ainda usa o SDK Base44. Repositories não permitem trocar `company_id` em atualizações e rejeitam operações sem empresa. A camada de cálculos é pura e possui typecheck estrito e testes.
+
+## Etapa 11 — módulos inteligentes
+
+A migration `0010_smart_modules.sql` adiciona conversas, mensagens, oportunidades, automações, execuções idempotentes e insights. Todas as tabelas têm `company_id`, RLS e grants para o Data API.
+
+`conversationsService`, `opportunitiesService`, `automationService` e `intelligenceService` isolam os fluxos das páginas. A automação suporta ações determinísticas de notificação e usa `idempotency_key` em `automation_runs`. O Intelligence atual gera apenas alertas determinísticos de estoque, clientes inativos e contas vencidas; não há IA generativa ou WhatsApp nesta etapa.

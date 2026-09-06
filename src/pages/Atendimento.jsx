@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { conversationsService } from '@/services/conversationsService';
+import { opportunitiesService } from '@/services/opportunitiesService';
+import { getDataProvider } from '@/data/providerSelector';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -43,8 +46,8 @@ export default function Atendimento() {
   const load = async () => {
     if (!company) return;
     const [convs, prods] = await Promise.all([
-      base44.entities.Conversation.filter({ company_id: company.id }, '-last_message_at', 200),
-      base44.entities.Product.filter({ company_id: company.id, active: true }, '-name', 200),
+      import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? conversationsService.list(company.id) : base44.entities.Conversation.filter({ company_id: company.id }, '-last_message_at', 200),
+      getDataProvider().entity('Product').list({ company_id: company.id, active: true }, '-name', 200),
     ]);
     setConversations(convs);
     setProducts(prods);
@@ -62,7 +65,9 @@ export default function Atendimento() {
   const handleSelect = (c) => {
     setSelected(c);
     if (c.status === 'waiting_human' || c.status === 'ai_assisting') {
-      base44.entities.Conversation.update(c.id, { status: 'in_progress', assignee: c.assignee || 'Você' }).then(() => load());
+      (import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+        ? conversationsService.update(company.id, c.id, { status: 'in_progress', assignee: c.assignee || 'Você' })
+        : base44.entities.Conversation.update(c.id, { status: 'in_progress', assignee: c.assignee || 'Você' })).then(() => load());
     }
   };
 
@@ -73,15 +78,17 @@ export default function Atendimento() {
     const now = new Date().toISOString();
     const msg = { sender: 'agent', text, timestamp: now };
     const newMessages = [...(selected.messages || []), msg];
-    await base44.entities.Conversation.update(selected.id, {
-      messages: newMessages, last_message_at: now, status: 'in_progress',
-    });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+      await conversationsService.addMessage(company.id, selected.id, { sender: 'agent', content: text, message_type: 'text', created_at: now });
+      await conversationsService.update(company.id, selected.id, { last_message_at: now, status: 'in_progress' });
+    } else await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'in_progress' });
     setMessage('');
     load();
   };
 
   const aiRespond = async () => {
     if (!selected) return;
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') { alert('A resposta por IA será habilitada após a integração segura do provedor de IA.'); return; }
     setAiThinking(true);
     try {
       const lastMessages = (selected.messages || []).slice(-6).map((m) => `${m.sender}: ${m.text}`).join('\n');
@@ -124,19 +131,21 @@ export default function Atendimento() {
 
   const transferToHuman = async () => {
     if (!selected) return;
-    await base44.entities.Conversation.update(selected.id, { status: 'waiting_human', ai_enabled: false });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await conversationsService.update(company.id, selected.id, { status: 'waiting_human', ai_enabled: false });
+    else await base44.entities.Conversation.update(selected.id, { status: 'waiting_human', ai_enabled: false });
     load();
   };
 
   const finishConversation = async () => {
     if (!selected) return;
-    await base44.entities.Conversation.update(selected.id, { status: 'finished' });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await conversationsService.update(company.id, selected.id, { status: 'finished' });
+    else await base44.entities.Conversation.update(selected.id, { status: 'finished' });
     load();
   };
 
   const createOpportunity = async () => {
     if (!selected) return;
-    await base44.entities.Opportunity.create({
+    const payload = {
       company_id: company.id,
       title: `Oportunidade — ${selected.customer_name}`,
       description: `Gerada manualmente a partir do atendimento.`,
@@ -144,8 +153,11 @@ export default function Atendimento() {
       customer_name: selected.customer_name,
       conversation_id: selected.id,
       stage: 'new',
-    });
-    await base44.entities.Conversation.update(selected.id, { status: 'opportunity' });
+    };
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await opportunitiesService.create(company.id, payload);
+    else await base44.entities.Opportunity.create(payload);
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await conversationsService.update(company.id, selected.id, { status: 'opportunity' });
+    else await base44.entities.Conversation.update(selected.id, { status: 'opportunity' });
     alert('Oportunidade criada!');
     load();
   };
@@ -287,7 +299,7 @@ function NewConversationDialog({ open, onClose, company, onDone }) {
     e.preventDefault();
     const now = new Date().toISOString();
     const messages = firstMessage ? [{ sender: 'customer', text: firstMessage, timestamp: now }] : [];
-    const conv = await base44.entities.Conversation.create({
+    const payload = {
       company_id: company.id,
       channel,
       channel_configured: channel === 'manual',
@@ -299,7 +311,10 @@ function NewConversationDialog({ open, onClose, company, onDone }) {
       ai_enabled: true,
       messages,
       last_message_at: now,
-    });
+    };
+    const conv = import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+      ? await conversationsService.create(company.id, payload)
+      : await base44.entities.Conversation.create(payload);
     setName(''); setPhone(''); setEmail(''); setSubject(''); setFirstMessage('');
     onDone?.(conv);
     onClose();

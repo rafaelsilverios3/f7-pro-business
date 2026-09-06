@@ -26,3 +26,9 @@ Migration 0006 adiciona `companies.onboarding_completed` e garante os grants de 
 Migration 0007 adiciona os campos usados pela configuração da empresa e grants dos módulos P1. Migration 0008 torna a comissão parte da transação `finalize_sale` e reverte com `cancel_sale`. O CLI Supabase não está instalado neste checkout; a aplicação remota dessas migrations deve ser feita pelo Supabase Dashboard/CLI autenticado.
 
 Migration 0009 cria `profiles`, `goals` e `notifications`, além das RPCs de gerenciamento de membros. Ela também cria perfis automaticamente para novos usuários Auth. Aplicar a migration em ambiente remoto com credenciais administrativas do projeto.
+
+## Migração incremental — etapa 11
+
+Aplicar `supabase/migrations/0010_smart_modules.sql` no projeto Supabase real antes de habilitar os módulos. A migration cria tabelas com isolamento por `company_id` e políticas RLS. O frontend não usa `service_role`.
+
+A automação atual executa somente ações internas determinísticas e registra sucesso/erro; integrações externas e IA ficam para uma etapa posterior. Antes da produção, revisar políticas de role no backend e configurar observabilidade para `automation_runs` e `intelligence_insights`.

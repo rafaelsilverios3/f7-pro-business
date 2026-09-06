@@ -20,3 +20,9 @@ Ainda existem chamadas legadas em módulos P1/P2, principalmente diálogos de co
 ## Estratégia
 
 Novas telas devem consumir repositories/services. Adapters no provider normalizam nomes de campos entre Base44 e Supabase; não espalhar condicionais de provider nos componentes. RLS e `company_id` continuam obrigatórios.
+
+## Etapa 11
+
+Atendimento, Automações e Intelligence agora selecionam services Supabase quando `VITE_DATA_PROVIDER=supabase`; as chamadas Base44 ficam protegidas no fallback legado. A resposta de IA no Atendimento permanece desabilitada no Supabase até existir um backend seguro para chaves e execução.
+
+As ocorrências Base44 restantes são compatibilidade de módulos legados (compras, orçamentos, funções em `src/lib`) ou integrações ainda não migradas. O provider continua sendo o único ponto para novas entidades.

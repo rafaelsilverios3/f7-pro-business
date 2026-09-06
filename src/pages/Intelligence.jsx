@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { BrainCircuit, TrendingUp, TrendingDown, AlertTriangle, Target, DollarSign, Users, Package, Wallet, ArrowRight, CheckCircle2, XCircle, Lightbulb } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { intelligenceService } from '@/services/intelligenceService';
+import { opportunitiesService } from '@/services/opportunitiesService';
 import { fmtMoney, fmtNum, fmtMoneyShort } from '@/lib/business';
 import { generateInsights, INSIGHT_TYPE_LABELS, INSIGHT_PRIORITY_COLORS } from '@/lib/intelligence';
 import PageHeader from '@/components/layout/PageHeader';
@@ -33,10 +35,9 @@ export default function Intelligence() {
 
   const load = async () => {
     if (!company) return;
-    const [ins, opps] = await Promise.all([
-      generateInsights(company.id, period),
-      base44.entities.Opportunity.filter({ company_id: company.id }, '-created_date', 200),
-    ]);
+    const [ins, opps] = import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+      ? await Promise.all([intelligenceService.generate(company.id, period), opportunitiesService.list(company.id)])
+      : await Promise.all([generateInsights(company.id, period), base44.entities.Opportunity.filter({ company_id: company.id }, '-created_date', 200)]);
     setInsights(ins);
     setOpportunities(opps);
   };
@@ -49,7 +50,7 @@ export default function Intelligence() {
   const submitConvert = async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
-    await base44.entities.Opportunity.create({
+    const payload = {
       company_id: company.id,
       title: form.get('title'),
       description: converting.description || form.get('description'),
@@ -59,19 +60,23 @@ export default function Intelligence() {
       assignee: form.get('assignee') || '',
       stage: 'new',
       insight_id: converting.id || '',
-    });
+    };
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await opportunitiesService.create(company.id, payload);
+    else await base44.entities.Opportunity.create(payload);
     setConverting(null);
     load();
   };
 
   const updateStage = async (opp, stage) => {
-    await base44.entities.Opportunity.update(opp.id, { stage });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await opportunitiesService.update(company.id, opp.id, { stage });
+    else await base44.entities.Opportunity.update(opp.id, { stage });
     load();
   };
 
   const handleDelete = async (opp) => {
     if (!confirm('Excluir esta oportunidade?')) return;
-    await base44.entities.Opportunity.delete(opp.id);
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await opportunitiesService.remove(company.id, opp.id);
+    else await base44.entities.Opportunity.delete(opp.id);
     load();
   };
 

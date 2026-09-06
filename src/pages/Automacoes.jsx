@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Trash2, Zap, History } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { automationService } from '@/services/automationService';
+import { getDataProvider } from '@/data/providerSelector';
 import { fmtDate } from '@/lib/business';
 import { TRIGGER_LABELS, ACTION_LABELS } from '@/lib/automations';
 import PageHeader from '@/components/layout/PageHeader';
@@ -20,23 +22,30 @@ export default function Automacoes() {
 
   const load = async () => {
     if (!company) return;
-    const [a, l] = await Promise.all([
-      base44.entities.Automation.filter({ company_id: company.id }, '-created_date', 200),
-      base44.entities.AutomationLog.filter({ company_id: company.id }, '-created_date', 50),
-    ]);
+    const [a, l] = import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+      ? await Promise.all([
+        automationService.list(company.id),
+        getDataProvider().entity('AutomationRun').list({ company_id: company.id }, '-created_at', 50),
+      ])
+      : await Promise.all([
+        base44.entities.Automation.filter({ company_id: company.id }, '-created_date', 200),
+        base44.entities.AutomationLog.filter({ company_id: company.id }, '-created_date', 50),
+      ]);
     setAutomations(a);
     setLogs(l);
   };
   useEffect(() => { load(); }, [company]);
 
   const toggleActive = async (auto) => {
-    await base44.entities.Automation.update(auto.id, { active: !auto.active });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.update(company.id, auto.id, { active: !auto.active });
+    else await base44.entities.Automation.update(auto.id, { active: !auto.active });
     load();
   };
 
   const handleDelete = async (auto) => {
     if (!confirm('Excluir esta automação?')) return;
-    await base44.entities.Automation.delete(auto.id);
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.remove(company.id, auto.id);
+    else await base44.entities.Automation.delete(auto.id);
     load();
   };
 
@@ -74,7 +83,7 @@ export default function Automacoes() {
                 <tbody>
                   {logs.map((l) => (
                     <tr key={l.id} className="border-b border-slate-50">
-                      <td className="px-4 py-2 text-slate-700">{l.automation_name}</td>
+                      <td className="px-4 py-2 text-slate-700">{l.automation_name || l.automation_id || '—'}</td>
                       <td className="px-4 py-2 text-slate-500">{TRIGGER_LABELS[l.trigger] || l.trigger}</td>
                       <td className="px-4 py-2">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -83,7 +92,7 @@ export default function Automacoes() {
                           'bg-slate-100 text-slate-500'
                         }`}>{l.status === 'success' ? 'Sucesso' : l.status === 'error' ? 'Erro' : 'Ignorado'}</span>
                       </td>
-                      <td className="px-4 py-2 text-slate-400">{fmtDate(l.created_date)}</td>
+                      <td className="px-4 py-2 text-slate-400">{fmtDate(l.created_date || l.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -163,9 +172,9 @@ function AutomationDialog({ open, onClose, company, onDone }) {
       if (a.type === 'notify') return { type: 'notify', params: { title: notifyTitle, message: notifyMessage } };
       return a;
     });
-    await base44.entities.Automation.create({
-      company_id: company.id, name, trigger, conditions: [], actions: finalActions, active: true,
-    });
+    const payload = { company_id: company.id, name, trigger, conditions: [], actions: finalActions, active: true };
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.create(company.id, payload);
+    else await base44.entities.Automation.create(payload);
     setName(''); setTaskTitle(''); setNotifyTitle(''); setNotifyMessage('');
     onDone?.();
     onClose();
@@ -226,3 +235,4 @@ function AutomationDialog({ open, onClose, company, onDone }) {
     </Dialog>
   );
 }
+
