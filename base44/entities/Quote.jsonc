@@ -1,0 +1,160 @@
+{
+  "name": "Quote",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "title": "Empresa"
+    },
+    "customer_id": {
+      "type": "string",
+      "title": "Cliente"
+    },
+    "customer_name": {
+      "type": "string",
+      "title": "Nome do Cliente"
+    },
+    "seller": {
+      "type": "string",
+      "title": "Vendedor"
+    },
+    "items": {
+      "type": "array",
+      "title": "Itens",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "number"
+          },
+          "price": {
+            "type": "number"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "subtotal": {
+      "type": "number",
+      "title": "Subtotal",
+      "default": 0
+    },
+    "discount": {
+      "type": "number",
+      "title": "Desconto",
+      "default": 0
+    },
+    "addition": {
+      "type": "number",
+      "title": "Acr\u00e9scimo",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "title": "Total",
+      "default": 0
+    },
+    "cost_total": {
+      "type": "number",
+      "title": "Custo Total",
+      "default": 0
+    },
+    "profit": {
+      "type": "number",
+      "title": "Lucro Potencial",
+      "default": 0
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date",
+      "title": "V\u00e1lido at\u00e9"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Observa\u00e7\u00f5es"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "draft",
+        "sent",
+        "viewed",
+        "negotiating",
+        "approved",
+        "refused",
+        "expired"
+      ],
+      "default": "draft"
+    },
+    "sale_id": {
+      "type": "string",
+      "title": "Venda Gerada"
+    }
+  },
+  "required": [
+    "company_id",
+    "customer_name"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

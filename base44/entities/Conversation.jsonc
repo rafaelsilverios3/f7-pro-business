@@ -1,0 +1,160 @@
+{
+  "name": "Conversation",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "title": "Empresa"
+    },
+    "channel": {
+      "type": "string",
+      "title": "Canal",
+      "enum": [
+        "whatsapp",
+        "site",
+        "instagram",
+        "telegram",
+        "manual"
+      ],
+      "default": "manual"
+    },
+    "channel_configured": {
+      "type": "boolean",
+      "title": "Canal Configurado",
+      "default": false
+    },
+    "customer_id": {
+      "type": "string",
+      "title": "Cliente"
+    },
+    "customer_name": {
+      "type": "string",
+      "title": "Nome do Cliente"
+    },
+    "customer_phone": {
+      "type": "string",
+      "title": "Telefone"
+    },
+    "customer_email": {
+      "type": "string",
+      "title": "E-mail"
+    },
+    "subject": {
+      "type": "string",
+      "title": "Assunto"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "ai_assisting",
+        "waiting_human",
+        "in_progress",
+        "opportunity",
+        "finished"
+      ],
+      "default": "ai_assisting"
+    },
+    "assignee": {
+      "type": "string",
+      "title": "Respons\u00e1vel"
+    },
+    "ai_enabled": {
+      "type": "boolean",
+      "title": "IA Ativa",
+      "default": true
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags"
+    },
+    "messages": {
+      "type": "array",
+      "title": "Mensagens",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sender": {
+            "type": "string",
+            "description": "customer, ai, agent"
+          },
+          "text": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "last_message_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "\u00daltima Mensagem"
+    },
+    "opportunity_id": {
+      "type": "string",
+      "title": "Oportunidade"
+    }
+  },
+  "required": [
+    "company_id",
+    "customer_name"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

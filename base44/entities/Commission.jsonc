@@ -1,0 +1,116 @@
+{
+  "name": "Commission",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "title": "Empresa"
+    },
+    "sale_id": {
+      "type": "string",
+      "title": "Venda"
+    },
+    "seller": {
+      "type": "string",
+      "title": "Vendedor"
+    },
+    "type": {
+      "type": "string",
+      "title": "Tipo",
+      "enum": [
+        "percent",
+        "fixed"
+      ],
+      "default": "percent"
+    },
+    "rate": {
+      "type": "number",
+      "title": "Taxa/Valor",
+      "default": 0
+    },
+    "amount": {
+      "type": "number",
+      "title": "Valor da Comiss\u00e3o",
+      "default": 0
+    },
+    "sale_total": {
+      "type": "number",
+      "title": "Total da Venda",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "pending",
+        "paid",
+        "reversed"
+      ],
+      "default": "pending"
+    },
+    "paid_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Pagamento"
+    },
+    "sale_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Data da Venda"
+    }
+  },
+  "required": [
+    "company_id",
+    "seller"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

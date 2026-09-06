@@ -1,0 +1,61 @@
+{
+  "properties": {
+    "role": {
+      "type": "string",
+      "description": "Perfil do usu\u00e1rio no sistema",
+      "enum": [
+        "admin",
+        "gestor",
+        "financeiro",
+        "comercial",
+        "vendedor",
+        "estoque",
+        "atendimento"
+      ],
+      "default": "admin"
+    },
+    "company_id": {
+      "type": "string",
+      "description": "Empresa \u00e0 qual o usu\u00e1rio pertence"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    },
+    "permissions": {
+      "type": "object",
+      "title": "Permiss\u00f5es personalizadas",
+      "properties": {
+        "view": {
+          "type": "boolean"
+        },
+        "create": {
+          "type": "boolean"
+        },
+        "edit": {
+          "type": "boolean"
+        },
+        "delete": {
+          "type": "boolean"
+        },
+        "export": {
+          "type": "boolean"
+        },
+        "see_costs": {
+          "type": "boolean"
+        },
+        "see_profit": {
+          "type": "boolean"
+        },
+        "access_finance": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "required": [
+    "role"
+  ],
+  "name": "User",
+  "type": "object"
+}

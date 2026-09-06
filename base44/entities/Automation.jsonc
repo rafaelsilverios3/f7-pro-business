@@ -1,0 +1,136 @@
+{
+  "name": "Automation",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "title": "Empresa"
+    },
+    "name": {
+      "type": "string",
+      "title": "Nome"
+    },
+    "trigger": {
+      "type": "string",
+      "title": "Gatilho",
+      "enum": [
+        "new_sale",
+        "new_lead",
+        "quote_created",
+        "quote_approved",
+        "quote_no_response",
+        "stock_below_min",
+        "bill_due",
+        "bill_overdue",
+        "client_inactive",
+        "goal_reached"
+      ]
+    },
+    "conditions": {
+      "type": "array",
+      "title": "Condi\u00e7\u00f5es",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "title": "A\u00e7\u00f5es",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "create_task",
+              "create_opportunity",
+              "notify",
+              "assign_seller",
+              "change_status",
+              "follow_up"
+            ]
+          },
+          "params": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "active": {
+      "type": "boolean",
+      "title": "Ativa",
+      "default": true
+    },
+    "last_run": {
+      "type": "string",
+      "format": "date-time",
+      "title": "\u00daltima Execu\u00e7\u00e3o"
+    }
+  },
+  "required": [
+    "company_id",
+    "name",
+    "trigger"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

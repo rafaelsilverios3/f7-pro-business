@@ -1,0 +1,35 @@
+{
+  "name": "Note",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "title": "T\u00edtulo"
+    },
+    "content": {
+      "type": "string",
+      "title": "Conte\u00fado"
+    },
+    "color": {
+      "type": "string",
+      "title": "Cor",
+      "enum": [
+        "default",
+        "amber",
+        "rose",
+        "emerald",
+        "blue",
+        "violet"
+      ],
+      "default": "default"
+    },
+    "pinned": {
+      "type": "boolean",
+      "title": "Fixada",
+      "default": false
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

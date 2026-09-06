@@ -1,0 +1,107 @@
+{
+  "name": "Goal",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "title": "Empresa"
+    },
+    "scope": {
+      "type": "string",
+      "title": "Escopo",
+      "enum": [
+        "company",
+        "team",
+        "seller",
+        "category",
+        "product"
+      ],
+      "default": "company"
+    },
+    "target_key": {
+      "type": "string",
+      "title": "Alvo",
+      "description": "Nome do vendedor, categoria, produto ou 'all' para empresa"
+    },
+    "period": {
+      "type": "string",
+      "title": "Per\u00edodo",
+      "enum": [
+        "monthly",
+        "quarterly",
+        "yearly"
+      ],
+      "default": "monthly"
+    },
+    "period_value": {
+      "type": "string",
+      "title": "Refer\u00eancia",
+      "description": "Ex: 2026-09"
+    },
+    "target_amount": {
+      "type": "number",
+      "title": "Meta",
+      "default": 0
+    },
+    "active": {
+      "type": "boolean",
+      "title": "Ativa",
+      "default": true
+    }
+  },
+  "required": [
+    "company_id",
+    "scope",
+    "target_amount"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

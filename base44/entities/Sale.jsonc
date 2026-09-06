@@ -1,0 +1,165 @@
+{
+  "name": "Sale",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "title": "Empresa"
+    },
+    "customer_id": {
+      "type": "string",
+      "title": "Cliente"
+    },
+    "customer_name": {
+      "type": "string",
+      "title": "Nome do Cliente"
+    },
+    "items": {
+      "type": "array",
+      "title": "Itens",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "number"
+          },
+          "price": {
+            "type": "number"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "subtotal": {
+      "type": "number",
+      "title": "Subtotal",
+      "default": 0
+    },
+    "discount": {
+      "type": "number",
+      "title": "Desconto",
+      "default": 0
+    },
+    "addition": {
+      "type": "number",
+      "title": "Acr\u00e9scimo",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "title": "Total",
+      "default": 0
+    },
+    "cost_total": {
+      "type": "number",
+      "title": "Custo Total",
+      "default": 0
+    },
+    "profit": {
+      "type": "number",
+      "title": "Lucro",
+      "default": 0
+    },
+    "seller": {
+      "type": "string",
+      "title": "Vendedor"
+    },
+    "payment_method": {
+      "type": "string",
+      "title": "Forma de Pagamento"
+    },
+    "installments": {
+      "type": "number",
+      "title": "Parcelas",
+      "default": 1
+    },
+    "notes": {
+      "type": "string",
+      "title": "Observa\u00e7\u00f5es"
+    },
+    "status": {
+      "type": "string",
+      "title": "Status",
+      "enum": [
+        "paid",
+        "pending",
+        "cancelled"
+      ],
+      "default": "paid"
+    },
+    "sale_date": {
+      "type": "string",
+      "format": "date",
+      "title": "Data da Venda"
+    },
+    "quote_id": {
+      "type": "string",
+      "title": "Or\u00e7amento de Origem"
+    }
+  },
+  "required": [
+    "company_id",
+    "customer_name"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
