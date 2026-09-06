@@ -64,6 +64,8 @@ Support: [https://app.base44.com/support](https://app.base44.com/support)
 
 Aplicação web para gestão comercial, clientes, produtos, vendas, estoque e financeiro, integrada ao Base44.
 
+Requisito de runtime: Node.js 22 LTS e npm 10 ou superior. O SDK Supabase usado pelo projeto declara Node 22 como mínimo.
+
 ## Instalação
 
 ```bash

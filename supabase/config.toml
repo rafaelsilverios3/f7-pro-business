@@ -1,0 +1,7 @@
+project_id = "f7-pro-business"
+
+[db]
+major_version = 15
+
+[auth]
+enabled = true

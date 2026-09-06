@@ -1,0 +1,28 @@
+create or replace function finalize_sale(sale_payload jsonb) returns sales language plpgsql security invoker set search_path = public as $$
+declare company uuid := (sale_payload->>'company_id')::uuid; customer uuid := nullif(sale_payload->>'customer_id','')::uuid; sale_row sales; item jsonb; product_row products; subtotal numeric(14,2) := 0; cost_total numeric(14,2) := 0; total numeric(14,2); qty numeric; unit_price numeric; unit_cost numeric; existing sales;
+begin
+  if auth.uid() is null or not is_company_member(company) then raise exception 'Usuário não pertence à empresa'; end if;
+  if jsonb_typeof(sale_payload->'items') <> 'array' or jsonb_array_length(sale_payload->'items') = 0 then raise exception 'Venda sem itens'; end if;
+  if nullif(sale_payload->>'idempotency_key','') is not null then select * into existing from sales where company_id = company and idempotency_key = sale_payload->>'idempotency_key'; if existing.id is not null then return existing; end if; end if;
+  for item in select * from jsonb_array_elements(sale_payload->'items') loop
+    qty := (item->>'qty')::numeric; unit_price := coalesce((item->>'price')::numeric, 0); unit_cost := coalesce((item->>'cost')::numeric, 0);
+    if qty <= 0 or unit_price < 0 or unit_cost < 0 then raise exception 'Item inválido'; end if;
+    select * into product_row from products where id = (item->>'product_id')::uuid and company_id = company for update;
+    if product_row.id is null or product_row.stock < qty then raise exception 'Estoque insuficiente'; end if;
+    subtotal := subtotal + qty * unit_price; cost_total := cost_total + qty * unit_cost;
+  end loop;
+  subtotal := round(subtotal, 2); cost_total := round(cost_total, 2); total := greatest(0, round(subtotal - coalesce((sale_payload->>'discount')::numeric,0) + coalesce((sale_payload->>'addition')::numeric,0), 2));
+  insert into sales(company_id, customer_id, status, items, subtotal, discount, addition, total, cost_total, profit, idempotency_key) values(company, customer, 'completed', sale_payload->'items', subtotal, coalesce((sale_payload->>'discount')::numeric,0), coalesce((sale_payload->>'addition')::numeric,0), total, cost_total, total-cost_total, nullif(sale_payload->>'idempotency_key','')) returning * into sale_row;
+  for item in select * from jsonb_array_elements(sale_payload->'items') loop
+    qty := (item->>'qty')::numeric; unit_price := (item->>'price')::numeric; unit_cost := coalesce((item->>'cost')::numeric,0);
+    update products set stock = stock - qty where id = (item->>'product_id')::uuid and company_id = company;
+    insert into sale_items(company_id, sale_id, product_id, quantity, price, cost) values(company, sale_row.id, (item->>'product_id')::uuid, qty, unit_price, unit_cost);
+    insert into stock_movements(company_id, product_id, sale_id, type, quantity, reason) values(company, (item->>'product_id')::uuid, sale_row.id, 'out', qty, 'Venda');
+  end loop;
+  insert into financial_entries(company_id, sale_id, type, status, description, amount, due_date, paid_date) values(company, sale_row.id, 'receivable', 'paid', 'Venda', total, current_date, current_date);
+  if customer is not null then update customers set total_purchased = total_purchased + total, sale_count = sale_count + 1, avg_ticket = round((total_purchased + total) / (sale_count + 1), 2), updated_at = now() where id = customer and company_id = company; end if;
+  insert into audit_logs(company_id, user_id, action, entity, entity_id, new_data) values(company, auth.uid(), 'sale.finalized', 'Sale', sale_row.id, to_jsonb(sale_row));
+  return sale_row;
+end; $$;
+
+create or replace function receive_purchase(target_purchase uuid) returns purchases language plpgsql security invoker set search_path = public as $$ declare purchase_row purchases; begin select * into purchase_row from purchases where id = target_purchase and is_company_member(company_id) for update; if purchase_row.id is null then raise exception 'Compra não encontrada'; end if; if purchase_row.status = 'received' then return purchase_row; end if; update purchases set status = 'received' where id = target_purchase returning * into purchase_row; insert into audit_logs(company_id,user_id,action,entity,entity_id,new_data) values(purchase_row.company_id,auth.uid(),'purchase.received','PurchaseOrder',purchase_row.id,to_jsonb(purchase_row)); return purchase_row; end; $$;

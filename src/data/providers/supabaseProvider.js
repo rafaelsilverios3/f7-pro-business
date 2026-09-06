@@ -22,4 +22,4 @@ function entity(name) {
     async delete(id) { const { error } = await getClient().from(table).delete().eq('id', id); if (error) throw error; },
   };
 }
-export const supabaseProvider = { entity };
+export const supabaseProvider = { entity, async rpc(name, params) { const { data, error } = await getClient().rpc(name, params); if (error) throw error; return data; } };

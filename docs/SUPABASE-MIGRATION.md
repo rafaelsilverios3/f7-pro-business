@@ -10,4 +10,13 @@ Fases recomendadas:
 4. Migrar compras, fornecedores e orçamentos.
 5. Migrar comissões, usuários, notificações e demais módulos.
 
+## Conexão de um projeto real
+
+1. Crie um projeto em supabase.com e configure o Supabase Auth.
+2. Execute as migrations na ordem (`0001` a `0004`) pelo SQL Editor ou `supabase db push`.
+3. Execute `supabase/seed.sql` apenas em ambiente de desenvolvimento.
+4. Crie o primeiro usuário pelo Auth e associe-o manualmente em `company_users`.
+5. Configure `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `VITE_DATA_PROVIDER=supabase` no ambiente do frontend.
+6. Teste cliente, produto, venda, estoque e financeiro. As RPCs transacionais exigem usuário autenticado e associação em `company_users`.
+
 O fallback Base44 permanece ativo quando `VITE_DATA_PROVIDER` não é definido. A migração ainda não troca a autenticação nem os fluxos legados que usam o SDK diretamente.
