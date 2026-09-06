@@ -36,7 +36,7 @@ import { useCompany } from '@/lib/useCompany';
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
   if (loading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
-  return company ? <Outlet /> : <Navigate to="/onboarding" replace />;
+  return company ? <Outlet context={{ company }} /> : <Navigate to="/onboarding" replace />;
 };
 
 const AuthenticatedApp = () => {
