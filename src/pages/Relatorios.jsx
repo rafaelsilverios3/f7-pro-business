@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Download, FileText, BarChart3 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { reportsService } from '@/services/reportsService';
 import { fmtMoney, fmtDate, fmtNum, periodKey } from '@/lib/business';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -26,17 +26,7 @@ export default function Relatorios() {
 
   const load = async () => {
     if (!company) return;
-    const [sales, products, customers, fin, movements, purchases, suppliers, commissions] = await Promise.all([
-      base44.entities.Sale.filter({ company_id: company.id }, '-sale_date', 500),
-      base44.entities.Product.filter({ company_id: company.id }, '-name', 500),
-      base44.entities.Customer.filter({ company_id: company.id }, '-created_date', 500),
-      base44.entities.FinancialEntry.filter({ company_id: company.id }, '-due_date', 500),
-      base44.entities.StockMovement.filter({ company_id: company.id }, '-created_date', 500),
-      base44.entities.PurchaseOrder.filter({ company_id: company.id }, '-created_date', 500),
-      base44.entities.Supplier.filter({ company_id: company.id }, '-created_date', 500),
-      base44.entities.Commission.filter({ company_id: company.id }, '-sale_date', 500),
-    ]);
-    setData({ sales, products, customers, fin, movements, purchases, suppliers, commissions });
+    setData(await reportsService.load(company.id));
   };
   useEffect(() => { load(); }, [company]);
 

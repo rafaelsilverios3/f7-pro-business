@@ -4,6 +4,8 @@ import { Plus, Trash2, Trophy, Target, TrendingUp } from 'lucide-react';
 import { fmtMoney, periodKey } from '@/lib/business';
 import { getCommissionSummary } from '@/lib/commissions';
 import { commissionsService } from '@/services/commissionsService';
+import { goalsService } from '@/services/goalsService';
+import { salesRepository } from '@/data/repositories/salesRepository';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -23,8 +25,8 @@ export default function Metas() {
   const load = async () => {
     if (!company) return;
     const [g, s, c] = await Promise.all([
-      base44.entities.Goal.filter({ company_id: company.id }, '-created_date', 200),
-      base44.entities.Sale.filter({ company_id: company.id, status: 'paid' }, '-sale_date', 500),
+      goalsService.list(company.id),
+      salesRepository.list(company.id, '-sale_date', 500),
       import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? commissionsService.summary(company.id) : getCommissionSummary(company.id),
     ]);
     setGoals(g);
@@ -49,7 +51,7 @@ export default function Metas() {
 
   const handleDelete = async (g) => {
     if (!confirm('Excluir esta meta?')) return;
-    await base44.entities.Goal.delete(g.id);
+    await goalsService.remove(company.id, g.id);
     load();
   };
 
@@ -158,9 +160,9 @@ function GoalDialog({ open, onClose, company, onDone }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    await base44.entities.Goal.create({
+    await goalsService.create(company.id, {
       company_id: company.id, scope, target_key: targetKey, period, period_value: periodValue,
-      target_amount: Number(targetAmount) || 0, active: true,
+      target_amount: Number(targetAmount) || 0, type: scope, target_value: Number(targetAmount) || 0, status: 'active',
     });
     setTargetAmount(0);
     onDone?.();

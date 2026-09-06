@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
 let client;
-const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs' };
+const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles' };
 const sortColumns = { created_date: 'created_at', updated_date: 'updated_at' };
 const normalize = (name, row) => {
   if (!row) return row;
   if (name === 'Product') return { ...row, sale_price: row.price, cost_price: row.cost, min_stock: row.minimum_stock, created_date: row.created_at, updated_date: row.updated_at, unit: row.unit || 'un' };
+  if (name === 'Goal') return { ...row, scope: row.type === 'seller' ? 'seller' : 'company', target_amount: row.target_value, target_key: row.user_id || 'all', period_value: row.start_date, created_date: row.created_at, updated_date: row.updated_at };
   return { ...row, created_date: row.created_at, updated_date: row.updated_at };
 };
 const columns = {
@@ -15,6 +16,7 @@ const columns = {
   PurchaseOrder: ['company_id', 'supplier_id', 'status', 'total', 'expected_date'],
   PurchaseItem: ['company_id', 'purchase_id', 'product_id', 'quantity', 'cost'],
   Commission: ['company_id', 'sale_id', 'seller', 'rate', 'amount', 'status'],
+  Goal: ['company_id', 'name', 'type', 'target_value', 'period', 'start_date', 'end_date', 'user_id', 'status'],
 };
 const payloadFor = (name, payload = {}) => {
   const mapped = name === 'Product' ? { ...payload, price: payload.price ?? payload.sale_price, cost: payload.cost ?? payload.cost_price, minimum_stock: payload.minimum_stock ?? payload.min_stock } : payload;
@@ -41,4 +43,4 @@ function entity(name) {
     async delete(id) { const { error } = await getSupabaseClient().from(table).delete().eq('id', id); if (error) throw error; },
   };
 }
-export const supabaseProvider = { entity, async rpc(name, params) { const { data, error } = await getSupabaseClient().rpc(name, params); if (error) throw error; return data; } };
+export const supabaseProvider = { entity, async rpc(name, params) { const { data, error } = await getSupabaseClient().rpc(name, params); if (error) throw error; return data; }, async listMembers(companyId) { const { data, error } = await getSupabaseClient().from('company_users').select('*').eq('company_id', companyId).order('created_at', { ascending: true }); if (error) throw error; const ids = (data || []).map((member) => member.user_id); if (!ids.length) return []; const profiles = await getSupabaseClient().from('profiles').select('id,name,email,avatar_url').in('id', ids); if (profiles.error) throw profiles.error; const byId = Object.fromEntries((profiles.data || []).map((profile) => [profile.id, profile])); return (data || []).map((member) => ({ ...member, ...(byId[member.user_id] || {}) })); } };

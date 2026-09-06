@@ -10,4 +10,5 @@ export const base44Provider = {
     if (!base44.functions?.invoke) throw new Error(`RPC não disponível no Base44: ${name}`);
     return base44.functions.invoke(name, params);
   },
+  async listMembers() { return base44.entities.User.list(); },
 };

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Bell, Check, Trash2, Package, Wallet, FileText, Target, ShoppingCart, Truck, MessageSquare } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
 import { fmtDate } from '@/lib/business';
 import { generateSystemNotifications } from '@/lib/notifications';
+import { notificationsService } from '@/services/notificationsService';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 
@@ -24,37 +25,48 @@ export default function Notificacoes() {
 
   const load = async () => {
     if (!company) return;
-    const list = await base44.entities.Notification.filter({ company_id: company.id }, '-created_date', 100);
+    const list = await notificationsService.list(company.id);
     setNotifications(list);
   };
   useEffect(() => { load(); }, [company]);
 
   const handleGenerate = async () => {
     if (!company) return;
-    const [products, financials, quotes, conversations] = await Promise.all([
-      base44.entities.Product.filter({ company_id: company.id }, '-name', 500),
-      base44.entities.FinancialEntry.filter({ company_id: company.id }, '-due_date', 500),
-      base44.entities.Quote.filter({ company_id: company.id }, '-created_date', 200),
-      base44.entities.Conversation.filter({ company_id: company.id }, '-created_date', 200),
-    ]);
-    await generateSystemNotifications(company.id, { products, financials, quotes, conversations });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+      const provider = getDataProvider();
+      const [products, financials, existing] = await Promise.all([
+        provider.entity('Product').filter({ company_id: company.id, active: true }, '-name', 500),
+        provider.entity('FinancialEntry').filter({ company_id: company.id }, '-due_date', 500),
+        notificationsService.list(company.id),
+      ]);
+      const keys = new Set(existing.map((item) => `${item.type}:${item.entity_id || ''}`));
+      const pending = [
+        ...products.filter((p) => (p.stock || 0) <= (p.min_stock ?? p.minimum_stock ?? 0)).map((p) => ({ type: 'stock', title: `Estoque baixo: ${p.name}`, message: `O estoque está abaixo do mínimo configurado.`, entity: 'Product', entity_id: p.id })),
+        ...financials.filter((f) => f.status !== 'paid' && f.status !== 'cancelled' && f.due_date < new Date().toISOString().slice(0, 10)).map((f) => ({ type: 'financial', title: 'Conta vencida', message: f.description || 'Há uma conta vencida.', entity: 'FinancialEntry', entity_id: f.id })),
+      ].filter((item) => !keys.has(`${item.type}:${item.entity_id}`));
+      await Promise.all(pending.map((item) => provider.entity('Notification').create({ ...item, company_id: company.id, read: false })));
+    } else {
+      const provider = getDataProvider();
+      const [products, financials, quotes, conversations] = await Promise.all([provider.entity('Product').filter({ company_id: company.id }, '-name', 500), provider.entity('FinancialEntry').filter({ company_id: company.id }, '-due_date', 500), provider.entity('Quote').filter({ company_id: company.id }, '-created_date', 200), provider.entity('Conversation').filter({ company_id: company.id }, '-created_date', 200)]);
+      await generateSystemNotifications(company.id, { products, financials, quotes, conversations });
+    }
     load();
   };
 
   const markRead = async (n) => {
-    await base44.entities.Notification.update(n.id, { read: true });
+    await notificationsService.markRead(company.id, n.id);
     load();
   };
 
   const markAllRead = async () => {
     const unread = (notifications || []).filter((n) => !n.read);
     if (unread.length === 0) return;
-    await base44.entities.Notification.bulkUpdate(unread.map((n) => ({ id: n.id, read: true })));
+    await notificationsService.markAllRead(company.id, unread);
     load();
   };
 
   const handleDelete = async (n) => {
-    await base44.entities.Notification.delete(n.id);
+    await notificationsService.remove(company.id, n.id);
     load();
   };
 

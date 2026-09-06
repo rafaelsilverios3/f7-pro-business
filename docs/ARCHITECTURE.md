@@ -6,4 +6,6 @@ Autenticação segue o mesmo contrato em `src/auth`: o selector usa Supabase Aut
 
 O RPC `finalize_sale` também calcula e grava a comissão na mesma transação da venda quando há vendedor e taxa configurada no produto ou item. `cancel_sale` marca a comissão como `reversed` sem repetir a reversão.
 
+Os módulos de gestão usam `profiles`, `goals` e `notifications`. Operações de membros passam por RPCs `SECURITY DEFINER` que validam associação e role; o frontend nunca consulta `auth.users` diretamente.
+
 O provider atual ainda usa o SDK Base44. Repositories não permitem trocar `company_id` em atualizações e rejeitam operações sem empresa. A camada de cálculos é pura e possui typecheck estrito e testes.

@@ -10,6 +10,8 @@ Quando `VITE_DATA_PROVIDER=supabase`, as páginas dos fluxos principais usam rep
 - Venda: leitura de clientes/produtos usa provider e finalização/cancelamento usam services.
 - Onboarding: empresa, cliente, produto e primeira venda não fazem chamadas Base44 em Supabase.
 - Notificações: contador vazio no Supabase até existir tabela própria.
+- Usuários: membros são lidos de `company_users` e `profiles`; alterações usam RPCs com validação de role.
+- Metas, relatórios e notificações: repositories/services Supabase com isolamento por empresa.
 
 ## Pendências
 

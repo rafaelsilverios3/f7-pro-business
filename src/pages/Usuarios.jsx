@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { UserPlus, Shield, ShieldCheck, ShieldOff } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { getDataProvider } from '@/data/providerSelector';
 import { ROLE_LABELS, ROLE_COLORS, PERMISSION_LABELS, ROLE_DEFAULTS, resolvePermissions } from '@/lib/permissions';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -9,10 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePermissions } from '@/lib/permissions';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function Usuarios() {
   const { company } = useOutletContext();
-  const { isAdmin } = usePermissions();
+  const { isAdmin: legacyAdmin } = usePermissions();
+  const { user: authUser } = useAuth();
+  const [actorRole, setActorRole] = useState(null);
+  const isAdmin = import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? ['admin', 'gestor'].includes(actorRole) : legacyAdmin;
   const [users, setUsers] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [permsOpen, setPermsOpen] = useState(null);
@@ -23,8 +28,10 @@ export default function Usuarios() {
   const load = async () => {
     if (!company) return;
     try {
-      const list = await base44.entities.User.list();
+      const provider = getDataProvider();
+      const list = await provider.listMembers(company.id);
       setUsers(list);
+      setActorRole(list.find((item) => item.user_id === authUser?.id)?.role || null);
     } catch { setUsers([]); }
   };
   useEffect(() => { load(); }, [company]);
@@ -34,6 +41,7 @@ export default function Usuarios() {
     if (!inviteEmail || inviting) return;
     setInviting(true);
     try {
+      if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') throw new Error('Convites exigem uma Edge Function segura e ainda não estão habilitados.');
       await base44.users.inviteUser(inviteEmail, inviteRole);
       setInviteEmail('');
       setInviteOpen(false);
@@ -46,13 +54,15 @@ export default function Usuarios() {
   };
 
   const handleToggleActive = async (user) => {
-    await base44.auth.updateMe({});
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await getDataProvider().rpc('set_company_member_active', { target_company: company.id, target_user: user.user_id, is_active: user.active === false });
+    else await base44.auth.updateMe({});
     load();
   };
 
   const handleSetRole = async (user, role) => {
     try {
-      await base44.entities.User.update(user.id, { role });
+      if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await getDataProvider().rpc('update_company_member_role', { target_company: company.id, target_user: user.user_id, new_role: role });
+      else await base44.entities.User.update(user.id, { role });
       load();
     } catch (err) {
       alert('Erro: ' + (err.message || 'sem permissão'));
@@ -61,7 +71,7 @@ export default function Usuarios() {
 
   const handleSavePermissions = async (perms) => {
     try {
-      await base44.entities.User.update(permsOpen.id, { permissions: perms });
+      if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') await base44.entities.User.update(permsOpen.id, { permissions: perms });
       setPermsOpen(null);
       load();
     } catch (err) {
@@ -106,16 +116,16 @@ export default function Usuarios() {
               <tbody>
                 {users.map((u) => {
                   const role = u.data?.role || u.role || 'user';
-                  const active = u.data?.active !== false;
+                  const active = u.data?.active ?? (u.active !== false);
                   return (
                     <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-                            {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
+                            {(u.full_name || u.name || u.email || '?').charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-medium text-slate-800">{u.full_name || u.email}</p>
+                            <p className="font-medium text-slate-800">{u.full_name || u.name || u.email}</p>
                             <p className="text-[10px] text-slate-400">{u.email}</p>
                           </div>
                         </div>
