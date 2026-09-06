@@ -53,8 +53,6 @@ const AuthenticatedApp = () => {
     );
   }
 
-  if (!authChecked || !isAuthenticated) return <Navigate to="/login" replace />;
-
   // Handle authentication errors
   if (authError) {
     if (authError.type === 'user_not_registered') {
@@ -65,6 +63,8 @@ const AuthenticatedApp = () => {
       return null;
     }
   }
+
+  if (!authChecked || !isAuthenticated) return <Navigate to="/login" replace />;
 
   // Render the main app
   return (
