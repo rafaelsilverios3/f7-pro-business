@@ -71,7 +71,7 @@ npm install
 copy .env.example .env
 ```
 
-Preencha `VITE_BASE44_APP_ID` e, quando necessário, `VITE_BASE44_APP_BASE_URL` no `.env`. Não coloque tokens reais no repositório.
+Preencha `VITE_BASE44_APP_ID` e, quando necessário, `VITE_BASE44_APP_BASE_URL` no `.env`. Variáveis `VITE_*` são públicas no navegador; nunca coloque token, senha ou chave privada nelas. Tokens de sessão são obtidos pelo fluxo de autenticação do Base44.
 
 ## Desenvolvimento e validação
 
