@@ -1,0 +1,2 @@
+import { corsHeaders,json,auth,admin } from '../_shared/core.ts';
+Deno.serve(async(req)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:corsHeaders}); try {const jwt=auth(req); const sb=admin(); const {data:{user}}=await sb.auth.getUser(jwt); if(!user)return json({error:'Sessão inválida'},401); return json({enabled:Deno.env.get('AI_ENABLED')==='true',provider:Boolean(Deno.env.get('AI_API_KEY'))});}catch(e){return json({error:e instanceof Error?e.message:'Erro interno'},400)}});

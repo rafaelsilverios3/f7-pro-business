@@ -13,3 +13,7 @@
 ## Hardening obrigatório
 
 Antes do go-live, aplicar a 0012, validar as RPCs com usuários de cada role e configurar a Edge Function de convites. Não usar service role, tokens puros ou alteração de plano pelo navegador.
+
+## Integrações externas
+
+Antes de produção, aplicar a 0013, publicar as Edge Functions, configurar secrets no Supabase e validar o webhook Meta. O modo local sem credenciais retorna integração não configurada e não interrompe o ERP.

@@ -36,3 +36,7 @@ A automação atual executa somente ações internas determinísticas e registra
 ## Migration 0012
 
 Aplicar após a 0011. Ela é incremental e não remove dados. Confirme grants, policies e RPCs no Supabase real. O frontend deve apenas ler `company_subscriptions`; upgrades e downgrades futuros devem vir de backend/webhook de billing.
+
+## Etapa 13
+
+A 0013 deve ser aplicada após a 0012. Configure as secrets exclusivamente nas Edge Functions. WhatsApp/IA exigem plano, integração conectada, rate limit e observabilidade antes de habilitar.

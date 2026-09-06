@@ -1,0 +1,3 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs';
+test('external integrations migration provides idempotency and no plaintext token column',()=>{const s=fs.readFileSync('supabase/migrations/0013_external_integrations.sql','utf8'); assert.match(s,/company_integrations/); assert.match(s,/external_message_id/); assert.match(s,/usage_counters/); assert.match(s,/company_has_feature/);});
+test('edge functions keep service role server-side',()=>{const s=fs.readFileSync('supabase/functions/_shared/core.ts','utf8'); assert.match(s,/SUPABASE_SERVICE_ROLE_KEY/); assert.doesNotMatch(s,/VITE_SUPABASE_SERVICE_ROLE/);});

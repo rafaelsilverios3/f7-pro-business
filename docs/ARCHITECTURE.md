@@ -21,3 +21,7 @@ A migration `0010_smart_modules.sql` adiciona conversas, mensagens, oportunidade
 A migration `0012_saas_security_hardening.sql` mantém a 0011 intacta e revoga INSERT/UPDATE/DELETE diretos de assinaturas e convites. Policies de leitura são específicas: assinatura para membros ativos e convites para admin/gestor.
 
 Foram adicionados `current_company_role`, `company_within_limit`, `company_has_feature`, `create_company_invite` e `cancel_company_invite`. `accept_company_invite` agora valida o e-mail real em `auth.users`, expiração, uso único, associação existente e limite de usuários, registrando eventos de auditoria sem token.
+
+## Etapa 13
+
+A migration `0013_external_integrations.sql` cria integrações, contatos WhatsApp, configurações de IA, contadores de uso e logs sanitizados, além dos campos de status e ID externo em mensagens. As Edge Functions operam em modo seguro (`WHATSAPP_ENABLED=false`, `AI_ENABLED=false`) até a configuração externa.
