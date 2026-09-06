@@ -1,0 +1,1 @@
+export function normalizePhone(value:string=''){const raw=value.trim(); const digits=raw.replace(/\D/g,''); if(raw.startsWith('+')) return `+${digits}`; if(digits.startsWith('55')&&digits.length>=12) return `+${digits}`; if(digits.length===10||digits.length===11) return `+55${digits}`; return `+${digits}`;}

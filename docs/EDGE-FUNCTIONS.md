@@ -7,3 +7,7 @@ Secrets: `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`, `WHATSAPP_VERIFY_TOKEN`, `WHATS
 ## Hardening de integrações
 
 Antes de habilitar credenciais, aplicar a 0014, configurar `WHATSAPP_APP_SECRET`, `WHATSAPP_GRAPH_VERSION` e revisar `APP_ORIGIN`. Validar assinatura Meta, rate limits e respostas codificadas antes do deploy.
+
+## Etapa 14
+
+O envio WhatsApp agora está preparado para a Graph API com `WHATSAPP_GRAPH_VERSION`, token exclusivamente server-side, destino derivado da conversa, rate limit e `client_request_id`. Foram adicionadas as functions `whatsapp-connect` e `whatsapp-disconnect`. A ativação continua controlada por `WHATSAPP_ENABLED=false`.
