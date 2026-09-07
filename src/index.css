@@ -7,19 +7,28 @@
 @tailwind components;
 @tailwind utilities;
 :root {
-  --background: 7 17 31;
-  --foreground: 248 250 252;
-  --card: 14 26 43;
-  --card-foreground: 248 250 252;
-  --popover: 14 26 43;
-  --popover-foreground: 248 250 252;
-  --primary: 22 119 255;
-  --primary-foreground: 255 255 255;
-  --muted: 15 31 51;
-  --muted-foreground: 148 163 184;
-  --border: 148 163 184;
-  --input: 16 31 51;
-  --ring: 39 184 255;
+  /* Tailwind consumes these values through hsl(var(--token)). Keep them in
+     HSL form so shared primitives (dialogs, buttons, inputs) render reliably. */
+  --background: 222 64% 7%;
+  --foreground: 210 40% 98%;
+  --card: 216 51% 11%;
+  --card-foreground: 210 40% 98%;
+  --popover: 216 51% 11%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 214 100% 54%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 214 48% 20%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 214 54% 13%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 214 48% 20%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 354 70% 54%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 34%;
+  --input: 214 54% 16%;
+  --ring: 195 100% 57%;
+  --radius: 0.625rem;
 }
 html,body,#root { min-height:100%; }
 body { background:#07111f; color:#f8fafc; }
@@ -34,3 +43,36 @@ button:focus-visible,a:focus-visible { outline:2px solid #27b8ff; outline-offset
 .app-shell .text-slate-900,.app-shell .text-slate-800,.app-shell .text-slate-700 { color:#f8fafc; }
 .app-shell .text-slate-600,.app-shell .text-slate-500 { color:#b5c2d3; }
 .app-shell .text-slate-400 { color:#94a3b8; }
+
+/* Shared Radix dialogs need an explicit surface so legacy page styles cannot
+   turn a modal into a low-contrast light/brown panel. */
+.f7-dialog-overlay {
+  background: rgba(2, 6, 23, .78) !important;
+  backdrop-filter: blur(3px);
+}
+.f7-dialog-content {
+  background: #0e1a2b !important;
+  color: #f8fafc !important;
+  border: 1px solid #294461 !important;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .55) !important;
+}
+.f7-dialog-content label { color: #e7eef8 !important; }
+.f7-dialog-content input,
+.f7-dialog-content textarea,
+.f7-dialog-content select {
+  background: #101f33 !important;
+  color: #f8fafc !important;
+  border-color: #39516d !important;
+}
+.f7-dialog-content input::placeholder,
+.f7-dialog-content textarea::placeholder { color: #8fa4bd !important; opacity: 1; }
+.f7-dialog-content input:focus,
+.f7-dialog-content textarea:focus,
+.f7-dialog-content select:focus {
+  border-color: #27b8ff !important;
+  box-shadow: 0 0 0 2px rgba(39, 184, 255, .2) !important;
+}
+.f7-dialog-content button[aria-label="Close"],
+.f7-dialog-content button.absolute {
+  color: #c9d8eb !important;
+}
