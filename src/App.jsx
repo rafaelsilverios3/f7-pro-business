@@ -103,7 +103,7 @@ const AuthenticatedApp = () => {
 
   // Public institutional pages do not require an authenticated session. The
   // /produtos path remains the authenticated product module for signed-in users.
-  if (publicSitePage && (!isAuthenticated || !['/', '/produtos'].includes(location.pathname))) {
+  if (publicSitePage && (location.pathname === '/' || !isAuthenticated || location.pathname !== '/produtos')) {
     return <Routes><Route path={location.pathname} element={<PublicSite page={publicSitePage} />} /></Routes>;
   }
 
@@ -127,8 +127,8 @@ const AuthenticatedApp = () => {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/invite/:token" element={<Invite />} />
         <Route element={<CompanyGuard />}>
-          <Route path="/" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
-          <Route path="/dashboard" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
+          <Route path="/f7probusiness" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
+          <Route path="/dashboard" element={<Navigate to="/f7probusiness" replace />} />
           <Route path="/clientes" element={<RoleGuard permission="customers.view"><Clientes /></RoleGuard>} />
           <Route path="/produtos" element={<RoleGuard permission="products.view"><Produtos /></RoleGuard>} />
           <Route path="/estoque" element={<RoleGuard permission="inventory.view"><Estoque /></RoleGuard>} />

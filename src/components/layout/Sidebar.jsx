@@ -15,7 +15,7 @@ import { can } from '@/lib/permissions';
 const NAV = [
   {
     group: 'Principal',
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' }],
+    items: [{ to: '/f7probusiness', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' }],
   },
   {
     group: 'Operação',

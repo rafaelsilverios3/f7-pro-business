@@ -84,12 +84,12 @@ export default function Onboarding() {
   };
 
   const finish = () => {
-    navigate('/');
+    navigate('/f7probusiness');
   };
 
   const skipAll = () => {
     getDataProvider().entity('Company').update(company.id, { onboarding_completed: true });
-    navigate('/');
+    navigate('/f7probusiness');
   };
 
   const current = STEPS[step];
