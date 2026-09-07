@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Bot, CheckCircle2, Database, ExternalLink, MessageSquare, RefreshCw, ShieldCheck, Wifi, XCircle, PlugZap, Unplug } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { checkIntegrationHealth, connectWhatsApp, disconnectWhatsApp, listIntegrationLogs, listIntegrations, testWhatsAppConnection } from '@/services/integrationsService';
@@ -31,7 +32,18 @@ export default function Integracoes() {
   const [error, setError] = useState('');
   const [action, setAction] = useState('');
   const [phoneNumberId, setPhoneNumberId] = useState('');
-  const canManage = ['admin', 'gestor'].includes(String(user?.role || '').toLowerCase());
+  const [memberRole, setMemberRole] = useState('');
+  const canManage = ['admin', 'gestor'].includes(String(memberRole || user?.role || '').toLowerCase());
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!company?.id || !user?.id) return undefined;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setMemberRole(String(user?.role || '').toLowerCase()); return undefined; }
+    getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => {
+      if (!cancelled) setMemberRole(String(data?.role || user?.role || '').toLowerCase());
+    }).catch(() => { if (!cancelled) setMemberRole(String(user?.role || '').toLowerCase()); });
+    return () => { cancelled = true; };
+  }, [company?.id, user?.id, user?.role]);
 
   const load = useCallback(async (refresh = false) => { if (!company?.id) return; refresh ? setRefreshing(true) : setLoading(true); setError(''); try { const [nextIntegrations, nextLogs] = await Promise.all([listIntegrations(company.id), listIntegrationLogs(company.id)]); setIntegrations(nextIntegrations); setLogs(nextLogs); try { setHealth(await checkIntegrationHealth(company.id)); } catch { setHealth(null); } } catch (cause) { setError(cause.message || 'Não foi possível carregar o status das integrações.'); } finally { setLoading(false); setRefreshing(false); } }, [company?.id]);
   useEffect(() => { load(); }, [load]);

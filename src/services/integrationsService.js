@@ -34,7 +34,12 @@ export async function checkIntegrationHealth(companyId) {
 
 async function invokeIntegration(functionName, body) {
   const { data, error } = await getSupabaseClient().functions.invoke(functionName, { body });
-  if (error) throw error;
+  if (error) {
+    let detail = null;
+    try { detail = await error.context?.json?.(); } catch { /* provider errors stay generic */ }
+    const cause = new Error(detail?.code || error.message || 'Não foi possível concluir a ação.');
+    throw cause;
+  }
   if (data?.code && data.code !== 'OK') throw new Error(data.code);
   return data;
 }
