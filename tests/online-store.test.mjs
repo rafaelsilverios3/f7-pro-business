@@ -19,6 +19,17 @@ test('função pública não seleciona custo, margem ou fornecedor', () => {
   assert.match(publicFunction, /short_description/);
   assert.match(publicFunction, /price/);
   assert.match(publicFunction, /stock/);
+  assert.match(publicFunction, /jsonb_agg\([\s\S]*order by p\.featured desc, p\.name/);
+  assert.match(publicFunction, /jsonb_agg\([\s\S]*order by i\.sort_order/);
+  assert.match(publicFunction, /jsonb_agg\([\s\S]*order by v\.created_at/);
+});
+
+test('migration 0023 pode ser reexecutada sem duplicar constraints', () => {
+  assert.match(migration, /drop constraint if exists store_orders_total_check/);
+  assert.match(migration, /drop constraint if exists store_orders_status_check/);
+  assert.match(migration, /product_id_text !~\*/);
+  assert.match(migration, /quantity_text !~ '/);
+  assert.match(migration, /variant_id_text !~\*/);
 });
 
 test('permissões da loja são separadas por função', () => {
