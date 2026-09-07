@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     const { data: integration } = await sb.from('company_integrations').select('external_phone_id,status').eq('company_id', companyId).eq('provider', 'whatsapp').maybeSingle();
     if (!integration?.external_phone_id) return json({ api_reachable: false, number_configured: false, webhook_configured: 'unknown', send_ready: false, receive_ready: 'unknown', status: 'not_configured' });
-    const meta = await graphRequest(`${integration.external_phone_id}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`);
+    const meta = await graphRequest(`${integration.external_phone_id}?fields=id,display_phone_number,verified_name,quality_rating`);
     const valid = meta.ok && phoneValidation(meta.data, integration.external_phone_id);
     const result = { api_reachable: meta.ok, number_configured: valid, webhook_configured: 'unknown', send_ready: valid && integration.status === 'connected', receive_ready: valid && integration.status === 'connected' ? 'unknown' : false, status: valid ? 'ok' : 'error' };
     await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: valid ? 'connection_tested' : 'whatsapp.meta_validation_failed', status: valid ? 'success' : 'error', metadata: valid ? { api_reachable: meta.ok, number_configured: valid, provider_status: result.status, graph_version: meta.graph_version } : { meta_code: meta.meta_error?.code || null, meta_subcode: meta.meta_error?.subcode || null, meta_type: meta.meta_error?.type || null, graph_version: meta.graph_version, http_status: meta.status } });

@@ -19,19 +19,14 @@ Deno.serve(async (req) => {
     }
     const { data: allowed } = await viewer.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
-    const meta = await graphRequest(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`);
+    const meta = await graphRequest(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating`);
     if (!phoneValidation(meta.data, phoneId)) {
       await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'whatsapp.meta_validation_failed', status: 'error', metadata: { meta_code: meta.meta_error?.code || null, meta_subcode: meta.meta_error?.subcode || null, meta_type: meta.meta_error?.type || null, graph_version: meta.graph_version, http_status: meta.status } });
       const providerError = publicProviderError(meta);
       const providerStatus = meta.status && meta.status >= 400 && meta.status <= 599 ? meta.status : 502;
       return json({ ...providerError, http_status: providerStatus }, providerStatus);
     }
-    const businessId = meta.data?.whatsapp_business_account?.id || null;
-    if (body.business_id && businessId && String(body.business_id) !== String(businessId)) {
-      await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'connection_validation_failed', status: 'error', metadata: { reason: 'business_mismatch' } });
-      return json({ code: 'PROVIDER_ACCOUNT_MISMATCH' }, 409);
-    }
-    const { data: integration, error } = await sb.from('company_integrations').upsert({ company_id: companyId, provider: 'whatsapp', status: 'connected', external_phone_id: phoneId, external_business_id: businessId, external_account_id: businessId }, { onConflict: 'company_id,provider' }).select('id,company_id,provider,status,external_phone_id,external_business_id,external_account_id,created_at,updated_at').single();
+    const { data: integration, error } = await sb.from('company_integrations').upsert({ company_id: companyId, provider: 'whatsapp', status: 'connected', external_phone_id: phoneId, external_business_id: null, external_account_id: null }, { onConflict: 'company_id,provider' }).select('id,company_id,provider,status,external_phone_id,external_business_id,external_account_id,created_at,updated_at').single();
     if (error) throw error;
     await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'connection_validated', status: 'success', metadata: { phone_configured: true, provider_status: 'ok' } });
     return json({ integration, provider: { status: 'ok', phone: 'configured', api_reachable: true } });
