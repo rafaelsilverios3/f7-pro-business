@@ -8,7 +8,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { Search, Moon, Sun } from 'lucide-react';
 import ProfileDialog from './ProfileDialog';
 import { getDataProvider } from '@/data/providerSelector';
-import { applyTheme, getStoredTheme } from '@/lib/theme';
+import { applyTheme, getStoredTheme, resolveTheme } from '@/lib/theme';
 
 export default function Layout() {
   const { company, loading } = useCompany();
@@ -19,6 +19,7 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [theme, setTheme] = useState(getStoredTheme);
+  const [resolvedTheme, setResolvedTheme] = useState(() => resolveTheme(getStoredTheme()));
 
   const roleLabels = {
     admin: 'Administrador', gestor: 'Gestor', financeiro: 'Financeiro',
@@ -39,7 +40,7 @@ export default function Layout() {
   const visibleName = profileName || (displayName.includes('@') ? 'Seu perfil' : displayName);
   const visibleInitials = visibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
 
-  useEffect(() => { applyTheme(theme); }, [theme]);
+  useEffect(() => { setResolvedTheme(applyTheme(theme)); }, [theme]);
 
   useEffect(() => {
     if (!company) return;
@@ -70,7 +71,7 @@ export default function Layout() {
       <main className="flex-1 overflow-x-hidden pb-10 md:pb-0">
         <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
           <div className="hidden min-h-11 max-w-3xl flex-1 items-center gap-2 rounded-xl border border-slate-700/70 bg-[#0e1a2b] px-4 text-sm text-slate-400 transition-colors focus-within:border-blue-400/60 md:flex"><Search className="h-4 w-4 text-slate-500" /><span className="flex-1">Buscar clientes, produtos, pedidos...</span><kbd className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-500">Ctrl + K</kbd></div>
-          <button aria-label={theme === 'light' ? 'Ativar tema escuro F7' : 'Ativar tema claro'} onClick={() => setTheme((current) => { const next = current === 'light' ? 'dark' : 'light'; applyTheme(next); return next; })} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800">{theme === 'light' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}</button>
+          <button aria-label={resolvedTheme === 'light' ? 'Ativar tema escuro F7' : 'Ativar tema claro'} onClick={() => setTheme(() => resolvedTheme === 'light' ? 'dark' : 'light')} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800">{resolvedTheme === 'light' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}</button>
           <Link to="/notificacoes" className="relative rounded-xl border border-transparent p-2.5 text-slate-300 transition duration-200 hover:border-slate-700 hover:bg-slate-800">
             <Bell className="h-5 w-5" />
             {unread > 0 && (
