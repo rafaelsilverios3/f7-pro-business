@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { Bell, ChevronDown, LogOut, UserRound } from 'lucide-react';
+import { Bell, ChevronDown, LogOut, ShieldCheck, UserRound } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useCompany } from '../../lib/useCompany';
 import { base44 } from '../../api/base44Client';
@@ -83,14 +83,18 @@ export default function Layout() {
             </button>
             {userMenuOpen && <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-52 rounded-xl border border-slate-700 bg-[#0e1a2b] p-1.5 shadow-2xl">
               <div className="border-b border-slate-700/70 px-3 py-2"><p className="truncate text-xs font-medium text-white">{visibleName}</p><p className="text-[10px] text-slate-400">{role}</p><p className="mt-1 truncate text-[10px] text-slate-500">{user?.email}</p></div>
+              <p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Conta</p>
               <button onClick={() => { setUserMenuOpen(false); setProfileOpen(true); }} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><UserRound className="h-3.5 w-3.5" /> Editar perfil</button>
+              <button onClick={() => { setUserMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><UserRound className="h-3.5 w-3.5" /> Minha conta</button>
+              {['admin', 'gestor'].includes(String(user?.role || '').toLowerCase()) && <><p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Configurações</p><Link to="/configuracoes/integracoes" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><ShieldCheck className="h-3.5 w-3.5" /> Integrações</Link></>}
+              <div className="my-1 border-t border-slate-700/70" />
               <button onClick={() => logout()} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-rose-500/10 hover:text-rose-300"><LogOut className="h-3.5 w-3.5" /> Sair</button>
             </div>}
           </div>
         </div>
         <Outlet context={{ company }} />
       </main>
-      <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} onSaved={setProfileName} />
+      <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} company={company} role={String(user?.role || '').toLowerCase()} onSaved={setProfileName} />
     </div>
   );
 }
