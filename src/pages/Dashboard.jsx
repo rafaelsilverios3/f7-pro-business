@@ -5,7 +5,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import {
-  DollarSign, TrendingUp, Wallet, Users, Package, ShoppingCart, AlertTriangle, Trophy,
+  DollarSign, TrendingUp, Wallet, Users, Package, ShoppingCart, AlertTriangle, Trophy, FileText, Zap as ZapIcon,
 } from 'lucide-react';
 import { salesRepository } from '@/data/repositories/salesRepository';
 import { productsRepository } from '@/data/repositories/productsRepository';
@@ -16,11 +16,11 @@ import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney, fmtMoneyShort, fmtNum, periodKey, periodKeyPrev } from '@/lib/business';
 import { generateInsights } from '@/lib/intelligence';
 import KpiCard from '@/components/dashboard/KpiCard';
-import PageHeader from '@/components/layout/PageHeader';
 import { subMonths, format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Target, GitBranch, Activity, Clock, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 
 const PERIODS = [
   { value: 'day', label: 'Hoje' },
@@ -30,6 +30,7 @@ const PERIODS = [
 
 export default function Dashboard() {
   const { company } = useOutletContext();
+  const { user } = useAuth();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -177,40 +178,52 @@ export default function Dashboard() {
   if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={() => window.location.reload()}>Tentar novamente</button></div>;
   if (!m) return <div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-800" /></div>;
 
+  const displayName = user?.full_name || user?.name || user?.email || 'usuário';
+  const firstName = displayName.trim().split(/\s+/)[0];
+  const today = format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR });
+
   return (
-    <div className="mx-auto max-w-7xl px-5 py-8">
-      <PageHeader
-        title="Dashboard"
-        subtitle="Visão executiva do seu negócio em tempo real."
-        action={
-          <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
+    <div className="mx-auto w-full max-w-[1760px] px-5 py-7 xl:px-8 2xl:px-10">
+      <div className="mb-7 flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">F7 PRO BUSINESS</p>
+          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Olá, {firstName}! <span aria-hidden="true">👋</span></h1>
+          <p className="mt-2 text-sm text-slate-400">Aqui está o resumo do seu negócio em tempo real.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="rounded-xl border border-slate-700/70 bg-[#0d1b2e] px-4 py-2.5 text-right">
+            <p className="text-xs font-medium capitalize text-slate-200">{today}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">Dados atualizados agora</p>
+          </div>
+          <div className="flex gap-1 rounded-xl border border-slate-700/70 bg-[#0d1b2e] p-1">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${period === p.value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-200 ${period === p.value ? 'bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
               >
                 {p.label}
               </button>
             ))}
           </div>
-        }
-      />
+        </div>
+      </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="Faturamento" value={fmtMoney(m.faturamento)} icon={DollarSign} trend={m.trends.faturamento} accent="bg-indigo-50 text-indigo-600" />
-        <KpiCard label="Lucro" value={fmtMoney(m.lucro)} icon={TrendingUp} trend={m.trends.lucro} accent="bg-emerald-50 text-emerald-600" />
-        <KpiCard label="Margem" value={`${m.margem.toFixed(1)}%`} icon={TrendingUp} trend={m.trends.margem} accent="bg-violet-50 text-violet-600" sub="margem líquida" />
-        <KpiCard label="Despesas" value={fmtMoney(m.despesas)} icon={Wallet} accent="bg-rose-50 text-rose-600" />
-        <KpiCard label="Contas a Receber" value={fmtMoney(m.contasReceber)} icon={Wallet} accent="bg-amber-50 text-amber-600" />
-        <KpiCard label="Contas a Pagar" value={fmtMoney(m.contasPagar)} icon={Wallet} accent="bg-orange-50 text-orange-600" />
-        <KpiCard label="Ticket Médio" value={fmtMoney(m.ticketMedio)} icon={ShoppingCart} accent="bg-blue-50 text-blue-600" sub={`${m.numVendas} vendas`} />
-        <KpiCard label="Novos Clientes" value={fmtNum(m.novosClientes)} icon={Users} accent="bg-teal-50 text-teal-600" />
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <KpiCard primary label="Faturamento" value={fmtMoney(m.faturamento)} icon={DollarSign} trend={m.trends.faturamento} accent="bg-blue-500/15 text-blue-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#3aa0ff" />
+        <KpiCard primary label="Lucro" value={fmtMoney(m.lucro)} icon={TrendingUp} trend={m.trends.lucro} accent="bg-emerald-500/15 text-emerald-300" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#20d49a" />
+        <KpiCard primary label="Margem" value={`${m.margem.toFixed(1)}%`} icon={TrendingUp} trend={m.trends.margem} accent="bg-violet-500/15 text-violet-300" sub="margem líquida" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#9b70ff" />
+        <KpiCard primary label="Despesas" value={fmtMoney(m.despesas)} icon={Wallet} accent="bg-rose-500/15 text-rose-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#ff647c" />
+        <KpiCard label="Contas a Receber" value={fmtMoney(m.contasReceber)} icon={Wallet} accent="bg-amber-500/15 text-amber-300" />
+        <KpiCard label="Contas a Pagar" value={fmtMoney(m.contasPagar)} icon={Wallet} accent="bg-orange-500/15 text-orange-300" />
+        <KpiCard label="Ticket Médio" value={fmtMoney(m.ticketMedio)} icon={ShoppingCart} accent="bg-blue-500/15 text-blue-300" sub={`${m.numVendas} vendas`} />
+        <KpiCard label="Novos Clientes" value={fmtNum(m.novosClientes)} icon={Users} accent="bg-teal-500/15 text-teal-300" />
       </div>
 
       {/* Charts row */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
           <h3 className="text-sm font-semibold text-slate-900">Evolução de Faturamento</h3>
           <p className="mb-4 text-xs text-slate-400">Últimos 6 meses</p>
@@ -243,6 +256,31 @@ export default function Dashboard() {
               <Bar dataKey="lucro" fill="#10b981" radius={[6, 6, 0, 0]} barSize={28} />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-700/60 bg-gradient-to-br from-[#10213a] to-[#0b1626] p-5 shadow-[0_12px_32px_rgba(0,0,0,.15)]">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-400">Atalhos</p>
+              <h3 className="mt-1 text-base font-semibold text-white">Ações rápidas</h3>
+            </div>
+            <ZapIcon className="h-5 w-5 text-cyan-300" />
+          </div>
+          <div className="space-y-2">
+            {[
+              { label: 'Novo cliente', to: '/clientes', icon: Users, tone: 'text-cyan-300 bg-cyan-400/10' },
+              { label: 'Novo produto', to: '/produtos', icon: Package, tone: 'text-emerald-300 bg-emerald-400/10' },
+              { label: 'Nova venda', to: '/vendas', icon: ShoppingCart, tone: 'text-blue-300 bg-blue-400/10' },
+              { label: 'Novo orçamento', to: '/orcamentos', icon: FileText, tone: 'text-violet-300 bg-violet-400/10' },
+              { label: 'Registrar despesa', to: '/financeiro', icon: Wallet, tone: 'text-rose-300 bg-rose-400/10' },
+            ].map(({ label, to, icon: ActionIcon, tone }) => (
+              <Link key={to} to={to} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[.03] px-3 py-3 text-sm font-medium text-slate-200 transition duration-200 hover:border-blue-400/40 hover:bg-blue-400/10 hover:text-white">
+                <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${tone}`}><ActionIcon className="h-4 w-4" /></span>
+                <span className="flex-1">{label}</span><span className="text-slate-500">→</span>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
 

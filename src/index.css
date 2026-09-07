@@ -76,3 +76,22 @@ button:focus-visible,a:focus-visible { outline:2px solid #27b8ff; outline-offset
 .f7-dialog-content button.absolute {
   color: #c9d8eb !important;
 }
+.f7-form-section-title {
+  border-bottom: 1px solid rgba(148, 163, 184, .16);
+  color: #62b5ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  padding-bottom: 8px;
+  text-transform: uppercase;
+}
+.app-shell .border-slate-200.bg-white,
+.app-shell .border-slate-100.bg-white {
+  background: linear-gradient(145deg, #0e1a2b, #0b1728) !important;
+  border-color: rgba(91, 123, 158, .34) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .14) !important;
+}
+.app-shell .border-slate-200.bg-white h3,
+.app-shell .border-slate-100.bg-white h3 { color: #f4f8ff !important; }
+.recharts-cartesian-grid line { stroke: rgba(148, 163, 184, .12) !important; }
+.recharts-tooltip-wrapper { outline: none !important; }

@@ -50,7 +50,7 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
   const NavList = () => (
     <nav className="flex-1 overflow-y-auto px-3 py-2">
       {NAV.map((section) => (
-        <div key={section.group} className="mb-5">
+        <div key={section.group} className="mb-6 last:mb-2">
           <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             {section.group}
           </p>
@@ -75,14 +75,15 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
                   to={item.to}
                   onClick={() => mobileOpen && onOpenMobile?.(false)}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium transition duration-200',
                     active
                       ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30'
-                      : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                      : 'text-slate-300 hover:border-slate-700/60 hover:bg-white/[.04] hover:text-white'
                   )}
                 >
                   <item.icon className="h-4 w-4" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.label === 'Smart Atendimento' && <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">IA</span>}
                 </Link>
               );
             })}
@@ -97,7 +98,7 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
       {/* Desktop */}
       <aside className="hidden w-[245px] shrink-0 flex-col border-r border-slate-800/70 bg-[#091426] md:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <img src="/branding/f7-icon.png" alt="F7" className="h-11 w-11 object-contain" />
+          <img src="/branding/f7-icon.png" alt="F7" className="h-12 w-12 object-contain drop-shadow-[0_0_14px_rgba(36,126,255,.3)]" />
           <div className="leading-tight">
             <p className="text-sm font-bold tracking-tight text-white">F7 PRO BUSINESS</p>
             <p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p>

@@ -28,86 +28,54 @@ export default function CustomerDialog({ open, onClose, onSave, initial }) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{initial ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="flex gap-2">
-            <div className="flex-1 space-y-1.5">
-              <Label className="text-xs">Tipo</Label>
-              <div className="flex gap-1.5">
-                {['pf', 'pj'].map((t) => (
-                  <button key={t} type="button" onClick={() => set('type', t)}
-                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium ${form.type === t ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-500'}`}>
-                    {t === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}
-                  </button>
-                ))}
+        <form onSubmit={submit} className="max-h-[78vh] space-y-5 overflow-y-auto pr-1">
+          <section className="space-y-3">
+            <p className="f7-form-section-title">Identificação</p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex-1 space-y-1.5">
+                <Label className="text-xs">Tipo</Label>
+                <div className="flex gap-1.5">
+                  {['pf', 'pj'].map((t) => <button key={t} type="button" onClick={() => set('type', t)} className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition duration-200 ${form.type === t ? 'border-blue-400 bg-blue-500/20 text-blue-100 shadow-[0_0_0_1px_rgba(58,160,255,.35)]' : 'border-slate-600 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'}`}>{t === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</button>)}
+                </div>
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <Label className="text-xs">Classificação</Label>
+                <div className="flex gap-1.5">
+                  {['a', 'b', 'c'].map((t) => <button key={t} type="button" onClick={() => set('classification', t)} className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-bold uppercase transition duration-200 ${form.classification === t ? 'border-blue-400 bg-blue-500/20 text-blue-100 shadow-[0_0_0_1px_rgba(58,160,255,.35)]' : 'border-slate-600 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'}`}>{t}</button>)}
+                </div>
               </div>
             </div>
-            <div className="flex-1 space-y-1.5">
-              <Label className="text-xs">Classificação</Label>
-              <div className="flex gap-1.5">
-                {['a', 'b', 'c'].map((t) => (
-                  <button key={t} type="button" onClick={() => set('classification', t)}
-                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium uppercase ${form.classification === t ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-500'}`}>
-                    {t}
-                  </button>
-                ))}
-              </div>
+            <div className="space-y-1.5"><Label className="text-xs">Nome / Razão Social *</Label><Input value={form.name} onChange={(e) => set('name', e.target.value)} required placeholder="Nome do cliente" /></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5"><Label className="text-xs">{form.type === 'pf' ? 'CPF' : 'CNPJ'}</Label><Input value={form.document} onChange={(e) => set('document', e.target.value)} placeholder="Documento" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Status</Label><select value={form.status} onChange={(e) => set('status', e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="lead">Lead</option><option value="active">Ativo</option><option value="inactive">Inativo</option></select></div>
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Nome / Razão Social *</Label>
-            <Input value={form.name} onChange={(e) => set('name', e.target.value)} required placeholder="Nome do cliente" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">{form.type === 'pf' ? 'CPF' : 'CNPJ'}</Label>
-              <Input value={form.document} onChange={(e) => set('document', e.target.value)} placeholder="Documento" />
+          </section>
+          <section className="space-y-3">
+            <p className="f7-form-section-title">Contato</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5"><Label className="text-xs">Telefone</Label><Input value={form.phone} onChange={(e) => set('phone', e.target.value)} /></div>
+              <div className="space-y-1.5"><Label className="text-xs">WhatsApp</Label><Input value={form.whatsapp} onChange={(e) => set('whatsapp', e.target.value)} /></div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Status</Label>
-              <select value={form.status} onChange={(e) => set('status', e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
-                <option value="lead">Lead</option>
-                <option value="active">Ativo</option>
-                <option value="inactive">Inativo</option>
-              </select>
+            <div className="space-y-1.5"><Label className="text-xs">E-mail</Label><Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} /></div>
+          </section>
+          <section className="space-y-3">
+            <p className="f7-form-section-title">Comercial</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5"><Label className="text-xs">Origem do Lead</Label><Input value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Responsável</Label><Input value={form.owner} onChange={(e) => set('owner', e.target.value)} /></div>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Telefone</Label>
-              <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">WhatsApp</Label>
-              <Input value={form.whatsapp} onChange={(e) => set('whatsapp', e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">E-mail</Label>
-            <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Origem do Lead</Label>
-              <Input value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Responsável</Label>
-              <Input value={form.owner} onChange={(e) => set('owner', e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Endereço</Label>
-            <Input value={form.address} onChange={(e) => set('address', e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Observações</Label>
-            <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} className="resize-none" />
-          </div>
-          <DialogFooter>
+          </section>
+          <section className="space-y-3">
+            <p className="f7-form-section-title">Endereço e observações</p>
+            <div className="space-y-1.5"><Label className="text-xs">Endereço</Label><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Observações</Label><Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} className="resize-none" /></div>
+          </section>
+          <DialogFooter className="border-t border-slate-700/70 pt-4">
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button type="submit">{initial ? 'Salvar' : 'Adicionar'}</Button>
           </DialogFooter>

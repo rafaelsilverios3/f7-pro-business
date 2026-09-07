@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { Bell, ChevronDown, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useCompany } from '../../lib/useCompany';
 import { base44 } from '../../api/base44Client';
@@ -9,9 +9,18 @@ import { Search, Moon } from 'lucide-react';
 
 export default function Layout() {
   const { company, loading } = useCompany();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [unread, setUnread] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  const roleLabels = {
+    admin: 'Administrador', gestor: 'Gestor', financeiro: 'Financeiro',
+    comercial: 'Comercial', vendedor: 'Vendedor', estoque: 'Estoque', atendimento: 'Atendimento',
+  };
+  const displayName = user?.full_name || user?.name || user?.email || 'Usuário';
+  const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
+  const role = roleLabels[String(user?.role || '').toLowerCase()] || (user?.role && user.role !== 'authenticated' ? user.role : 'Administrador');
 
   useEffect(() => {
     if (!company) return;
@@ -41,9 +50,9 @@ export default function Layout() {
       <Sidebar company={company} mobileOpen={mobileOpen} onOpenMobile={setMobileOpen} />
       <main className="flex-1 overflow-x-hidden pb-10 md:pb-0">
         <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
-          <div className="hidden min-h-10 flex-1 items-center gap-2 rounded-xl border border-slate-700/60 bg-[#0e1a2b] px-3 text-sm text-slate-400 md:flex"><Search className="h-4 w-4" /><span>Buscar clientes, produtos, pedidos...</span><kbd className="ml-auto rounded bg-slate-800 px-2 py-1 text-[10px]">Ctrl + K</kbd></div>
-          <button aria-label="Alternar tema" className="rounded-xl border border-slate-700/60 p-2 text-slate-300 hover:bg-slate-800"><Moon className="h-4 w-4" /></button>
-          <Link to="/notificacoes" className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700">
+          <div className="hidden min-h-11 max-w-3xl flex-1 items-center gap-2 rounded-xl border border-slate-700/70 bg-[#0e1a2b] px-4 text-sm text-slate-400 transition-colors focus-within:border-blue-400/60 md:flex"><Search className="h-4 w-4 text-slate-500" /><span className="flex-1">Buscar clientes, produtos, pedidos...</span><kbd className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-500">Ctrl + K</kbd></div>
+          <button aria-label="Alternar tema" className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800"><Moon className="h-4 w-4" /></button>
+          <Link to="/notificacoes" className="relative rounded-xl border border-transparent p-2.5 text-slate-300 transition duration-200 hover:border-slate-700 hover:bg-slate-800">
             <Bell className="h-5 w-5" />
             {unread > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
@@ -51,7 +60,17 @@ export default function Layout() {
               </span>
             )}
           </Link>
-          <div className="hidden items-center gap-2 md:flex"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-500/80 text-sm font-semibold text-white">{(user?.full_name || user?.name || user?.email || 'U').charAt(0).toUpperCase()}</div><div className="leading-tight"><p className="text-sm font-semibold text-white">{user?.full_name || user?.name || user?.email || 'Usuário'}</p><p className="text-[10px] text-slate-400">{user?.role || 'Administrador'}</p></div></div>
+          <div className="relative hidden md:block">
+            <button onClick={() => setUserMenuOpen((open) => !open)} className="flex items-center gap-2.5 rounded-xl border border-transparent px-2 py-1.5 text-left transition duration-200 hover:border-slate-700 hover:bg-slate-800/70" aria-expanded={userMenuOpen}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 text-xs font-bold text-white">{initials}</span>
+              <span className="max-w-[180px] leading-tight"><span className="block truncate text-sm font-semibold text-white">{displayName}</span><span className="block text-[10px] text-slate-400">{role}</span></span>
+              <ChevronDown className="h-4 w-4 text-slate-500" />
+            </button>
+            {userMenuOpen && <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-52 rounded-xl border border-slate-700 bg-[#0e1a2b] p-1.5 shadow-2xl">
+              <div className="border-b border-slate-700/70 px-3 py-2"><p className="truncate text-xs font-medium text-white">{displayName}</p><p className="text-[10px] text-slate-400">{role}</p></div>
+              <button onClick={() => logout()} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-rose-500/10 hover:text-rose-300"><LogOut className="h-3.5 w-3.5" /> Sair</button>
+            </div>}
+          </div>
         </div>
         <Outlet context={{ company }} />
       </main>
