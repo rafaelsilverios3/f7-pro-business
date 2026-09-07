@@ -19,6 +19,17 @@ test('migration mantém perfis, avaliações e sinais isolados por empresa', () 
   assert.match(migration, /supplier_risk_signals/);
   assert.match(migration, /current_company_role\(company_id\)/);
   assert.match(migration, /needs_validation boolean not null default true/);
+  assert.doesNotMatch(migration, /supplier_id uuid not null references public\.suppliers\(id\)/);
+  assert.equal((migration.match(/supplier_id uuid not null/g) || []).length, 3);
+  assert.match(migration, /supplier_intelligence_profiles.*company_supplier_fk/s);
+  assert.match(migration, /supplier_reviews.*company_supplier_fk/s);
+  assert.match(migration, /supplier_risk_signals.*company_supplier_fk/s);
+  assert.match(migration, /drop constraint if exists supplier_intelligence_scores_check/);
+  assert.match(migration, /drop constraint if exists supplier_reviews_rating_check/);
+  assert.match(migration, /drop constraint if exists supplier_reviews_count_check/);
+  assert.match(migration, /data_confidence between 0 and 100/);
+  assert.match(migration, /rating is null or rating between 0 and 5/);
+  assert.match(migration, /review_count >= 0/);
 });
 
 test('permissões e sinais suspeitos estão preparados sem declarar fraude', () => {
