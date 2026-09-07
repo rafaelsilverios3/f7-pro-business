@@ -40,6 +40,7 @@ export default function Integracoes() {
   const ai = integrations.find((item) => item.provider === 'ai');
   const whatsappEnabled = import.meta.env.VITE_WHATSAPP_ENABLED === 'true';
   const aiEnabled = import.meta.env.VITE_AI_ENABLED === 'true';
+  const disabledAction = <Button variant="outline" size="sm" disabled title="Disponível após ativação da integração"><ExternalLink className="h-3.5 w-3.5" /> Disponível após ativação</Button>;
   const counts = useMemo(() => { const values = [whatsapp, ai]; return { active: values.filter((item) => item?.status === 'connected').length, pending: values.filter((item) => !item || ['pending', 'not_configured'].includes(item.status)).length, error: values.filter((item) => item?.status === 'error').length }; }, [whatsapp, ai]);
   useEffect(() => { if (whatsapp?.external_phone_id) setPhoneNumberId(whatsapp.external_phone_id); }, [whatsapp?.external_phone_id]);
   const runAction = async (name, fn) => { setAction(name); setError(''); try { await fn(); await load(true); } catch (cause) { setError(cause.message || 'Não foi possível concluir a ação.'); } finally { setAction(''); } };
