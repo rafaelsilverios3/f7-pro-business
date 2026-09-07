@@ -42,6 +42,7 @@ import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Invite from './pages/Invite.jsx';
+import PublicSite from './pages/PublicSite.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 import { can } from '@/lib/permissions';
@@ -78,6 +79,16 @@ const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
   const location = useLocation();
   const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password'];
+  const publicSitePages = {
+    '/': 'home',
+    '/produtos': 'products',
+    '/pro-business': 'pro-business',
+    '/politica-de-privacidade': 'privacy',
+    '/termos-de-uso': 'terms',
+    '/exclusao-de-dados': 'deletion',
+    '/contato': 'contact',
+  };
+  const publicSitePage = publicSitePages[location.pathname];
   if (location.pathname.startsWith('/loja/')) return <Routes><Route path="/loja/:slug" element={<Storefront />} /></Routes>;
   if (publicPaths.includes(location.pathname) || location.pathname.startsWith('/invite/')) return <Routes><Route path="/login" element={<Login />} /><Route path="/register" element={<Register />} /><Route path="/forgot-password" element={<ForgotPassword />} /><Route path="/reset-password" element={<ResetPassword />} /><Route path="/invite/:token" element={<Invite />} /></Routes>;
 
@@ -88,6 +99,12 @@ const AuthenticatedApp = () => {
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
       </div>
     );
+  }
+
+  // Public institutional pages do not require an authenticated session. The
+  // /produtos path remains the authenticated product module for signed-in users.
+  if (publicSitePage && (!isAuthenticated || !['/', '/produtos'].includes(location.pathname))) {
+    return <Routes><Route path={location.pathname} element={<PublicSite page={publicSitePage} />} /></Routes>;
   }
 
   // Handle authentication errors
