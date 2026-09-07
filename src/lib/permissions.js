@@ -4,17 +4,17 @@ export const ROLE_COLORS = { admin: 'bg-violet-100 text-violet-700', gestor: 'bg
 export const PERMISSION_LABELS = {
   'dashboard.view': 'Dashboard', 'customers.view': 'Clientes', 'products.view': 'Produtos', 'inventory.view': 'Estoque',
   'sales.view': 'Vendas', 'pdv.use': 'PDV', 'quotes.view': 'Orçamentos', 'finance.view': 'Financeiro', 'purchases.view': 'Compras',
-  'goals.view': 'Metas', 'reports.view': 'Relatórios', 'pricing.view': 'Precificação', 'pricing.manage': 'Gerenciar preços', 'catalog.view': 'Catálogo', 'catalog.manage': 'Gerenciar catálogo', 'conversation.view': 'Smart Atendimento', 'automation.view': 'Automações',
+  'goals.view': 'Metas', 'reports.view': 'Relatórios', 'pricing.view': 'Precificação', 'pricing.manage': 'Gerenciar preços', 'catalog.view': 'Catálogo', 'catalog.manage': 'Gerenciar catálogo', 'conversation.view': 'Smart Atendimento', 'conversation.manage': 'Gerenciar atendimento', 'orders.create_from_conversation': 'Criar pedido pelo atendimento', 'automation.view': 'Automações',
   'intelligence.view': 'F7 Intelligence', 'notifications.view': 'Notificações', 'users.view': 'Usuários', 'settings.view': 'Configurações',
 };
 export const ROLE_PERMISSIONS = {
   admin: ['*'],
   gestor: ['dashboard.view', 'customers.*', 'products.*', 'catalog.view', 'catalog.manage', 'inventory.*', 'sales.*', 'pdv.use', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
   financeiro: ['dashboard.view', 'finance.*', 'reports.view', 'pricing.view', 'notifications.view'],
-  comercial: ['dashboard.view', 'customers.*', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view'],
-  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view'],
+  comercial: ['dashboard.view', 'customers.*', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view', 'conversation.*', 'orders.create_from_conversation'],
+  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'conversation.*', 'orders.create_from_conversation'],
   estoque: ['dashboard.view', 'products.view', 'catalog.view', 'inventory.*', 'purchases.*', 'notifications.view'],
-  atendimento: ['dashboard.view', 'customers.view', 'customers.create', 'conversation.*'],
+  atendimento: ['dashboard.view', 'customers.view', 'customers.create', 'conversation.*', 'orders.create_from_conversation'],
 };
 export const ROLE_DEFAULTS = Object.fromEntries(ROLES.map((role) => [role, ROLE_PERMISSIONS[role] || []]));
 export function can(user, permission) { const permissions = ROLE_PERMISSIONS[user?.role] || []; return permissions.includes('*') || permissions.some((item) => item.endsWith('.*') ? permission.startsWith(item.slice(0, -1)) : item === permission); }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus } from 'lucide-react';
+import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus, Search, ShoppingCart, CheckCircle2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { conversationsService } from '@/services/conversationsService';
 import { opportunitiesService } from '@/services/opportunitiesService';
@@ -11,6 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { searchCatalog } from '@/services/smartCatalogService';
+import { createConversationDraft, finalizeConfirmedConversationOrder } from '@/services/conversationOrderService';
+import { useAuth } from '@/lib/AuthContext';
+import { can } from '@/lib/permissions';
 
 const STATUS_STYLE = {
   ai_assisting: 'bg-violet-100 text-violet-700',
@@ -35,12 +39,21 @@ const CHANNEL_CONFIGURED = {
 
 export default function Atendimento() {
   const { company } = useOutletContext();
+  const { user } = useAuth();
   const [conversations, setConversations] = useState(null);
   const [selected, setSelected] = useState(null);
   const [newDialog, setNewDialog] = useState(false);
   const [message, setMessage] = useState('');
   const [aiThinking, setAiThinking] = useState(false);
   const [products, setProducts] = useState([]);
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogOptions, setCatalogOptions] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [draftQuantity, setDraftQuantity] = useState(1);
+  const [orderConfirmed, setOrderConfirmed] = useState(false);
+  const [orderLoading, setOrderLoading] = useState(false);
   const chatRef = useRef(null);
 
   const load = async () => {
@@ -57,6 +70,31 @@ export default function Atendimento() {
     }
   };
   useEffect(() => { load(); }, [company]);
+
+  const searchProducts = async (event) => {
+    event?.preventDefault();
+    if (!company) return;
+    setCatalogLoading(true); setCatalogError('');
+    try { setCatalogOptions(await searchCatalog(company.id, { query: catalogQuery, inStock: true, activeOnly: true })); }
+    catch (error) { setCatalogError(error.message || 'Não foi possível consultar o catálogo.'); }
+    finally { setCatalogLoading(false); }
+  };
+
+  const selectProduct = (option) => {
+    if (!can(user, 'orders.create_from_conversation')) { setCatalogError('Seu perfil pode consultar o catálogo, mas não pode criar pedidos pelo atendimento.'); return; }
+    try {
+      setDraft(createConversationDraft({ companyId: company.id, conversationId: selected?.id, customerId: selected?.customer_id, option, quantity: draftQuantity }));
+      setOrderConfirmed(false);
+    } catch (error) { setCatalogError(error.message); }
+  };
+
+  const confirmOrder = async () => {
+    if (!draft || !orderConfirmed) return;
+    setOrderLoading(true); setCatalogError('');
+    try { await finalizeConfirmedConversationOrder({ draft, confirmed: true, idempotencyKey: `conversation:${draft.conversation_id || 'manual'}:${draft.items[0].product_id}:${draft.created_at}` }); setDraft(null); alert('Pedido confirmado e venda registrada.'); await load(); }
+    catch (error) { setCatalogError(error.message || 'Não foi possível confirmar o pedido.'); }
+    finally { setOrderLoading(false); }
+  };
 
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
@@ -173,6 +211,15 @@ export default function Atendimento() {
       <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
         <AlertCircle className="h-4 w-4 shrink-0" />
         <span>Canais externos (WhatsApp, Instagram, Telegram) ainda não estão configurados. Conversas manuais e por IA estão ativas. Configure a integração em Configurações.</span>
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800"><ShoppingCart className="h-4 w-4 text-indigo-600" /> Catálogo da empresa</h2><p className="text-xs text-slate-400">Consulte produtos reais e monte um pedido para confirmação.</p></div><span className="text-[11px] text-slate-400">Sem venda automática</span></div>
+        <form onSubmit={searchProducts} className="flex gap-2"><Input value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Buscar por nome, categoria, marca, tamanho ou cor..." /><Button type="submit" variant="outline" disabled={catalogLoading}><Search className="mr-1.5 h-4 w-4" /> {catalogLoading ? 'Buscando' : 'Buscar'}</Button></form>
+        {catalogError && <p className="mt-2 text-xs text-rose-600">{catalogError}</p>}
+        {catalogOptions.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">{catalogOptions.map((option) => <div key={option.id} className="flex gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-200">{option.images?.[0]?.url ? <img src={option.images[0].url} alt={option.name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-slate-400">Sem foto</div>}</div><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-800">{option.selection_number}. {option.name}</p><p className="truncate text-[11px] text-slate-500">{option.short_description || 'Produto do catálogo'}</p><p className="mt-1 text-xs font-semibold text-indigo-600">R$ {option.price.toFixed(2).replace('.', ',')} · {option.stock} disponíveis</p><Button type="button" size="sm" className="mt-2 h-7 text-[11px]" onClick={() => selectProduct(option)}>Adicionar ao pedido</Button></div></div>)}</div>}
+        {catalogOptions.length === 0 && catalogQuery && !catalogLoading && <p className="mt-3 text-xs text-slate-400">Nenhum produto disponível para essa busca.</p>}
+        {draft && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3"><div className="flex-1 text-xs text-indigo-900"><strong>Rascunho:</strong> {draft.items[0].name} × {draft.items[0].qty} — R$ {draft.total.toFixed(2).replace('.', ',')}</div><label className="flex items-center gap-2 text-xs text-indigo-800"><input type="checkbox" checked={orderConfirmed} onChange={(event) => setOrderConfirmed(event.target.checked)} /> Confirmo o pedido antes de finalizar</label><Button type="button" size="sm" disabled={!orderConfirmed || orderLoading} onClick={confirmOrder}><CheckCircle2 className="mr-1 h-3.5 w-3.5" /> {orderLoading ? 'Confirmando...' : 'Confirmar pedido'}</Button></div>}
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
