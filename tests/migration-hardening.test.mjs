@@ -15,6 +15,22 @@ test('precificação rejeita preço inválido e mínimo informado no backend', (
   assert.doesNotMatch(sql, /grant insert, update, delete on public\.product_pricing_history/);
 });
 
+test('0029 grants only server-side webhook privileges and usage RPC access', () => {
+  const sql = read('0029_whatsapp_webhook_backend_permissions.sql');
+  for (const statement of [
+    /grant select on table public\.company_integrations to service_role/i,
+    /grant select on table public\.customers to service_role/i,
+    /grant select, insert, update on table public\.whatsapp_contacts to service_role/i,
+    /grant select, insert, update on table public\.conversations to service_role/i,
+    /grant select, insert, update on table public\.messages to service_role/i,
+    /grant insert on table public\.integration_logs to service_role/i,
+    /grant execute on function public\.increment_usage\(uuid, text, date, integer\) to service_role/i,
+  ]) assert.match(sql, statement);
+  assert.doesNotMatch(sql, /\bto\s+anon\b/i);
+  assert.doesNotMatch(sql, /\bto\s+authenticated\b/i);
+  assert.doesNotMatch(sql, /disable row level security/i);
+});
+
 test('catálogo separa leitura de gerenciamento por role', () => {
   const sql = read('0021_product_catalog.sql');
   assert.match(sql, /create policy catalog_select/);
