@@ -117,7 +117,21 @@ body.light-theme .app-shell .text-slate-500 { color: #64748b !important; }
 body.light-theme .app-shell .bg-white { background: #ffffff !important; }
 body.light-theme .app-shell .bg-slate-50 { background: #f8fafc !important; }
 body.light-theme .app-shell .border-slate-200.bg-white,
-body.light-theme .app-shell .border-slate-100.bg-white { background: #ffffff !important; border-color: #d5dfeb !important; box-shadow: 0 10px 24px rgba(30, 64, 100, .08) !important; }
+body.light-theme .app-shell .border-slate-100.bg-white { background: #4b5563 !important; border-color: #64748b !important; box-shadow: 0 10px 24px rgba(30, 64, 100, .12) !important; }
+body.light-theme .app-shell .border-slate-200.bg-white { background: #4b5563 !important; border-color: #64748b !important; box-shadow: 0 10px 24px rgba(30, 64, 100, .12) !important; }
+body.light-theme .app-shell .f7-kpi-card,
+body.light-theme .app-shell .f7-quick-actions { background: linear-gradient(145deg, #4b5563, #374151) !important; border-color: #64748b !important; color: #f8fafc !important; }
+body.light-theme .app-shell .f7-kpi-card .text-white,
+body.light-theme .app-shell .f7-kpi-card .text-slate-300,
+body.light-theme .app-shell .f7-quick-actions .text-white,
+body.light-theme .app-shell .f7-quick-actions .text-slate-200 { color: #f8fafc !important; }
+body.light-theme .app-shell .f7-quick-actions a { background: rgba(15, 23, 42, .28) !important; border-color: rgba(255, 255, 255, .14) !important; color: #f8fafc !important; }
+body.light-theme .app-shell aside a.bg-gradient-to-r { color: #ffffff !important; }
+body.light-theme .app-shell button:not([disabled]),
+body.light-theme .app-shell select { color: #f8fafc; }
+body.light-theme .app-shell .f7-dialog-content { background: #4b5563 !important; color: #f8fafc !important; }
 body.light-theme .app-shell input,
 body.light-theme .app-shell textarea,
-body.light-theme .app-shell select { background: #ffffff !important; color: #172033 !important; border-color: #c5d2e0 !important; }
+body.light-theme .app-shell select { background: #4b5563 !important; color: #f8fafc !important; border-color: #718096 !important; }
+body.light-theme .app-shell input,
+body.light-theme .app-shell textarea { background: #ffffff !important; color: #172033 !important; border-color: #c5d2e0 !important; }

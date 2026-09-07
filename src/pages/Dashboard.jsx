@@ -278,7 +278,7 @@ export default function Dashboard() {
         </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-700/60 bg-gradient-to-br from-[#10213a] to-[#0b1626] p-5 shadow-[0_12px_32px_rgba(0,0,0,.15)]">
+        <div className="f7-quick-actions rounded-2xl border border-slate-700/60 bg-gradient-to-br from-[#10213a] to-[#0b1626] p-5 shadow-[0_12px_32px_rgba(0,0,0,.15)]">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-400">Atalhos</p>
