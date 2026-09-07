@@ -32,6 +32,7 @@ import PDV from './pages/PDV.jsx';
 import Precificacao from './pages/Precificacao.jsx';
 import Storefront from './pages/Storefront.jsx';
 import Opportunities from './pages/Opportunities.jsx';
+import SupplierIntelligence from './pages/SupplierIntelligence.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -124,6 +125,7 @@ const AuthenticatedApp = () => {
           <Route path="/automacoes" element={<RoleGuard permission="automation.view"><Automacoes /></RoleGuard>} />
           <Route path="/intelligence" element={<RoleGuard permission="intelligence.view"><Intelligence /></RoleGuard>} />
           <Route path="/opportunities" element={<RoleGuard permission="opportunity.view"><Opportunities /></RoleGuard>} />
+          <Route path="/supplier-intelligence" element={<RoleGuard permission="supplier_intelligence.view"><SupplierIntelligence /></RoleGuard>} />
           <Route path="/relatorios" element={<RoleGuard permission="reports.view"><Relatorios /></RoleGuard>} />
           <Route path="/notificacoes" element={<RoleGuard permission="notifications.view"><Notificacoes /></RoleGuard>} />
         </Route>

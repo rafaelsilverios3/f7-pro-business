@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 let client;
-const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
+const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', SupplierIntelligence: 'supplier_intelligence_profiles', SupplierReview: 'supplier_reviews', SupplierRiskSignal: 'supplier_risk_signals', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
 const sortColumns = { created_date: 'created_at', updated_date: 'updated_at' };
 const normalize = (name, row) => {
   if (!row) return row;
@@ -31,6 +31,9 @@ const columns = {
   CompanyInvite: ['company_id', 'email', 'role', 'token_hash', 'status', 'expires_at', 'invited_by'],
   ProductOpportunity: ['company_id', 'title', 'description', 'status', 'source', 'source_url', 'collected_at', 'source_type', 'confidence_level', 'scores', 'opportunity_score', 'supplier_score', 'trust_score', 'channel_score', 'metadata'],
   OpportunityProductDraft: ['company_id', 'opportunity_id', 'name', 'description', 'category', 'price', 'cost', 'stock', 'active', 'status'],
+  SupplierIntelligence: ['company_id', 'supplier_id', 'reputation_score', 'history_score', 'price_score', 'delivery_score', 'returns_score', 'complaints_score', 'consistency_score', 'supplier_score', 'trust_score', 'trust_label', 'data_confidence', 'source_summary', 'metadata'],
+  SupplierReview: ['company_id', 'supplier_id', 'rating', 'review_count', 'comment', 'reviewed_at', 'source', 'source_type', 'sentiment', 'recurring_issues'],
+  SupplierRiskSignal: ['company_id', 'supplier_id', 'signal_type', 'severity', 'description', 'source', 'needs_validation', 'detected_at'],
 };
 const payloadFor = (name, payload = {}) => {
   let mapped = payload;

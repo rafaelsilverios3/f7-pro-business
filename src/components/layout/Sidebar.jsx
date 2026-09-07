@@ -39,6 +39,7 @@ const NAV = [
       { to: '/automacoes', label: 'Automações', icon: Zap, permission: 'automation.view' },
       { to: '/intelligence', label: 'F7 Intelligence', icon: BrainCircuit, permission: 'intelligence.view' },
       { to: '/opportunities', label: 'F7 Opportunity', icon: Target, permission: 'opportunity.view' },
+      { to: '/supplier-intelligence', label: 'Supplier Intelligence', icon: Shield, permission: 'supplier_intelligence.view' },
       { to: '/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'reports.view' },
     ],
   },
