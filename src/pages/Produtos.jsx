@@ -22,6 +22,7 @@ export default function Produtos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const canManagePricing = can({ role }, 'pricing.manage');
+  const canManageCatalog = can({ role }, 'catalog.manage');
 
   const load = async () => {
     if (!company) return;
@@ -138,7 +139,7 @@ export default function Produtos() {
         )}
       </div>
 
-      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} canManagePricing={canManagePricing} onApplyPricing={async ({ product, price, summary }) => { await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); }} />
+      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} companyId={company?.id} canManagePricing={canManagePricing} canManageCatalog={canManageCatalog} onApplyPricing={async ({ product, price, summary }) => { await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); }} />
     </div>
   );
 }

@@ -7,7 +7,7 @@ export const productsService = {
   list: (companyId) => productsRepository.list(companyId),
   create: (companyId, data) => {
     const parsed = productSchema.parse({ ...data, company_id: companyId, price: data.price ?? data.sale_price, cost: data.cost ?? data.cost_price, minimum_stock: data.minimum_stock ?? data.min_stock });
-    const payload = isSupabase() ? parsed : {
+    const payload = isSupabase() ? { ...parsed, commission_rate: parsed.commission ?? parsed.commission_rate } : {
       ...parsed,
       sale_price: parsed.price,
       cost_price: parsed.cost,

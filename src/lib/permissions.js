@@ -4,16 +4,16 @@ export const ROLE_COLORS = { admin: 'bg-violet-100 text-violet-700', gestor: 'bg
 export const PERMISSION_LABELS = {
   'dashboard.view': 'Dashboard', 'customers.view': 'Clientes', 'products.view': 'Produtos', 'inventory.view': 'Estoque',
   'sales.view': 'Vendas', 'pdv.use': 'PDV', 'quotes.view': 'Orçamentos', 'finance.view': 'Financeiro', 'purchases.view': 'Compras',
-  'goals.view': 'Metas', 'reports.view': 'Relatórios', 'pricing.view': 'Precificação', 'pricing.manage': 'Gerenciar preços', 'conversation.view': 'Smart Atendimento', 'automation.view': 'Automações',
+  'goals.view': 'Metas', 'reports.view': 'Relatórios', 'pricing.view': 'Precificação', 'pricing.manage': 'Gerenciar preços', 'catalog.view': 'Catálogo', 'catalog.manage': 'Gerenciar catálogo', 'conversation.view': 'Smart Atendimento', 'automation.view': 'Automações',
   'intelligence.view': 'F7 Intelligence', 'notifications.view': 'Notificações', 'users.view': 'Usuários', 'settings.view': 'Configurações',
 };
 export const ROLE_PERMISSIONS = {
   admin: ['*'],
-  gestor: ['dashboard.view', 'customers.*', 'products.*', 'inventory.*', 'sales.*', 'pdv.use', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
+  gestor: ['dashboard.view', 'customers.*', 'products.*', 'catalog.view', 'catalog.manage', 'inventory.*', 'sales.*', 'pdv.use', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
   financeiro: ['dashboard.view', 'finance.*', 'reports.view', 'pricing.view', 'notifications.view'],
-  comercial: ['dashboard.view', 'customers.*', 'products.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view'],
-  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view'],
-  estoque: ['dashboard.view', 'products.view', 'inventory.*', 'purchases.*', 'notifications.view'],
+  comercial: ['dashboard.view', 'customers.*', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view'],
+  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view'],
+  estoque: ['dashboard.view', 'products.view', 'catalog.view', 'inventory.*', 'purchases.*', 'notifications.view'],
   atendimento: ['dashboard.view', 'customers.view', 'customers.create', 'conversation.*'],
 };
 export const ROLE_DEFAULTS = Object.fromEntries(ROLES.map((role) => [role, ROLE_PERMISSIONS[role] || []]));

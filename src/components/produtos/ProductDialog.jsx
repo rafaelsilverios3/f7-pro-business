@@ -6,17 +6,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PricingDialog from '@/components/pricing/PricingDialog';
+import ProductCatalogPanel from '@/components/pricing/ProductCatalogPanel';
 
-export default function ProductDialog({ open, onClose, onSave, initial, canManagePricing = false, onApplyPricing }) {
+export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing }) {
   const [form, setForm] = useState({
-    sku: '', barcode: '', name: '', category: '', brand: '', description: '',
+    sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
     cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
   });
   const [pricingOpen, setPricingOpen] = useState(false);
 
   useEffect(() => {
     if (initial) setForm({ ...form, ...initial });
-    else setForm({ sku: '', barcode: '', name: '', category: '', brand: '', description: '', cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true });
+    else setForm({ sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false, cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true });
   }, [initial, open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -46,6 +47,10 @@ export default function ProductDialog({ open, onClose, onSave, initial, canManag
             <div className="space-y-1.5">
               <Label className="text-xs">Código de barras</Label>
               <Input value={form.barcode || ''} onChange={(e) => set('barcode', e.target.value)} placeholder="EAN / GTIN" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Subcategoria</Label>
+              <Input value={form.subcategory || ''} onChange={(e) => set('subcategory', e.target.value)} />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -95,6 +100,12 @@ export default function ProductDialog({ open, onClose, onSave, initial, canManag
             <Label className="text-xs">Descrição</Label>
             <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} className="resize-none" />
           </div>
+          <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1.5"><Label className="text-xs">Material</Label><Input value={form.material || ''} onChange={(e) => set('material', e.target.value)} /></div><div className="space-y-1.5"><Label className="text-xs">Cor</Label><Input value={form.color || ''} onChange={(e) => set('color', e.target.value)} /></div><div className="space-y-1.5"><Label className="text-xs">Tamanho</Label><Input value={form.size || ''} onChange={(e) => set('size', e.target.value)} /></div><div className="space-y-1.5"><Label className="text-xs">Modelo</Label><Input value={form.model || ''} onChange={(e) => set('model', e.target.value)} /></div></div>
+          <div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1.5"><Label className="text-xs">Peso</Label><Input type="number" step="0.001" value={form.weight || ''} onChange={(e) => set('weight', e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label className="text-xs">Descrição curta</Label><Input value={form.short_description || ''} onChange={(e) => set('short_description', e.target.value)} /></div></div>
+          <div className="space-y-1.5"><Label className="text-xs">Descrição completa</Label><Textarea value={form.full_description || ''} onChange={(e) => set('full_description', e.target.value)} rows={3} className="resize-none" /></div>
+          <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Tags</Label><Input value={(form.tags || []).join(', ')} onChange={(e) => set('tags', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} placeholder="ex.: promoção, lançamento" /></div><div className="space-y-1.5"><Label className="text-xs">Palavras-chave</Label><Input value={(form.keywords || []).join(', ')} onChange={(e) => set('keywords', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} /></div></div>
+          <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={Boolean(form.featured)} onChange={(e) => set('featured', e.target.checked)} /> Produto em destaque</label>
+          <ProductCatalogPanel companyId={companyId} productId={initial?.id} canManage={canManageCatalog} />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button type="submit">{initial ? 'Salvar' : 'Adicionar'}</Button>
