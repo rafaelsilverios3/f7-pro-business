@@ -16,6 +16,7 @@ import Estoque from './pages/Estoque.jsx';
 import Vendas from './pages/Vendas.jsx';
 import Financeiro from './pages/Financeiro.jsx';
 import Configuracoes from './pages/Configuracoes.jsx';
+import Integracoes from './pages/Integracoes.jsx';
 import Orcamentos from './pages/Orcamentos.jsx';
 import Compras from './pages/Compras.jsx';
 import Metas from './pages/Metas.jsx';
@@ -83,6 +84,7 @@ const AuthenticatedApp = () => {
           <Route path="/vendas" element={<Vendas />} />
           <Route path="/financeiro" element={<Financeiro />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/configuracoes/integracoes" element={<Integracoes />} />
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/orcamentos" element={<Orcamentos />} />
           <Route path="/compras" element={<Compras />} />

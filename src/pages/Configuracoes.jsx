@@ -1,7 +1,7 @@
 // F7 PRO BUSINESS — Configurações
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { Building2, Save, Check } from 'lucide-react';
+import { Link, useOutletContext } from 'react-router-dom';
+import { Building2, Save, Check, Plug } from 'lucide-react';
 import { getDataProvider } from '@/data/providerSelector';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ export default function Configuracoes() {
 
   return (
     <div className="mx-auto max-w-3xl px-5 py-8">
-      <PageHeader title="Configurações da Empresa" subtitle="Dados comerciais e preferências do seu negócio." />
+      <PageHeader title="Configurações da Empresa" subtitle="Dados comerciais e preferências do seu negócio." action={<Link to="/configuracoes/integracoes" className="inline-flex h-9 items-center gap-2 rounded-md border border-[#45617f] px-4 text-sm font-medium text-[#e7eef8] transition hover:bg-[#172a45]"><Plug className="h-4 w-4" /> Integrações</Link>} />
       <form onSubmit={save} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white">

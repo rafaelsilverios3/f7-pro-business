@@ -31,9 +31,26 @@ const PERIODS = [
 export default function Dashboard() {
   const { company } = useOutletContext();
   const { user } = useAuth();
+  const [profileName, setProfileName] = useState('');
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadProfileName = async () => {
+      if (!user?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return;
+      try {
+        const profile = await getDataProvider().entity('Profile').get(user.id);
+        const name = profile?.name?.trim();
+        if (!cancelled && name) setProfileName(name);
+      } catch {
+        // Profile is optional; Auth metadata remains the fallback.
+      }
+    };
+    loadProfileName();
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!company) return;
@@ -178,7 +195,9 @@ export default function Dashboard() {
   if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={() => window.location.reload()}>Tentar novamente</button></div>;
   if (!m) return <div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-800" /></div>;
 
-  const displayName = user?.full_name || user?.name || user?.email || 'usuário';
+  const metadata = user?.user_metadata || user?.raw_user_meta_data || {};
+  const realName = (...values) => values.find((value) => typeof value === 'string' && value.trim() && !value.includes('@'))?.trim() || '';
+  const displayName = realName(profileName, user?.full_name, user?.name, metadata.full_name, metadata.name);
   const firstName = displayName.trim().split(/\s+/)[0];
   const today = format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR });
 
@@ -187,7 +206,7 @@ export default function Dashboard() {
       <div className="mb-7 flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">F7 PRO BUSINESS</p>
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Olá, {firstName}! <span aria-hidden="true">👋</span></h1>
+          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">{firstName ? `Olá, ${firstName}!` : 'Olá!'} <span aria-hidden="true">👋</span></h1>
           <p className="mt-2 text-sm text-slate-400">Aqui está o resumo do seu negócio em tempo real.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
