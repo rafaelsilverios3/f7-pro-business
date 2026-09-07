@@ -14,3 +14,19 @@ create table if not exists public.market_opportunities (
   product_name text not null, trend text, demand numeric(14,4), competition numeric(14,4), potential_margin numeric(14,4), risk numeric(14,4), estimated_capital numeric(14,2), opportunity_score numeric(5,2), trust_score numeric(5,2), data_status text not null default 'indisponível', source_ids uuid[] not null default '{}', metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 do $$ declare t text; begin foreach t in array array['market_sources','market_signals','market_opportunities'] loop execute format('alter table public.%I enable row level security', t); execute format('drop policy if exists market_intelligence_company_isolation on public.%I', t); execute format('create policy market_intelligence_company_isolation on public.%I for all using (public.is_company_member(company_id)) with check (public.is_company_member(company_id))', t); execute format('grant select, insert, update, delete on public.%I to authenticated', t); end loop; end $$;
+create unique index if not exists market_sources_company_id_key on public.market_sources(company_id,id);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'market_signals_company_source_fk') then
+    alter table public.market_signals add constraint market_signals_company_source_fk foreign key (company_id, source_id) references public.market_sources(company_id, id) on delete cascade;
+  end if;
+end $$;
+create or replace function public.validate_market_opportunity_sources() returns trigger language plpgsql set search_path = public as $$
+begin
+  if exists (select 1 from unnest(coalesce(new.source_ids, '{}'::uuid[])) as source_id where not exists (select 1 from public.market_sources where id = source_id and company_id = new.company_id)) then
+    raise exception 'Fonte de mercado não pertence à empresa';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists market_opportunity_sources_company_check on public.market_opportunities;
+create trigger market_opportunity_sources_company_check before insert or update of company_id, source_ids on public.market_opportunities for each row execute function public.validate_market_opportunity_sources();

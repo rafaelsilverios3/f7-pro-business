@@ -17,3 +17,13 @@ create table if not exists public.opportunity_product_drafts (
 do $$ declare t text; begin foreach t in array array['product_opportunities','opportunity_product_drafts'] loop execute format('alter table public.%I enable row level security', t); execute format('drop policy if exists opportunity_company_isolation on public.%I', t); execute format('create policy opportunity_company_isolation on public.%I for all using (public.is_company_member(company_id)) with check (public.is_company_member(company_id))', t); execute format('grant select, insert, update, delete on public.%I to authenticated', t); end loop; end $$;
 create index if not exists product_opportunities_company_status on public.product_opportunities(company_id,status);
 create index if not exists opportunity_product_drafts_company on public.opportunity_product_drafts(company_id,opportunity_id);
+create unique index if not exists product_opportunities_company_id_key on public.product_opportunities(company_id,id);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'opportunity_product_drafts_company_opportunity_fk') then
+    alter table public.opportunity_product_drafts add constraint opportunity_product_drafts_company_opportunity_fk foreign key (company_id, opportunity_id) references public.product_opportunities(company_id, id) on delete cascade;
+  end if;
+end $$;
+alter table public.product_opportunities drop constraint if exists product_opportunities_status_check;
+alter table public.product_opportunities add constraint product_opportunities_status_check check (status in ('descoberta','em análise','validada','teste','descartada','convertida em produto'));
+alter table public.opportunity_product_drafts drop constraint if exists opportunity_product_drafts_status_check;
+alter table public.opportunity_product_drafts add constraint opportunity_product_drafts_status_check check (status in ('draft','active','archived'));

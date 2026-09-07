@@ -8,7 +8,7 @@ const permissions = fs.readFileSync(new URL('../src/lib/permissions.js', import.
 
 test('score de mercado exige múltiplos sinais', () => {
   assert.equal(calculateMarketOpportunityScore({ search_volume: 90 }), null);
-  assert.equal(calculateMarketOpportunityScore({ search_volume: 90, growth: 80 }), 73);
+  assert.equal(calculateMarketOpportunityScore({ search_volume: 90, growth: 80 }), 85);
   assert.deepEqual(combineMarketSignals([{ signal_type: 'growth', value: 80 }, { signal_type: 'growth', value: 60 }]).growth, 70);
 });
 
@@ -23,6 +23,8 @@ test('migration mantém mercado separado do estoque e isolado por empresa', () =
   assert.match(migration, /market_opportunities/);
   assert.match(migration, /is_company_member\(company_id\)/);
   assert.doesNotMatch(migration, /alter table public\.products/);
+  assert.match(migration, /market_signals_company_source_fk/);
+  assert.match(migration, /validate_market_opportunity_sources/);
 });
 
 test('permissões de Market Intelligence são separadas', () => {

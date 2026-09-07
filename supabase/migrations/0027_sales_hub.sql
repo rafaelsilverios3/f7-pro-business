@@ -3,3 +3,24 @@ create table if not exists public.sales_channels (id uuid primary key default ge
 create table if not exists public.product_channel_links (id uuid primary key default gen_random_uuid(), company_id uuid not null references public.companies(id) on delete cascade, product_id uuid not null references public.products(id) on delete cascade, channel_id uuid not null references public.sales_channels(id) on delete cascade, status text not null default 'draft', price numeric(14,2), fee_rate numeric(8,4), external_product_id text, external_url text, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(company_id,product_id,channel_id));
 create table if not exists public.channel_metrics (id uuid primary key default gen_random_uuid(), company_id uuid not null references public.companies(id) on delete cascade, channel_id uuid not null references public.sales_channels(id) on delete cascade, product_id uuid references public.products(id) on delete cascade, period_start date, period_end date, visits integer, orders integer, conversion numeric(8,4), revenue numeric(14,2), fees numeric(14,2), margin numeric(8,4), cancellations integer, returns integer, source text, created_at timestamptz not null default now());
 do $$ declare t text; begin foreach t in array array['sales_channels','product_channel_links','channel_metrics'] loop execute format('alter table public.%I enable row level security', t); execute format('drop policy if exists sales_hub_company_isolation on public.%I', t); execute format('create policy sales_hub_company_isolation on public.%I for all using (public.is_company_member(company_id)) with check (public.is_company_member(company_id))', t); execute format('grant select, insert, update, delete on public.%I to authenticated', t); end loop; end $$;
+create unique index if not exists sales_channels_company_id_key on public.sales_channels(company_id,id);
+create unique index if not exists products_company_id_key on public.products(company_id,id);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'product_channel_links_company_product_fk') then
+    alter table public.product_channel_links add constraint product_channel_links_company_product_fk foreign key (company_id, product_id) references public.products(company_id, id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'product_channel_links_company_channel_fk') then
+    alter table public.product_channel_links add constraint product_channel_links_company_channel_fk foreign key (company_id, channel_id) references public.sales_channels(company_id, id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'channel_metrics_company_channel_fk') then
+    alter table public.channel_metrics add constraint channel_metrics_company_channel_fk foreign key (company_id, channel_id) references public.sales_channels(company_id, id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'channel_metrics_company_product_fk') then
+    alter table public.channel_metrics add constraint channel_metrics_company_product_fk foreign key (company_id, product_id) references public.products(company_id, id) on delete cascade;
+  end if;
+end $$;
+alter table public.sales_channels drop constraint if exists sales_channels_status_check;
+alter table public.sales_channels add constraint sales_channels_status_check check (status in ('connected','disconnected','pending','error'));
+alter table public.product_channel_links drop constraint if exists product_channel_links_status_check;
+alter table public.product_channel_links add constraint product_channel_links_status_check check (status in ('active','draft','paused','error'));
+alter table public.channel_metrics add constraint channel_metrics_nonnegative_check check (coalesce(visits,0) >= 0 and coalesce(orders,0) >= 0 and coalesce(revenue,0) >= 0 and coalesce(fees,0) >= 0 and coalesce(cancellations,0) >= 0 and coalesce(returns,0) >= 0);
