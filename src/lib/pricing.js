@@ -23,13 +23,13 @@ export function priceForMargin(targetMarginPct, input = {}) {
   const realCost = calculateRealCost(input);
   const variableRate = calculateVariableRate(input) / 100;
   const denominator = 1 - variableRate - (num(targetMarginPct) / 100);
-  return denominator > 0 ? roundMoney(realCost / denominator) : 0;
+  return denominator > 0 ? roundMoney(realCost / denominator) : null;
 }
 
 export function calculateMinimumPrice(input = {}) {
   const realCost = calculateRealCost(input);
   const denominator = 1 - calculateVariableRate(input) / 100;
-  return denominator > 0 ? roundMoney(realCost / denominator) : 0;
+  return denominator > 0 ? roundMoney(realCost / denominator) : null;
 }
 
 export function psychologicalPrice(price, minimum = 0) {
@@ -46,5 +46,6 @@ export function buildPricingScenarios(input = {}, margins = [20, 25, 30, 35, 40,
 export function buildPricingSummary(input = {}, price = 0) {
   const realCost = calculateRealCost(input);
   const variableRate = calculateVariableRate(input);
-  return { realCost, variableRate, price: num(price), markup: calculateMarkup(price, realCost), margin: calculateMargin(price, realCost, variableRate), minimumPrice: calculateMinimumPrice(input), scenarios: buildPricingScenarios(input) };
+  const minimumPrice = calculateMinimumPrice(input);
+  return { realCost, variableRate, price: num(price), markup: calculateMarkup(price, realCost), margin: calculateMargin(price, realCost, variableRate), minimumPrice, feasible: minimumPrice != null, scenarios: buildPricingScenarios(input) };
 }

@@ -12,6 +12,10 @@ create table if not exists public.store_orders (
   items jsonb not null default '[]'::jsonb, total numeric(14,2) not null default 0, status text not null default 'pending',
   origin text not null default 'loja_online', created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
+create unique index if not exists customers_company_id_key on public.customers(company_id,id);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'store_orders_company_customer_fk') then alter table public.store_orders add constraint store_orders_company_customer_fk foreign key (company_id,customer_id) references public.customers(company_id,id); end if;
+end $$;
 alter table public.store_orders enable row level security;
 drop policy if exists store_orders_company_select on public.store_orders;
 create policy store_orders_company_select on public.store_orders for select using (public.is_company_member(company_id));
@@ -43,11 +47,16 @@ declare target_company_id uuid; customer_id uuid; order_row public.store_orders;
 begin
   select id into target_company_id from public.companies where store_enabled and lower(store_slug)=lower(trim(p_slug)) limit 1;
   if target_company_id is null then raise exception 'Loja não encontrada'; end if;
-  if coalesce(trim(p_customer->>'name'),'')='' or jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 then raise exception 'Dados do pedido inválidos'; end if;
+  if p_slug is null or length(trim(p_slug)) = 0 or length(trim(p_slug)) > 120 then raise exception 'Slug inválido'; end if;
+  if jsonb_typeof(p_customer) <> 'object' or octet_length(coalesce(p_customer::text,'')) > 4096 then raise exception 'Cliente inválido'; end if;
+  if coalesce(trim(p_customer->>'name'),'')='' or length(trim(p_customer->>'name')) > 160 then raise exception 'Nome do cliente inválido'; end if;
+  if length(coalesce(trim(p_customer->>'email'),'')) > 254 or length(coalesce(trim(p_customer->>'phone'),'')) > 40 then raise exception 'Contato do cliente inválido'; end if;
+  if jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 or jsonb_array_length(p_items)>100 or octet_length(coalesce(p_items::text,'')) > 65536 then raise exception 'Itens do pedido inválidos'; end if;
   select id into customer_id from public.customers c where c.company_id=target_company_id and lower(coalesce(c.email,''))=lower(coalesce(p_customer->>'email','')) and coalesce(p_customer->>'email','')<>'' limit 1;
   if customer_id is null then insert into public.customers(company_id,name,email,phone) values(target_company_id,trim(p_customer->>'name'),nullif(trim(p_customer->>'email'),''),nullif(trim(p_customer->>'phone'),'')) returning id into customer_id; end if;
   for input_item in select * from jsonb_array_elements(p_items) loop
-    qty := greatest(0, (input_item->>'quantity')::numeric); if qty <= 0 then raise exception 'Quantidade inválida'; end if;
+    if jsonb_typeof(input_item) <> 'object' or input_item->>'product_id' is null then raise exception 'Item inválido'; end if;
+    qty := (input_item->>'quantity')::numeric; if qty is null or qty <= 0 or qty > 10000 then raise exception 'Quantidade inválida'; end if;
     select * into product_row from public.products p where p.id=(input_item->>'product_id')::uuid and p.company_id=target_company_id and p.active for update;
     if product_row.id is null then raise exception 'Produto não encontrado'; end if;
     if nullif(input_item->>'variant_id','') is not null then select * into variant_row from public.product_variants v where v.id=(input_item->>'variant_id')::uuid and v.product_id=product_row.id and v.company_id=target_company_id and v.active for update; if variant_row.id is null or variant_row.stock < qty then raise exception 'Variação sem estoque'; end if; unit_price := coalesce(variant_row.price,product_row.price); else if product_row.stock < qty then raise exception 'Produto sem estoque'; end if; unit_price := product_row.price; end if;

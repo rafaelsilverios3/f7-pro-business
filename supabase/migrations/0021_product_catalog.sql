@@ -39,11 +39,20 @@ create table if not exists public.product_attributes (
 
 alter table public.sale_items add column if not exists variant_id uuid references public.product_variants(id);
 alter table public.stock_movements add column if not exists variant_id uuid references public.product_variants(id);
+create unique index if not exists products_company_id_key on public.products(company_id,id);
+create unique index if not exists product_variants_company_id_key on public.product_variants(company_id,id);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'product_images_company_product_fk') then alter table public.product_images add constraint product_images_company_product_fk foreign key (company_id,product_id) references public.products(company_id,id) on delete cascade; end if;
+  if not exists (select 1 from pg_constraint where conname = 'product_variants_company_product_fk') then alter table public.product_variants add constraint product_variants_company_product_fk foreign key (company_id,product_id) references public.products(company_id,id) on delete cascade; end if;
+  if not exists (select 1 from pg_constraint where conname = 'product_attributes_company_product_fk') then alter table public.product_attributes add constraint product_attributes_company_product_fk foreign key (company_id,product_id) references public.products(company_id,id) on delete cascade; end if;
+  if not exists (select 1 from pg_constraint where conname = 'sale_items_company_variant_fk') then alter table public.sale_items add constraint sale_items_company_variant_fk foreign key (company_id,variant_id) references public.product_variants(company_id,id); end if;
+  if not exists (select 1 from pg_constraint where conname = 'stock_movements_company_variant_fk') then alter table public.stock_movements add constraint stock_movements_company_variant_fk foreign key (company_id,variant_id) references public.product_variants(company_id,id); end if;
+end $$;
 create index if not exists idx_product_variants_company_product on public.product_variants(company_id, product_id);
 create index if not exists idx_product_variants_company_barcode on public.product_variants(company_id, barcode) where barcode is not null;
 create index if not exists idx_product_images_company_product on public.product_images(company_id, product_id, sort_order);
 
-do $$ declare table_name text; begin foreach table_name in array array['product_images','product_variants','product_attributes'] loop execute format('alter table public.%I enable row level security', table_name); execute format('drop policy if exists catalog_company_isolation on public.%I', table_name); execute format('create policy catalog_company_isolation on public.%I for all using (public.is_company_member(company_id)) with check (public.is_company_member(company_id))', table_name); execute format('grant select, insert, update, delete on public.%I to authenticated', table_name); end loop; end $$;
+do $$ declare table_name text; begin foreach table_name in array array['product_images','product_variants','product_attributes'] loop execute format('alter table public.%I enable row level security', table_name); execute format('drop policy if exists catalog_company_isolation on public.%I', table_name); execute format('drop policy if exists catalog_select on public.%I', table_name); execute format('drop policy if exists catalog_insert on public.%I', table_name); execute format('drop policy if exists catalog_update on public.%I', table_name); execute format('drop policy if exists catalog_delete on public.%I', table_name); execute format('create policy catalog_select on public.%I for select to authenticated using (public.current_company_role(company_id) in (''admin'',''gestor'',''comercial'',''vendedor'',''estoque'',''atendimento''))', table_name); execute format('create policy catalog_insert on public.%I for insert to authenticated with check (public.current_company_role(company_id) in (''admin'',''gestor''))', table_name); execute format('create policy catalog_update on public.%I for update to authenticated using (public.current_company_role(company_id) in (''admin'',''gestor'')) with check (public.current_company_role(company_id) in (''admin'',''gestor''))', table_name); execute format('create policy catalog_delete on public.%I for delete to authenticated using (public.current_company_role(company_id) in (''admin'',''gestor''))', table_name); execute format('grant select, insert, update, delete on public.%I to authenticated', table_name); end loop; end $$;
 
 insert into storage.buckets (id, name, public) values ('product-catalog', 'product-catalog', false) on conflict (id) do nothing;
 drop policy if exists product_catalog_select on storage.objects;
@@ -59,9 +68,15 @@ create or replace function public.apply_variant_price(target_company uuid, targe
 returns public.product_variants language plpgsql security definer set search_path = public as $$
 declare result public.product_variants; previous public.product_variants; payload jsonb := coalesce(pricing_data, '{}'::jsonb);
 begin
-  if public.current_company_role(target_company) not in ('admin','gestor') then raise exception 'Sem permissão para aplicar preço'; end if;
+  if auth.uid() is null or public.current_company_role(target_company) not in ('admin','gestor') then raise exception 'Sem permissão para aplicar preço'; end if;
+  if jsonb_typeof(payload) <> 'object' then raise exception 'Dados de precificação inválidos'; end if;
+  if payload ? 'realCost' and (payload->>'realCost')::numeric < 0 then raise exception 'Custo real inválido'; end if;
+  if payload ? 'variableRate' and ((payload->>'variableRate')::numeric < 0 or (payload->>'variableRate')::numeric >= 100) then raise exception 'Taxa variável inválida'; end if;
+  if payload ? 'targetMargin' and ((payload->>'targetMargin')::numeric < 0 or (payload->>'targetMargin')::numeric >= 100) then raise exception 'Margem alvo inválida'; end if;
+  if payload ? 'minimumPrice' and (payload->>'minimumPrice')::numeric < 0 then raise exception 'Preço mínimo inválido'; end if;
+  if payload ? 'minimumPrice' and (payload->>'minimumPrice')::numeric > 0 and new_price < (payload->>'minimumPrice')::numeric then raise exception 'Preço abaixo do mínimo'; end if;
   select * into previous from public.product_variants where id = target_variant and company_id = target_company for update;
-  if previous.id is null or new_price < 0 then raise exception 'Variação ou preço inválido'; end if;
+  if previous.id is null or new_price is null or new_price::text in ('NaN','Infinity','-Infinity') or new_price <= 0 or abs(new_price) > 9999999999999.99 then raise exception 'Variação ou preço inválido'; end if;
   update public.product_variants set price = round(new_price,2), updated_at = now() where id = target_variant returning * into result;
   insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(target_company,auth.uid(),'variant.price_applied','ProductVariant',target_variant,to_jsonb(previous),to_jsonb(result));
   return result;

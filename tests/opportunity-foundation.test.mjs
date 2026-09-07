@@ -19,7 +19,7 @@ test('migration isola oportunidades e rascunhos por empresa', () => {
   assert.match(migration, /supplier_score/);
   assert.match(migration, /trust_score/);
   assert.match(migration, /channel_score/);
-  assert.match(migration, /is_company_member\(company_id\)/);
+  assert.match(migration, /current_company_role\(company_id\)/);
   assert.match(migration, /active boolean not null default false/);
 });
 

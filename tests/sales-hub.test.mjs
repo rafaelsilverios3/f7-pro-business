@@ -6,5 +6,5 @@ const migration = fs.readFileSync(new URL('../supabase/migrations/0027_sales_hub
 const permissions = fs.readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
 test('Channel Score exige métricas suficientes', () => { assert.equal(calculateChannelScore({ orders: 80 }), null); assert.equal(calculateChannelScore({ orders: 80, conversion: 60 }), 70); });
 test('canais suportados não simulam integrações', () => { assert.ok(CHANNEL_TYPES.includes('marketplace')); assert.ok(CHANNEL_TYPES.includes('whatsapp')); assert.match(migration, /connected boolean not null default false/); });
-test('produto por canal e métricas são isolados por empresa', () => { assert.match(migration, /product_channel_links/); assert.match(migration, /channel_metrics/); assert.match(migration, /is_company_member\(company_id\)/); });
+test('produto por canal e métricas são isolados por empresa', () => { assert.match(migration, /product_channel_links/); assert.match(migration, /channel_metrics/); assert.match(migration, /current_company_role\(company_id\)/); });
 test('permissões do Sales Hub são separadas', () => { assert.match(permissions, /sales_channels\.view/); assert.match(permissions, /sales_channels\.manage/); assert.match(permissions, /vendedor:[^\n]+sales_channels\.view/); });

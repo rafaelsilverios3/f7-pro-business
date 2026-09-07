@@ -17,7 +17,7 @@ test('migration mantém perfis, avaliações e sinais isolados por empresa', () 
   assert.match(migration, /supplier_intelligence_profiles/);
   assert.match(migration, /supplier_reviews/);
   assert.match(migration, /supplier_risk_signals/);
-  assert.match(migration, /is_company_member\(company_id\)/);
+  assert.match(migration, /current_company_role\(company_id\)/);
   assert.match(migration, /needs_validation boolean not null default true/);
 });
 

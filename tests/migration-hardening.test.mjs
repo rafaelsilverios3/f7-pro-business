@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
+
+test('precificação rejeita preço inválido e mínimo informado no backend', () => {
+  const sql = read('0020_intelligent_pricing.sql');
+  assert.match(sql, /auth\.uid\(\) is null/);
+  assert.match(sql, /new_price <= 0/);
+  assert.match(sql, /minimumPrice/);
+  assert.match(sql, /new_price < \(payload->>'minimumPrice'\)/);
+});
+
+test('catálogo separa leitura de gerenciamento por role', () => {
+  const sql = read('0021_product_catalog.sql');
+  assert.match(sql, /create policy catalog_select/);
+  assert.match(sql, /create policy catalog_insert/);
+  assert.match(sql, /current_company_role\(company_id\)/);
+  assert.match(sql, /product_images_company_product_fk/);
+});
+
+test('loja pública limita payload e calcula preço no banco', () => {
+  const sql = read('0023_online_store.sql');
+  assert.match(sql, /jsonb_array_length\(p_items\)>100/);
+  assert.match(sql, /length\(trim\(p_customer->>'name'\)\) > 160/);
+  assert.match(sql, /unit_price := product_row\.price/);
+});
+
+test('módulos avançados usam current_company_role e métricas não negativas', () => {
+  for (const file of ['0024_opportunity_foundation.sql', '0025_supplier_intelligence.sql', '0026_market_intelligence.sql', '0027_sales_hub.sql']) {
+    assert.match(read(file), /current_company_role\(company_id\)/, file);
+  }
+  const sales = read('0027_sales_hub.sql');
+  assert.match(sales, /channel_metrics_nonnegative_check/);
+  assert.match(sales, /fee_rate_check/);
+  assert.match(sales, /conversion_check/);
+});
+
+test('policies não deixam roles somente leitura escrever módulos avançados', () => {
+  const opportunity = read('0024_opportunity_foundation.sql');
+  const supplier = read('0025_supplier_intelligence.sql');
+  const market = read('0026_market_intelligence.sql');
+  const salesHub = read('0027_sales_hub.sql');
+  for (const sql of [opportunity, supplier, market, salesHub]) {
+    assert.match(sql, /create policy .*_select/);
+    assert.match(sql, /create policy .*_insert/);
+    assert.match(sql, /create policy .*_update/);
+    assert.match(sql, /create policy .*_delete/);
+  }
+  assert.match(opportunity, /opportunity_product_drafts_company_opportunity_fk/);
+  assert.match(supplier, /company_supplier_fk/);
+  assert.match(salesHub, /company_product_fk/);
+});

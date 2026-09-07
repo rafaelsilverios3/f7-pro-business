@@ -21,7 +21,7 @@ test('migration mantém mercado separado do estoque e isolado por empresa', () =
   assert.match(migration, /market_sources/);
   assert.match(migration, /market_signals/);
   assert.match(migration, /market_opportunities/);
-  assert.match(migration, /is_company_member\(company_id\)/);
+  assert.match(migration, /current_company_role\(company_id\)/);
   assert.doesNotMatch(migration, /alter table public\.products/);
   assert.match(migration, /market_signals_company_source_fk/);
   assert.match(migration, /validate_market_opportunity_sources/);
