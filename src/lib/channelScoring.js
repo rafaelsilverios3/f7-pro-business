@@ -1,0 +1,2 @@
+export function calculateChannelScore(metric = {}) { const values = ['orders', 'conversion', 'margin', 'fees', 'competition', 'returns', 'operational_cost'].map((key) => metric[key]).filter((value) => value != null); return values.length < 2 ? null : Math.round(values.reduce((sum, value) => sum + Math.max(0, Math.min(100, Number(value))), 0) / values.length); }
+export const CHANNEL_TYPES = Object.freeze(['loja_fisica', 'loja_f7', 'whatsapp', 'marketplace', 'social_commerce', 'outros']);

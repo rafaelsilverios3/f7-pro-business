@@ -41,6 +41,7 @@ const NAV = [
       { to: '/opportunities', label: 'F7 Opportunity', icon: Target, permission: 'opportunity.view' },
       { to: '/supplier-intelligence', label: 'Supplier Intelligence', icon: Shield, permission: 'supplier_intelligence.view' },
       { to: '/market-intelligence', label: 'Market Intelligence', icon: Globe2, permission: 'market_intelligence.view' },
+      { to: '/sales-hub', label: 'F7 Sales Hub', icon: BarChart3, permission: 'sales_channels.view' },
       { to: '/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'reports.view' },
     ],
   },

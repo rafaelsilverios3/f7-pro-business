@@ -34,6 +34,7 @@ import Storefront from './pages/Storefront.jsx';
 import Opportunities from './pages/Opportunities.jsx';
 import SupplierIntelligence from './pages/SupplierIntelligence.jsx';
 import MarketIntelligence from './pages/MarketIntelligence.jsx';
+import SalesHub from './pages/SalesHub.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -128,6 +129,7 @@ const AuthenticatedApp = () => {
           <Route path="/opportunities" element={<RoleGuard permission="opportunity.view"><Opportunities /></RoleGuard>} />
           <Route path="/supplier-intelligence" element={<RoleGuard permission="supplier_intelligence.view"><SupplierIntelligence /></RoleGuard>} />
           <Route path="/market-intelligence" element={<RoleGuard permission="market_intelligence.view"><MarketIntelligence /></RoleGuard>} />
+          <Route path="/sales-hub" element={<RoleGuard permission="sales_channels.view"><SalesHub /></RoleGuard>} />
           <Route path="/relatorios" element={<RoleGuard permission="reports.view"><Relatorios /></RoleGuard>} />
           <Route path="/notificacoes" element={<RoleGuard permission="notifications.view"><Notificacoes /></RoleGuard>} />
         </Route>

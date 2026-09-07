@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 let client;
-const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', SupplierIntelligence: 'supplier_intelligence_profiles', SupplierReview: 'supplier_reviews', SupplierRiskSignal: 'supplier_risk_signals', MarketSource: 'market_sources', MarketSignal: 'market_signals', MarketOpportunity: 'market_opportunities', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
+const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', SupplierIntelligence: 'supplier_intelligence_profiles', SupplierReview: 'supplier_reviews', SupplierRiskSignal: 'supplier_risk_signals', MarketSource: 'market_sources', MarketSignal: 'market_signals', MarketOpportunity: 'market_opportunities', SalesChannel: 'sales_channels', ProductChannel: 'product_channel_links', ChannelMetric: 'channel_metrics', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
 const sortColumns = { created_date: 'created_at', updated_date: 'updated_at' };
 const normalize = (name, row) => {
   if (!row) return row;
@@ -37,6 +37,9 @@ const columns = {
   MarketSource: ['company_id', 'name', 'source_type', 'url', 'active', 'confidence', 'metadata'],
   MarketSignal: ['company_id', 'source_id', 'product_name', 'signal_type', 'value', 'unit', 'source', 'source_type', 'url', 'collected_at', 'confidence', 'metadata'],
   MarketOpportunity: ['company_id', 'product_name', 'trend', 'demand', 'competition', 'potential_margin', 'risk', 'estimated_capital', 'opportunity_score', 'trust_score', 'data_status', 'source_ids', 'metadata'],
+  SalesChannel: ['company_id', 'name', 'channel_type', 'status', 'connected', 'external_account_id', 'metadata'],
+  ProductChannel: ['company_id', 'product_id', 'channel_id', 'status', 'price', 'fee_rate', 'external_product_id', 'external_url'],
+  ChannelMetric: ['company_id', 'channel_id', 'product_id', 'period_start', 'period_end', 'visits', 'orders', 'revenue', 'fees', 'margin', 'cancellations', 'returns', 'source'],
 };
 const payloadFor = (name, payload = {}) => {
   let mapped = payload;
