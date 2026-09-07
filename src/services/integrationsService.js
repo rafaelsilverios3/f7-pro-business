@@ -5,6 +5,26 @@ const SAFE_INTEGRATION_FIELDS = ['id', 'company_id', 'provider', 'status', 'exte
 
 export const sanitizeIntegration = (row = {}) => Object.fromEntries(SAFE_INTEGRATION_FIELDS.filter((key) => row[key] !== undefined).map((key) => [key, row[key]]));
 
+function redactDiagnosticText(value) {
+  return String(value || '')
+    .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]')
+    .replace(/(access[_-]?token|app[_-]?secret|verify[_-]?token|authorization)\s*[:=]\s*[^,\s}\]]+/gi, '$1=[REDACTED]')
+    .slice(0, 280);
+}
+
+export function safeMetaDiagnostic(error = {}) {
+  const meta = error.meta && typeof error.meta === 'object' ? error.meta : null;
+  if (!meta) return null;
+  return {
+    httpStatus: error.httpStatus ?? null,
+    code: meta.code ?? error.metaCode ?? null,
+    subcode: meta.subcode ?? error.metaSubcode ?? null,
+    type: typeof meta.type === 'string' ? redactDiagnosticText(meta.type) : null,
+    message: typeof meta.message === 'string' ? redactDiagnosticText(meta.message) : null,
+    graphVersion: error.graphVersion || null,
+  };
+}
+
 export async function listIntegrations(companyId) {
   if (!companyId) return [];
   if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
@@ -36,13 +56,25 @@ async function invokeIntegration(functionName, body) {
   const { data, error } = await getSupabaseClient().functions.invoke(functionName, { body });
   if (error) {
     let detail = null;
-    try { detail = await error.context?.json?.(); } catch { /* provider errors stay generic */ }
-    const meta = detail?.meta;
+    try {
+      const context = error.context?.clone ? error.context.clone() : error.context;
+      detail = await context?.json?.();
+    } catch { /* provider errors stay generic */ }
+    const meta = detail?.meta && typeof detail.meta === 'object' ? detail.meta : null;
     const metaCode = meta?.code ?? detail?.meta_code;
     const metaSubcode = meta?.subcode ?? detail?.meta_subcode;
     const cause = new Error(metaCode != null
       ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
-      : detail?.code || error.message || 'Não foi possível concluir a ação.');
+      : detail?.message || error.message || 'Não foi possível concluir a ação.');
+    Object.assign(cause, {
+      code: detail?.code || null,
+      providerStatus: detail?.provider_status || null,
+      meta,
+      metaCode: metaCode ?? null,
+      metaSubcode: metaSubcode ?? null,
+      graphVersion: detail?.graph_version || null,
+      httpStatus: detail?.http_status || error.context?.status || null,
+    });
     throw cause;
   }
   if (data?.code && data.code !== 'OK') throw new Error(data.code);
