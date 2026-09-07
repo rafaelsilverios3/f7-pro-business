@@ -114,22 +114,38 @@ body.light-theme .app-shell .text-slate-200,
 body.light-theme .app-shell .text-slate-300 { color: #334155 !important; }
 body.light-theme .app-shell .text-slate-400,
 body.light-theme .app-shell .text-slate-500 { color: #64748b !important; }
+body.light-theme .app-shell .text-slate-900,
+body.light-theme .app-shell .text-slate-800,
+body.light-theme .app-shell .text-slate-700,
+body.light-theme .app-shell .text-slate-600 { color: #172033 !important; }
 body.light-theme .app-shell .bg-white { background: #ffffff !important; }
 body.light-theme .app-shell .bg-slate-50 { background: #f8fafc !important; }
 body.light-theme .app-shell .border-slate-200.bg-white,
 body.light-theme .app-shell .border-slate-100.bg-white { background: #4b5563 !important; border-color: #64748b !important; box-shadow: 0 10px 24px rgba(30, 64, 100, .12) !important; }
 body.light-theme .app-shell .border-slate-200.bg-white { background: #4b5563 !important; border-color: #64748b !important; box-shadow: 0 10px 24px rgba(30, 64, 100, .12) !important; }
 body.light-theme .app-shell .f7-kpi-card,
-body.light-theme .app-shell .f7-quick-actions { background: linear-gradient(145deg, #4b5563, #374151) !important; border-color: #64748b !important; color: #f8fafc !important; }
+body.light-theme .app-shell .f7-quick-actions { background: linear-gradient(145deg, #707985, #4f5967) !important; border-color: #7c8795 !important; color: #f8fafc !important; }
+body.light-theme .app-shell .border-slate-200.bg-white,
+body.light-theme .app-shell .border-slate-100.bg-white { background: linear-gradient(145deg, #707985, #4f5967) !important; border-color: #7c8795 !important; color: #f8fafc !important; }
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-900,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-800,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-700,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-600,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-900,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-800,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-700,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-600 { color: #f8fafc !important; }
 body.light-theme .app-shell .f7-kpi-card .text-white,
 body.light-theme .app-shell .f7-kpi-card .text-slate-300,
 body.light-theme .app-shell .f7-quick-actions .text-white,
 body.light-theme .app-shell .f7-quick-actions .text-slate-200 { color: #f8fafc !important; }
 body.light-theme .app-shell .f7-quick-actions a { background: rgba(15, 23, 42, .28) !important; border-color: rgba(255, 255, 255, .14) !important; color: #f8fafc !important; }
 body.light-theme .app-shell aside a.bg-gradient-to-r { color: #ffffff !important; }
+body.light-theme .app-shell aside a.bg-gradient-to-r { background: linear-gradient(145deg, #707985, #4f5967) !important; box-shadow: 0 8px 18px rgba(71, 85, 105, .22) !important; }
+body.light-theme .app-shell .f7-period-active { background: linear-gradient(145deg, #707985, #4f5967) !important; box-shadow: 0 6px 14px rgba(71, 85, 105, .22) !important; }
 body.light-theme .app-shell button:not([disabled]),
 body.light-theme .app-shell select { color: #f8fafc; }
-body.light-theme .app-shell .f7-dialog-content { background: #4b5563 !important; color: #f8fafc !important; }
+body.light-theme .app-shell .f7-dialog-content { background: linear-gradient(145deg, #707985, #4f5967) !important; color: #f8fafc !important; }
 body.light-theme .app-shell input,
 body.light-theme .app-shell textarea,
 body.light-theme .app-shell select { background: #4b5563 !important; color: #f8fafc !important; border-color: #718096 !important; }

@@ -219,7 +219,7 @@ export default function Dashboard() {
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value)}
-                className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-200 ${period === p.value ? 'bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-200 ${period === p.value ? 'f7-period-active bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
               >
                 {p.label}
               </button>
