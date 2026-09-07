@@ -1,3 +1,27 @@
-import { corsHeaders,json,auth,admin } from '../_shared/core.ts';
-Deno.serve(async(req)=>{if(req.method==='OPTIONS')return new Response('ok',{headers:corsHeaders}); try {const jwt=auth(req); const sb=admin(); const {data:{user}}=await sb.auth.getUser(jwt); if(!user)return json({code:'AUTH_REQUIRED'},401); const {data:members}=await sb.from('company_users').select('company_id,role,active').eq('user_id',user.id).eq('active',true); const ids=(members||[]).filter((m)=>['admin','gestor'].includes(m.role)).map((m)=>m.company_id); const {data:ints}=ids.length?await sb.from('company_integrations').select('company_id,provider,status').in('company_id',ids):{data:[]}; return json({integrations:ids.map((id)=>({company_id:id,whatsapp:ints?.find((x)=>x.company_id===id&&x.provider==='whatsapp')?.status||'not_configured',ai:ints?.find((x)=>x.company_id===id&&x.provider==='ai')?.status||'not_configured'}))});}catch{return json({code:'AUTH_REQUIRED'},401)}}); 
+import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
+import { graphRequest, phoneValidation } from '../_shared/whatsapp.ts';
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  try {
+    const jwt = auth(req); const sb = admin();
+    const { data: { user } } = await sb.auth.getUser(jwt);
+    if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
+    const body = await req.json().catch(() => ({}));
+    const { data: members } = await sb.from('company_users').select('company_id,role,active').eq('user_id', user.id).eq('active', true);
+    const ids = (members || []).filter((m) => ['admin', 'gestor'].includes(m.role)).map((m) => m.company_id).filter((id) => !body.company_id || id === body.company_id);
+    const { data: integrations } = ids.length ? await sb.from('company_integrations').select('company_id,provider,status,external_phone_id').in('company_id', ids) : { data: [] };
+    const result = [];
+    for (const companyId of ids) {
+      const integration = integrations?.find((item) => item.company_id === companyId && item.provider === 'whatsapp');
+      let provider = 'unknown'; let phone = integration?.external_phone_id ? 'configured' : 'not_configured';
+      if (integration?.external_phone_id) {
+        const meta = await graphRequest(`${integration.external_phone_id}?fields=id`);
+        provider = meta.ok && phoneValidation(meta.data, integration.external_phone_id) ? 'ok' : 'error';
+      }
+      result.push({ company_id: companyId, whatsapp: { status: integration?.status || 'not_configured', database: 'ok', provider, phone, webhook: 'unknown', send: integration?.status === 'connected' && provider === 'ok' ? 'ready' : 'unknown', receive: 'unknown' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
+    }
+    return json({ integrations: result });
+  } catch { return json({ code: 'PROVIDER_ERROR' }, 500); }
+});
 

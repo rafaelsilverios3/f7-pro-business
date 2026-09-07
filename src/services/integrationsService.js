@@ -25,10 +25,20 @@ export async function listIntegrationLogs(companyId) {
   return data || [];
 }
 
-export async function checkIntegrationHealth() {
+export async function checkIntegrationHealth(companyId) {
   if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return null;
-  const { data, error } = await getSupabaseClient().functions.invoke('integration-health', { body: {} });
+  const { data, error } = await getSupabaseClient().functions.invoke('integration-health', { body: companyId ? { company_id: companyId } : {} });
   if (error) throw error;
   return data;
 }
 
+async function invokeIntegration(functionName, body) {
+  const { data, error } = await getSupabaseClient().functions.invoke(functionName, { body });
+  if (error) throw error;
+  if (data?.code && data.code !== 'OK') throw new Error(data.code);
+  return data;
+}
+
+export const connectWhatsApp = (companyId, phoneNumberId) => invokeIntegration('whatsapp-connect', { company_id: companyId, phone_number_id: phoneNumberId });
+export const disconnectWhatsApp = (companyId) => invokeIntegration('whatsapp-disconnect', { company_id: companyId });
+export const testWhatsAppConnection = (companyId) => invokeIntegration('whatsapp-test', { company_id: companyId });
