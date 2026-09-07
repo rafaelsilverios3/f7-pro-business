@@ -43,6 +43,13 @@ export default function Layout() {
   useEffect(() => { setResolvedTheme(applyTheme(theme)); }, [theme]);
 
   useEffect(() => {
+    const storeName = String(company?.name || '').trim();
+    document.title = storeName ? `F7 PRO BUSINESS - ${storeName}` : 'F7 PRO BUSINESS';
+    const favicon = document.querySelector('link[rel="icon"]');
+    if (favicon) favicon.setAttribute('href', '/branding/f7-icon.png');
+  }, [company?.name]);
+
+  useEffect(() => {
     if (!company) return;
     if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
       // Notifications are not part of the initial Supabase schema yet.
