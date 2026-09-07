@@ -38,6 +38,7 @@ const NAV = [
       { to: '/atendimento', label: 'Smart Atendimento', icon: MessageSquare, permission: 'conversation.view' },
       { to: '/automacoes', label: 'Automações', icon: Zap, permission: 'automation.view' },
       { to: '/intelligence', label: 'F7 Intelligence', icon: BrainCircuit, permission: 'intelligence.view' },
+      { to: '/opportunities', label: 'F7 Opportunity', icon: Target, permission: 'opportunity.view' },
       { to: '/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'reports.view' },
     ],
   },
