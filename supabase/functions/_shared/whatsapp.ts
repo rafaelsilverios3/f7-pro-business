@@ -35,13 +35,18 @@ export async function graphRequest(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
-  const response = await fetch(url, { method: init.method || 'GET', ...init, headers });
-  const data = await response.json().catch(() => null);
-  return { ok: response.ok, status: response.status, data, code: response.ok ? null : 'PROVIDER_ERROR', meta_error: response.ok ? null : sanitizeMetaError(data, token), graph_version };
+  try {
+    const response = await fetch(url, { method: init.method || 'GET', ...init, headers });
+    const data = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, data, code: response.ok ? null : 'PROVIDER_ERROR', meta_error: response.ok ? null : sanitizeMetaError(data, token), graph_version };
+  } catch {
+    return { ok: false, status: 502, data: null, code: 'PROVIDER_UNAVAILABLE', meta_error: null, graph_version };
+  }
 }
 
 export function publicProviderError(result: { status?: number; meta_error?: Record<string, unknown> | null; graph_version?: string }) {
-  return { code: 'PROVIDER_ERROR', provider_status: result.status && result.status >= 500 ? 'unavailable' : 'rejected', meta: result.meta_error || undefined, graph_version: result.graph_version };
+  const status = Number.isInteger(result.status) && (result.status as number) >= 400 && (result.status as number) <= 599 ? result.status as number : 502;
+  return { code: 'PROVIDER_ERROR', provider_status: status >= 500 ? 'unavailable' : 'rejected', meta: result.meta_error || null, graph_version: result.graph_version || graphVersionLabel(), http_status: status };
 }
 
 export function phoneValidation(data: any, requestedId: string) {

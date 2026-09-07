@@ -21,9 +21,10 @@ Deno.serve(async (req) => {
         providerDiagnostic = meta.ok ? null : publicProviderError(meta);
         graph_version = meta.graph_version;
       }
-      result.push({ company_id: companyId, whatsapp: { status: integration?.status || 'not_configured', database: 'ok', provider, provider_diagnostic: providerDiagnostic, graph_version, phone, webhook: 'unknown', send: integration?.status === 'connected' && provider === 'ok' ? 'ready' : 'unknown', receive: 'unknown' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
+      const status = provider === 'error' ? 'error' : integration?.status || 'not_configured';
+      result.push({ company_id: companyId, whatsapp: { status, database: 'ok', provider, provider_diagnostic: providerDiagnostic, graph_version, phone, webhook: 'unknown', send: integration?.status === 'connected' && provider === 'ok' ? 'ready' : 'unknown', receive: 'unknown' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
     }
     return json({ integrations: result });
-  } catch { return json({ code: 'PROVIDER_ERROR' }, 500); }
+  } catch { return json({ code: 'INTERNAL_PROVIDER_ERROR', provider_status: 'unavailable' }, 500); }
 });
 

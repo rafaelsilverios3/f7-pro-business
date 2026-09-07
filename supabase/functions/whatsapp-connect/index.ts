@@ -22,7 +22,9 @@ Deno.serve(async (req) => {
     const meta = await graphRequest(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`);
     if (!phoneValidation(meta.data, phoneId)) {
       await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'whatsapp.meta_validation_failed', status: 'error', metadata: { meta_code: meta.meta_error?.code || null, meta_subcode: meta.meta_error?.subcode || null, meta_type: meta.meta_error?.type || null, graph_version: meta.graph_version, http_status: meta.status } });
-      return json(publicProviderError(meta), 502);
+      const providerError = publicProviderError(meta);
+      const providerStatus = meta.status && meta.status >= 400 && meta.status <= 599 ? meta.status : 502;
+      return json({ ...providerError, http_status: providerStatus }, providerStatus);
     }
     const businessId = meta.data?.whatsapp_business_account?.id || null;
     if (body.business_id && businessId && String(body.business_id) !== String(businessId)) {
@@ -33,5 +35,5 @@ Deno.serve(async (req) => {
     if (error) throw error;
     await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'connection_validated', status: 'success', metadata: { phone_configured: true, provider_status: 'ok' } });
     return json({ integration, provider: { status: 'ok', phone: 'configured', api_reachable: true } });
-  } catch { return json({ code: 'PROVIDER_ERROR' }, 500); }
+  } catch { return json({ code: 'INTERNAL_PROVIDER_ERROR', provider_status: 'unavailable' }, 500); }
 });
