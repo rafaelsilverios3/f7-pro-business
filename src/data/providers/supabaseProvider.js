@@ -29,7 +29,7 @@ const columns = {
   IntelligenceInsight: ['company_id', 'type', 'severity', 'title', 'description', 'entity', 'entity_id', 'data', 'status', 'resolved_at'],
   CompanySubscription: ['company_id', 'plan', 'status', 'trial_ends_at', 'current_period_start', 'current_period_end'],
   CompanyInvite: ['company_id', 'email', 'role', 'token_hash', 'status', 'expires_at', 'invited_by'],
-  ProductOpportunity: ['company_id', 'title', 'description', 'status', 'source', 'source_url', 'collected_at', 'source_type', 'confidence_level', 'scores', 'metadata'],
+  ProductOpportunity: ['company_id', 'title', 'description', 'status', 'source', 'source_url', 'collected_at', 'source_type', 'confidence_level', 'scores', 'opportunity_score', 'supplier_score', 'trust_score', 'channel_score', 'metadata'],
   OpportunityProductDraft: ['company_id', 'opportunity_id', 'name', 'description', 'category', 'price', 'cost', 'stock', 'active', 'status'],
 };
 const payloadFor = (name, payload = {}) => {

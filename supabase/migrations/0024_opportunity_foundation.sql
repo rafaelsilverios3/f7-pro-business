@@ -3,6 +3,8 @@ create table if not exists public.product_opportunities (
   id uuid primary key default gen_random_uuid(), company_id uuid not null references public.companies(id) on delete cascade,
   title text not null, description text, status text not null default 'descoberta', source text, source_url text,
   collected_at timestamptz, source_type text, confidence_level text, scores jsonb not null default '{}'::jsonb,
+  opportunity_score numeric(5,2) not null default 0, supplier_score numeric(5,2) not null default 0,
+  trust_score numeric(5,2) not null default 0, channel_score numeric(5,2) not null default 0,
   metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create table if not exists public.opportunity_product_drafts (
