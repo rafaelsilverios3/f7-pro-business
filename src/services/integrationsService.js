@@ -53,32 +53,59 @@ export async function checkIntegrationHealth(companyId) {
 }
 
 async function invokeIntegration(functionName, body) {
-  const { data, error } = await getSupabaseClient().functions.invoke(functionName, { body });
-  if (error) {
-    let detail = null;
-    try {
-      const context = error.context?.clone ? error.context.clone() : error.context;
-      detail = await context?.json?.();
-    } catch { /* provider errors stay generic */ }
-    const meta = detail?.meta && typeof detail.meta === 'object' ? detail.meta : null;
-    const metaCode = meta?.code ?? detail?.meta_code;
-    const metaSubcode = meta?.subcode ?? detail?.meta_subcode;
-    const cause = new Error(metaCode != null
-      ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
-      : detail?.message || error.message || 'Não foi possível concluir a ação.');
-    Object.assign(cause, {
-      code: detail?.code || null,
-      providerStatus: detail?.provider_status || null,
-      meta,
-      metaCode: metaCode ?? null,
-      metaSubcode: metaSubcode ?? null,
-      graphVersion: detail?.graph_version || null,
-      httpStatus: detail?.http_status || error.context?.status || null,
-    });
-    throw cause;
+  if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
+    return getDataProvider().rpc(functionName, { body });
   }
-  if (data?.code && data.code !== 'OK') throw new Error(data.code);
-  return data;
+
+  const supabase = getSupabaseClient();
+  const { data: { session } = {} } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('AUTH_REQUIRED');
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const publicKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (!supabaseUrl || !publicKey) throw new Error('Supabase não configurado.');
+
+  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: publicKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  let detail = null;
+  try { detail = await response.json(); } catch { /* non-JSON provider errors remain generic */ }
+  if (!response.ok) throw createIntegrationError(detail, response.status);
+  if (detail?.code && detail.code !== 'OK') throw createIntegrationError(detail, response.status);
+  return detail;
+}
+
+function createIntegrationError(rawDetail, httpStatus) {
+  const detail = rawDetail && typeof rawDetail === 'object' ? rawDetail : {};
+  const safeDetail = detail;
+  const rawMeta = safeDetail.meta && typeof safeDetail.meta === 'object' ? safeDetail.meta : {};
+  const meta = {
+    type: typeof rawMeta.type === 'string' ? redactDiagnosticText(rawMeta.type) : null,
+    code: rawMeta.code ?? safeDetail.meta_code ?? null,
+    subcode: rawMeta.subcode ?? safeDetail.meta_subcode ?? null,
+    message: typeof rawMeta.message === 'string' ? redactDiagnosticText(rawMeta.message) : null,
+  };
+  const metaCode = meta.code;
+  const metaSubcode = meta.subcode;
+  const cause = new Error(metaCode != null
+    ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
+    : typeof safeDetail.message === 'string' ? redactDiagnosticText(safeDetail.message) : 'Não foi possível concluir a ação.');
+  Object.assign(cause, {
+    code: detail?.code || null,
+    providerStatus: detail?.provider_status || null,
+    meta,
+    metaCode,
+    metaSubcode,
+    graphVersion: detail?.graph_version ? redactDiagnosticText(detail.graph_version) : null,
+    httpStatus: detail?.http_status || httpStatus || null,
+  });
+  return cause;
 }
 
 export const connectWhatsApp = (companyId, phoneNumberId) => invokeIntegration('whatsapp-connect', { company_id: companyId, phone_number_id: phoneNumberId });
