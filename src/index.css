@@ -95,3 +95,29 @@ button:focus-visible,a:focus-visible { outline:2px solid #27b8ff; outline-offset
 .app-shell .border-slate-100.bg-white h3 { color: #f4f8ff !important; }
 .recharts-cartesian-grid line { stroke: rgba(148, 163, 184, .12) !important; }
 .recharts-tooltip-wrapper { outline: none !important; }
+
+/* Light mode keeps the same F7 hierarchy while replacing dark surfaces with
+   readable day-mode surfaces. */
+body.light-theme { background: #eef3f9; color: #172033; }
+body.light-theme .app-shell { background: #eef3f9; }
+body.light-theme .app-shell [class*="bg-[#07111f"],
+body.light-theme .app-shell [class*="bg-[#091426"],
+body.light-theme .app-shell [class*="bg-[#0e1a2b"],
+body.light-theme .app-shell [class*="bg-[#0d1b2e"],
+body.light-theme .app-shell [class*="bg-[#10213a"],
+body.light-theme .app-shell [class*="bg-[#0b1626"],
+body.light-theme .app-shell [class*="bg-[#0b1728"],
+body.light-theme .app-shell [class*="bg-[#101f33"] { background: #ffffff !important; }
+body.light-theme .app-shell [class*="border-slate-700"] { border-color: #d5dfeb !important; }
+body.light-theme .app-shell .text-white { color: #172033 !important; }
+body.light-theme .app-shell .text-slate-200,
+body.light-theme .app-shell .text-slate-300 { color: #334155 !important; }
+body.light-theme .app-shell .text-slate-400,
+body.light-theme .app-shell .text-slate-500 { color: #64748b !important; }
+body.light-theme .app-shell .bg-white { background: #ffffff !important; }
+body.light-theme .app-shell .bg-slate-50 { background: #f8fafc !important; }
+body.light-theme .app-shell .border-slate-200.bg-white,
+body.light-theme .app-shell .border-slate-100.bg-white { background: #ffffff !important; border-color: #d5dfeb !important; box-shadow: 0 10px 24px rgba(30, 64, 100, .08) !important; }
+body.light-theme .app-shell input,
+body.light-theme .app-shell textarea,
+body.light-theme .app-shell select { background: #ffffff !important; color: #172033 !important; border-color: #c5d2e0 !important; }
