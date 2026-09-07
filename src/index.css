@@ -6,3 +6,31 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+:root {
+  --background: 7 17 31;
+  --foreground: 248 250 252;
+  --card: 14 26 43;
+  --card-foreground: 248 250 252;
+  --popover: 14 26 43;
+  --popover-foreground: 248 250 252;
+  --primary: 22 119 255;
+  --primary-foreground: 255 255 255;
+  --muted: 15 31 51;
+  --muted-foreground: 148 163 184;
+  --border: 148 163 184;
+  --input: 16 31 51;
+  --ring: 39 184 255;
+}
+html,body,#root { min-height:100%; }
+body { background:#07111f; color:#f8fafc; }
+.app-shell { background: radial-gradient(circle at 70% -10%,rgba(22,119,255,.12),transparent 32%), #07111f; }
+.saas-card { background:linear-gradient(145deg,#0e1a2b,#0b1728); border:1px solid rgba(148,163,184,.14); border-radius:18px; box-shadow:0 12px 35px rgba(0,0,0,.16); }
+input,textarea,select { background:#101f33; border-color:rgba(148,163,184,.2); color:#f8fafc; }
+input:focus,textarea:focus,select:focus { border-color:#27b8ff; box-shadow:0 0 0 2px rgba(39,184,255,.2); outline:none; }
+button:focus-visible,a:focus-visible { outline:2px solid #27b8ff; outline-offset:2px; }
+.app-shell .bg-white { background:#0e1a2b; }
+.app-shell .bg-slate-50 { background:#101f33; }
+.app-shell .border-slate-200,.app-shell .border-slate-100 { border-color:rgba(148,163,184,.14); }
+.app-shell .text-slate-900,.app-shell .text-slate-800,.app-shell .text-slate-700 { color:#f8fafc; }
+.app-shell .text-slate-600,.app-shell .text-slate-500 { color:#b5c2d3; }
+.app-shell .text-slate-400 { color:#94a3b8; }

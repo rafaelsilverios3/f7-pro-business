@@ -77,7 +77,7 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                     active
-                      ? 'bg-white/10 text-white'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30'
                       : 'text-slate-300 hover:bg-white/5 hover:text-white'
                   )}
                 >
@@ -95,11 +95,9 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
   return (
     <>
       {/* Desktop */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-slate-900 md:flex">
+      <aside className="hidden w-[245px] shrink-0 flex-col border-r border-slate-800/70 bg-[#091426] md:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/20">
-            <span className="text-sm font-bold">F7</span>
-          </div>
+          <img src="/branding/f7-icon.png" alt="F7" className="h-11 w-11 object-contain" />
           <div className="leading-tight">
             <p className="text-sm font-bold tracking-tight text-white">F7 PRO BUSINESS</p>
             <p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p>
@@ -113,7 +111,7 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
             </div>
             <div className="min-w-0 flex-1 leading-tight">
               <p className="truncate text-xs font-medium text-white">{company?.name || 'Sem empresa'}</p>
-              <p className="text-[10px] text-slate-400">Plano Pro</p>
+              <p className="text-[10px] text-slate-400">{company?.plan ? `Plano ${company.plan}` : 'Plano atual'}</p>
             </div>
           </div>
         </div>
@@ -122,9 +120,7 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
       {/* Mobile top bar */}
       <div className="fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3 md:hidden">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 text-white">
-            <span className="text-[10px] font-bold">F7</span>
-          </div>
+          <img src="/branding/f7-icon.png" alt="F7" className="h-8 w-8 object-contain" />
           <span className="text-sm font-bold text-white">F7 PRO BUSINESS</span>
         </div>
         <button onClick={() => onOpenMobile?.(true)} className="rounded-md px-2 py-1 text-sm text-slate-300">
