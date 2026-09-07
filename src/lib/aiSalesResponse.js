@@ -1,0 +1,3 @@
+export function selectNumberedOption(options = [], answer) { const index = Number.parseInt(String(answer).trim(), 10) - 1; return Number.isInteger(index) && index >= 0 && index < options.length ? options[index] : null; }
+export function explainRecommendation(option, reason = 'compatibilidade com a busca e disponibilidade atual') { if (!option) return 'Não encontrei uma opção disponível com os dados atuais.'; return `${option.name} foi recomendado por ${reason}. Preço atual: R$ ${Number(option.price || 0).toFixed(2).replace('.', ',')}; estoque disponível: ${option.stock}.`; }
+export function confidenceMessage(confidence) { return Number(confidence || 0) < 30 ? 'Os dados disponíveis ainda são insuficientes para uma recomendação segura.' : null; }

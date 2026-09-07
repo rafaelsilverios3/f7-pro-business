@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { selectNumberedOption, confidenceMessage } from '../src/lib/aiSalesResponse.js';
+const permissions = fs.readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
+const tools = fs.readFileSync(new URL('../src/services/aiSalesTools.js', import.meta.url), 'utf8');
+test('seleção numérica respeita opções reais', () => { const options = [{ id: '1' }, { id: '2' }]; assert.equal(selectNumberedOption(options, '2').id, '2'); assert.equal(selectNumberedOption(options, '3'), null); });
+test('baixa confiança gera explicação cautelosa', () => { assert.match(confidenceMessage(10), /insuficientes/); assert.equal(confidenceMessage(80), null); });
+test('tool layer não executa SQL e expõe ferramentas explícitas', () => { assert.match(tools, /AI_TOOL_NAMES/); assert.match(tools, /buscar_produto/); assert.match(tools, /criar_rascunho_pedido/); assert.doesNotMatch(tools, /\.rpc\(|query\(/); });
+test('permissões da IA comercial são separadas por função', () => { assert.match(permissions, /ai_sales\.view/); assert.match(permissions, /ai_sales\.use/); assert.match(permissions, /ai_sales\.configure/); assert.match(permissions, /comercial:[^\n]+ai_sales\.use/); });
