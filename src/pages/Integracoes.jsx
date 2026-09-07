@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Bot, CheckCircle2, Database, ExternalLink, MessageSquare, RefreshCw, ShieldCheck, Wifi, XCircle, PlugZap, Unplug } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
-import { useAuth } from '@/lib/AuthContext';
-import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { checkIntegrationHealth, connectWhatsApp, disconnectWhatsApp, listIntegrationLogs, listIntegrations, safeMetaDiagnostic, testWhatsAppConnection } from '@/services/integrationsService';
@@ -29,7 +28,6 @@ function MetaDiagnosticPanel({ diagnostic }) {
 
 export default function Integracoes() {
   const { company } = useOutletContext();
-  const { user } = useAuth();
   const [integrations, setIntegrations] = useState([]);
   const [logs, setLogs] = useState([]);
   const [health, setHealth] = useState(null);
@@ -39,18 +37,8 @@ export default function Integracoes() {
   const [metaDiagnostic, setMetaDiagnostic] = useState(null);
   const [action, setAction] = useState('');
   const [phoneNumberId, setPhoneNumberId] = useState('');
-  const [memberRole, setMemberRole] = useState('');
-  const canManage = ['admin', 'gestor'].includes(String(memberRole || user?.role || '').toLowerCase());
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!company?.id || !user?.id) return undefined;
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setMemberRole(String(user?.role || '').toLowerCase()); return undefined; }
-    getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => {
-      if (!cancelled) setMemberRole(String(data?.role || user?.role || '').toLowerCase());
-    }).catch(() => { if (!cancelled) setMemberRole(String(user?.role || '').toLowerCase()); });
-    return () => { cancelled = true; };
-  }, [company?.id, user?.id, user?.role]);
+  const { role: memberRole, active: membershipActive, loading: membershipLoading } = useCompanyMembership(company?.id);
+  const canManage = !membershipLoading && membershipActive && ['admin', 'gestor'].includes(memberRole);
 
   const load = useCallback(async (refresh = false) => { if (!company?.id) return; refresh ? setRefreshing(true) : setLoading(true); setError(''); try { const [nextIntegrations, nextLogs] = await Promise.all([listIntegrations(company.id), listIntegrationLogs(company.id)]); setIntegrations(nextIntegrations); setLogs(nextLogs); try { setHealth(await checkIntegrationHealth(company.id)); } catch { setHealth(null); } } catch (cause) { setError(cause.message || 'Não foi possível carregar o status das integrações.'); } finally { setLoading(false); setRefreshing(false); } }, [company?.id]);
   useEffect(() => { load(); }, [load]);
@@ -64,7 +52,7 @@ export default function Integracoes() {
   useEffect(() => { if (whatsapp?.external_phone_id) setPhoneNumberId(whatsapp.external_phone_id); }, [whatsapp?.external_phone_id]);
   const runAction = async (name, fn) => { setAction(name); setError(''); setMetaDiagnostic(null); try { await fn(); await load(true); } catch (cause) { const diagnostic = safeMetaDiagnostic(cause); setMetaDiagnostic(diagnostic); setError(cause.message || 'Não foi possível concluir a ação.'); } finally { setAction(''); } };
   const whatsappHealth = health?.integrations?.find((item) => item.company_id === company?.id)?.whatsapp;
-  const whatsappActions = !canManage ? null : whatsapp?.status === 'connected' ? <><Button variant="outline" size="sm" onClick={() => runAction('test', () => testWhatsAppConnection(company.id))} disabled={Boolean(action)}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${action === 'test' ? 'animate-spin' : ''}`} /> Testar conexão</Button><Button variant="outline" size="sm" onClick={() => runAction('disconnect', () => disconnectWhatsApp(company.id))} disabled={Boolean(action)}><Unplug className="mr-2 h-3.5 w-3.5" /> Desconectar</Button></> : <><div className="flex min-w-[230px] items-center gap-2"><input aria-label="ID do número WhatsApp" value={phoneNumberId} onChange={(event) => setPhoneNumberId(event.target.value.replace(/\D/g, ''))} placeholder="Phone Number ID" className="h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-xs text-white outline-none focus:border-blue-400" /><Button size="sm" onClick={() => runAction('connect', () => connectWhatsApp(company.id, phoneNumberId))} disabled={Boolean(action) || !phoneNumberId}><PlugZap className="mr-2 h-3.5 w-3.5" /> {action === 'connect' ? 'Validando…' : whatsapp?.status === 'error' ? 'Tentar novamente' : 'Conectar WhatsApp'}</Button></div><Button variant="outline" size="sm" onClick={() => runAction('test', () => testWhatsAppConnection(company.id))} disabled={Boolean(action)}><RefreshCw className="mr-2 h-3.5 w-3.5" /> Testar conexão</Button></>;
+  const whatsappActions = membershipLoading ? <span className="text-xs text-slate-400">Verificando permissões…</span> : !canManage ? null : whatsapp?.status === 'connected' ? <><Button variant="outline" size="sm" onClick={() => runAction('test', () => testWhatsAppConnection(company.id))} disabled={Boolean(action)}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${action === 'test' ? 'animate-spin' : ''}`} /> Testar conexão</Button><Button variant="outline" size="sm" onClick={() => runAction('disconnect', () => disconnectWhatsApp(company.id))} disabled={Boolean(action)}><Unplug className="mr-2 h-3.5 w-3.5" /> Desconectar</Button></> : <><div className="flex min-w-[230px] items-center gap-2"><input aria-label="ID do número WhatsApp" value={phoneNumberId} onChange={(event) => setPhoneNumberId(event.target.value.replace(/\D/g, ''))} placeholder="Phone Number ID" className="h-9 rounded-lg border border-slate-600 bg-slate-900 px-3 text-xs text-white outline-none focus:border-blue-400" /><Button size="sm" onClick={() => runAction('connect', () => connectWhatsApp(company.id, phoneNumberId))} disabled={Boolean(action) || !phoneNumberId}><PlugZap className="mr-2 h-3.5 w-3.5" /> {action === 'connect' ? 'Validando…' : whatsapp?.status === 'error' ? 'Tentar novamente' : 'Conectar WhatsApp'}</Button></div><Button variant="outline" size="sm" onClick={() => runAction('test', () => testWhatsAppConnection(company.id))} disabled={Boolean(action)}><RefreshCw className="mr-2 h-3.5 w-3.5" /> Testar conexão</Button></>;
 
   if (loading) return <div className="flex min-h-96 items-center justify-center"><RefreshCw className="h-5 w-5 animate-spin text-blue-400" /></div>;
   return <div className="mx-auto w-full max-w-[1500px] px-5 py-7 xl:px-8"><PageHeader title="Central de Integrações" subtitle="Conecte serviços externos ao F7 PRO BUSINESS e acompanhe o status de cada integração." action={<Button variant="outline" onClick={() => load(true)} disabled={refreshing}><RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Atualizar status</Button>} />
@@ -76,6 +64,7 @@ export default function Integracoes() {
       <IntegrationCard icon={Database} title="Supabase" description="Backend, autenticação, banco de dados e funções server-side do F7 PRO BUSINESS." status={health ? 'connected' : 'not_configured'}><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4"><Indicator label="Backend" status="Conectado" icon={Database} /><Indicator label="Autenticação" status="Verificada pela sessão" icon={ShieldCheck} /><Indicator label="Banco de dados" status="Operacional para esta tela" icon={Activity} /><Indicator label="Funções server-side" status={health ? 'Respondendo' : 'Não verificado'} icon={Wifi} /></div></IntegrationCard>
     </div>
     <section className="mt-5 rounded-2xl border border-slate-700/60 bg-[#0e1a2b] p-5"><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-blue-300" /><h2 className="text-base font-semibold text-white">Atividade recente</h2></div>{logs.length ? <div className="mt-4 divide-y divide-slate-700/50">{logs.map((log) => <div key={log.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs"><div><p className="font-medium text-slate-200">{log.event}</p><p className="mt-1 text-[10px] text-slate-500">{log.provider} · {log.created_at ? new Date(log.created_at).toLocaleString('pt-BR') : 'Data indisponível'}</p></div><StatusBadge status={log.status === 'success' ? 'connected' : log.status === 'error' ? 'error' : 'pending'} /></div>)}</div> : <div className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-slate-700 p-5 text-xs text-slate-400"><XCircle className="h-4 w-4" /> Nenhuma atividade registrada.</div>}</section>
-    {!canManage && <p className="mt-4 text-[11px] text-slate-500">Somente administradores e gestores podem gerenciar integrações.</p>}
+    {membershipLoading && <p className="mt-4 text-[11px] text-slate-400">Verificando permissões…</p>}
+    {!membershipLoading && !canManage && <p className="mt-4 text-[11px] text-slate-500">Somente administradores e gestores podem gerenciar integrações.</p>}
   </div>;
 }
