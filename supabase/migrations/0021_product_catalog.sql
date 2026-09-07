@@ -37,8 +37,8 @@ create table if not exists public.product_attributes (
   attribute_type text not null default 'text', created_at timestamptz not null default now()
 );
 
-alter table public.sale_items add column if not exists variant_id uuid references public.product_variants(id);
-alter table public.stock_movements add column if not exists variant_id uuid references public.product_variants(id);
+alter table public.sale_items add column if not exists variant_id uuid;
+alter table public.stock_movements add column if not exists variant_id uuid;
 create unique index if not exists products_company_id_key on public.products(company_id,id);
 create unique index if not exists product_variants_company_id_key on public.product_variants(company_id,id);
 do $$ begin
@@ -84,21 +84,25 @@ end; $$;
 
 create or replace function public.cancel_sale(target_sale uuid) returns public.sales
 language plpgsql security invoker set search_path = public as $$
-declare result public.sales; item jsonb; variant uuid;
+declare result public.sales; previous_sale public.sales; item jsonb; variant uuid;
 begin
   if auth.uid() is null then raise exception 'Sessão obrigatória'; end if;
   select * into result from public.sales where id=target_sale and public.is_company_member(company_id) for update;
   if result.id is null then raise exception 'Venda não encontrada'; end if;
   if public.current_company_role(result.company_id) not in ('admin','gestor','comercial','vendedor') then raise exception 'Sem permissão para cancelar venda'; end if;
   if result.status='cancelled' then return result; end if;
+  previous_sale := result;
   for item in select * from jsonb_array_elements(result.items) loop
     variant:=nullif(item->>'variant_id','')::uuid;
     if variant is null then update public.products set stock=stock+(item->>'qty')::numeric where id=(item->>'product_id')::uuid and company_id=result.company_id; else update public.product_variants set stock=stock+(item->>'qty')::numeric,updated_at=now() where id=variant and company_id=result.company_id; end if;
     insert into public.stock_movements(company_id,product_id,variant_id,sale_id,type,quantity,reason) values(result.company_id,(item->>'product_id')::uuid,variant,result.id,'in',(item->>'qty')::numeric,'Estorno de venda');
   end loop;
   update public.financial_entries set status='cancelled' where sale_id=result.id and status<>'cancelled'; update public.commissions set status='reversed' where sale_id=result.id and status<>'reversed';
+  if result.customer_id is not null then
+    update public.customers set total_purchased=greatest(0,total_purchased-result.total), sale_count=greatest(0,sale_count-1), avg_ticket=case when sale_count > 1 then round(greatest(0,total_purchased-result.total)/greatest(1,sale_count-1),2) else 0 end, last_purchase_date=(select max(s.sale_date) from public.sales s where s.company_id=result.company_id and s.customer_id=result.customer_id and s.id<>result.id and s.status='completed'), updated_at=now() where id=result.customer_id and company_id=result.company_id;
+  end if;
   update public.sales set status='cancelled',cancelled_at=now(),cancelled_by=auth.uid() where id=result.id returning * into result;
-  insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(result.company_id,auth.uid(),'sale.cancelled','Sale',result.id,to_jsonb(result),to_jsonb(result)); return result;
+  insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(result.company_id,auth.uid(),'sale.cancelled','Sale',result.id,to_jsonb(previous_sale),to_jsonb(result)); return result;
 end; $$;
 revoke all on function public.apply_variant_price(uuid,uuid,numeric,jsonb) from public, anon;
 grant execute on function public.apply_variant_price(uuid,uuid,numeric,jsonb) to authenticated;
@@ -110,6 +114,7 @@ declare company uuid := (sale_payload->>'company_id')::uuid; customer uuid := nu
 begin
   if auth.uid() is null or public.current_company_role(company) not in ('admin','gestor','comercial','vendedor') then raise exception 'Sem permissão para finalizar venda'; end if;
   if jsonb_typeof(sale_payload->'items') <> 'array' or jsonb_array_length(sale_payload->'items') = 0 then raise exception 'Venda sem itens'; end if;
+  if customer is not null and not exists (select 1 from public.customers where id=customer and company_id=company) then raise exception 'Cliente não pertence à empresa'; end if;
   if nullif(sale_payload->>'idempotency_key','') is not null then select * into existing from public.sales where company_id=company and idempotency_key=sale_payload->>'idempotency_key'; if existing.id is not null then return existing; end if; end if;
   for item in select * from jsonb_array_elements(sale_payload->'items') loop
     qty := (item->>'qty')::numeric; variant := nullif(item->>'variant_id','')::uuid;

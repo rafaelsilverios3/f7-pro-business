@@ -36,6 +36,14 @@ test('vendas exigem role operacional e sessão autenticada', () => {
   const sql = read('0021_product_catalog.sql');
   assert.match(sql, /current_company_role\(result\.company_id\) not in \('admin','gestor','comercial','vendedor'\)/);
   assert.match(sql, /current_company_role\(company\) not in \('admin','gestor','comercial','vendedor'\)/);
+  assert.match(sql, /previous_sale public\.sales/);
+  assert.match(sql, /to_jsonb\(previous_sale\),to_jsonb\(result\)/);
+  assert.match(sql, /Cliente não pertence à empresa/);
+  assert.match(sql, /last_purchase_date=\(select max\(s\.sale_date\)/);
+  assert.match(sql, /total_purchased=greatest\(0,total_purchased-result\.total\)/);
+  assert.match(sql, /sale_count=greatest\(0,sale_count-1\)/);
+  assert.match(sql, /avg_ticket=case when sale_count > 1/);
+  assert.doesNotMatch(sql, /variant_id uuid references public\.product_variants\(id\)/);
 });
 
 test('módulos avançados usam current_company_role e métricas não negativas', () => {
