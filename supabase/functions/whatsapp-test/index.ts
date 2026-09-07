@@ -1,16 +1,16 @@
-import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
+import { corsHeaders, json, auth, admin, userClient } from '../_shared/core.ts';
 import { graphRequest, phoneValidation, publicProviderError } from '../_shared/whatsapp.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    const jwt = auth(req); const sb = admin();
+    const jwt = auth(req); const sb = admin(); const viewer = userClient(jwt);
     const { data: { user } } = await sb.auth.getUser(jwt);
     if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
     const { company_id: companyId } = await req.json();
-    const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
+    const { data: member } = await viewer.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
     if (!member?.active || !['admin', 'gestor'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    const { data: allowed } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
+    const { data: allowed } = await viewer.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     const { data: integration } = await sb.from('company_integrations').select('external_phone_id,status').eq('company_id', companyId).eq('provider', 'whatsapp').maybeSingle();
     if (!integration?.external_phone_id) return json({ api_reachable: false, number_configured: false, webhook_configured: 'unknown', send_ready: false, receive_ready: 'unknown', status: 'not_configured' });

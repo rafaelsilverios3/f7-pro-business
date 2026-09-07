@@ -1,19 +1,23 @@
-import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
+import { corsHeaders, json, auth, admin, userClient } from '../_shared/core.ts';
 import { graphRequest, phoneValidation, publicProviderError } from '../_shared/whatsapp.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    const jwt = auth(req); const sb = admin();
+    const jwt = auth(req); const sb = admin(); const viewer = userClient(jwt);
     const { data: { user } } = await sb.auth.getUser(jwt);
     if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
     const body = await req.json();
     const companyId = typeof body?.company_id === 'string' ? body.company_id : '';
     const phoneId = typeof body?.phone_number_id === 'string' ? body.phone_number_id.trim() : '';
     if (!companyId || !/^\d{6,30}$/.test(phoneId)) return json({ code: 'INVALID_PAYLOAD' }, 400);
-    const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
-    if (!member?.active || !['admin', 'gestor'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    const { data: allowed } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
+    const membership = await viewer.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
+    const role = String(membership.data?.role || '').toLowerCase();
+    if (membership.error || membership.data?.active !== true || !['admin', 'gestor'].includes(role)) {
+      await sb.from('integration_logs').insert({ company_id: companyId || null, provider: 'whatsapp', event: 'connection_authorization_failed', status: 'error', metadata: { reason: membership.error ? 'membership_query' : 'role_or_inactive', role, active: membership.data?.active ?? null, query_error: membership.error?.code || null } });
+      return json({ code: 'FORBIDDEN' }, 403);
+    }
+    const { data: allowed } = await viewer.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     const meta = await graphRequest(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`);
     if (!phoneValidation(meta.data, phoneId)) {
