@@ -1,5 +1,15 @@
 import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
-import { graphRequest, phoneValidation, publicProviderError } from '../_shared/whatsapp.ts';
+import { graphRequest, phoneValidation } from '../_shared/whatsapp.ts';
+
+function safeProviderDiagnostic(result: { status?: number; meta_error?: Record<string, unknown> | null; graph_version?: string }) {
+  const meta = result.meta_error || {};
+  return {
+    http_status: Number.isInteger(result.status) ? result.status : null,
+    meta_code: typeof meta.code === 'number' || typeof meta.code === 'string' ? meta.code : null,
+    meta_type: typeof meta.type === 'string' ? meta.type : null,
+    graph_version: result.graph_version || null,
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -14,11 +24,12 @@ Deno.serve(async (req) => {
     const result = [];
     for (const companyId of ids) {
       const integration = integrations?.find((item) => item.company_id === companyId && item.provider === 'whatsapp');
-      let provider = 'unknown'; let phone = integration?.external_phone_id ? 'configured' : 'not_configured'; let providerDiagnostic = null; let graph_version = null;
-      if (integration?.external_phone_id) {
-        const meta = await graphRequest(`${integration.external_phone_id}?fields=id`);
-        provider = meta.ok && phoneValidation(meta.data, integration.external_phone_id) ? 'ok' : 'error';
-        providerDiagnostic = meta.ok ? null : publicProviderError(meta);
+      const phoneId = typeof integration?.external_phone_id === 'string' ? integration.external_phone_id.trim() : '';
+      let provider = 'unknown'; let phone = phoneId ? 'configured' : 'not_configured'; let providerDiagnostic = null; let graph_version = null;
+      if (phoneId) {
+        const meta = await graphRequest(`${phoneId}?fields=id`);
+        provider = meta.ok && phoneValidation(meta.data, phoneId) ? 'ok' : 'error';
+        providerDiagnostic = provider === 'ok' ? null : safeProviderDiagnostic(meta);
         graph_version = meta.graph_version;
       }
       const status = integration?.status || 'not_configured';
