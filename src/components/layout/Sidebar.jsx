@@ -3,9 +3,11 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Package, Boxes, ShoppingCart, FileText,
   Wallet, Truck, MessageSquare, Zap, BrainCircuit, BarChart3,
-  Settings, Bell, Target, Shield,
+  Settings, Bell, Target, Shield, Store, Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import CompanyLogoDialog from './CompanyLogoDialog';
+import { getCachedCompanyLogo } from '@/services/companyBrandingService';
 
 const NAV = [
   {
@@ -44,8 +46,14 @@ const NAV = [
   },
 ];
 
-export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
+export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
   const location = useLocation();
+  const [companyLogo, setCompanyLogo] = React.useState('');
+  const [logoOpen, setLogoOpen] = React.useState(false);
+  const role = String(user?.role || '').toLowerCase();
+  const isAdmin = role === 'admin';
+  React.useEffect(() => { setCompanyLogo(company?.logo_url || getCachedCompanyLogo(company?.id)); }, [company?.id, company?.logo_url]);
+  const companyName = company?.name || 'Sua empresa';
 
   const NavList = () => (
     <nav className="flex-1 overflow-y-auto px-3 py-2">
@@ -98,31 +106,18 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
       {/* Desktop */}
       <aside className="hidden w-[245px] shrink-0 flex-col border-r border-slate-800/70 bg-[#091426] md:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <img src="/branding/f7-icon.png" alt="F7" className="h-12 w-12 object-contain drop-shadow-[0_0_14px_rgba(36,126,255,.3)]" />
-          <div className="leading-tight">
-            <p className="text-sm font-bold tracking-tight text-white">F7 PRO BUSINESS</p>
-            <p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p>
-          </div>
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700/70 bg-slate-800 text-slate-300">{companyLogo ? <img src={companyLogo} alt={`Logo de ${companyName}`} className="h-full w-full object-contain" /> : <Store className="h-5 w-5" />}{isAdmin && <button type="button" aria-label="Editar logo da empresa" onClick={() => setLogoOpen(true)} className="absolute inset-0 flex items-center justify-center bg-slate-950/65 opacity-0 transition hover:opacity-100"><Pencil className="h-4 w-4 text-white" /></button>}</div>
+          <div className="min-w-0 leading-tight"><p className="truncate text-sm font-bold tracking-tight text-white">{companyName}</p>{isAdmin && <button type="button" onClick={() => setLogoOpen(true)} className="text-[10px] text-slate-400 hover:text-blue-300">Personalizar logo</button>}</div>
         </div>
         <NavList />
-        <div className="border-t border-slate-800 px-4 py-3">
-          <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-xs font-semibold text-white">
-              {(company?.name || 'E').charAt(0)}
-            </div>
-            <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-xs font-medium text-white">{company?.name || 'Sem empresa'}</p>
-              <p className="text-[10px] text-slate-400">{company?.plan ? `Plano ${company.plan}` : 'Plano atual'}</p>
-            </div>
-          </div>
-        </div>
+        <div className="border-t border-slate-800 px-4 py-3"><div className="flex items-center gap-2.5 rounded-lg px-2 py-2"><img src="/branding/f7-icon.png" alt="F7 PRO BUSINESS" className="h-9 w-9 object-contain" /><div className="min-w-0 leading-tight"><p className="truncate text-xs font-bold text-white">F7 PRO BUSINESS</p><p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p></div></div></div>
       </aside>
 
       {/* Mobile top bar */}
       <div className="fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3 md:hidden">
         <div className="flex items-center gap-2">
-          <img src="/branding/f7-icon.png" alt="F7" className="h-8 w-8 object-contain" />
-          <span className="text-sm font-bold text-white">F7 PRO BUSINESS</span>
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-slate-800">{companyLogo ? <img src={companyLogo} alt={`Logo de ${companyName}`} className="h-full w-full object-contain" /> : <Store className="h-4 w-4 text-slate-300" />}</div>
+          <span className="max-w-[180px] truncate text-sm font-bold text-white">{companyName}</span>
         </div>
         <button onClick={() => onOpenMobile?.(true)} className="rounded-md px-2 py-1 text-sm text-slate-300">
           Menu
@@ -139,11 +134,13 @@ export default function Sidebar({ company, onOpenMobile, mobileOpen }) {
               <button onClick={() => onOpenMobile?.(false)} className="text-slate-400">✕</button>
             </div>
             <NavList />
+            <div className="border-t border-slate-800 px-4 py-3"><div className="flex items-center gap-2"><img src="/branding/f7-icon.png" alt="F7 PRO BUSINESS" className="h-8 w-8 object-contain" /><div><p className="text-xs font-bold text-white">F7 PRO BUSINESS</p><p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p></div></div></div>
           </div>
         </div>
       )}
 
       <div className="h-12 md:hidden" />
+      <CompanyLogoDialog open={logoOpen} onClose={() => setLogoOpen(false)} companyId={company?.id} role={role} currentLogo={companyLogo} onSaved={setCompanyLogo} />
     </>
   );
 }
