@@ -13,14 +13,16 @@ create table if not exists public.store_orders (
   origin text not null default 'loja_online', created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create unique index if not exists customers_company_id_key on public.customers(company_id,id);
+alter table public.store_orders add constraint store_orders_total_check check (total >= 0);
+alter table public.store_orders add constraint store_orders_status_check check (status = 'pending');
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'store_orders_company_customer_fk') then alter table public.store_orders add constraint store_orders_company_customer_fk foreign key (company_id,customer_id) references public.customers(company_id,id); end if;
 end $$;
 alter table public.store_orders enable row level security;
 drop policy if exists store_orders_company_select on public.store_orders;
-create policy store_orders_company_select on public.store_orders for select using (public.is_company_member(company_id));
+create policy store_orders_company_select on public.store_orders for select to authenticated using (public.current_company_role(company_id) in ('admin','gestor','comercial','vendedor'));
 drop policy if exists store_orders_company_update on public.store_orders;
-create policy store_orders_company_update on public.store_orders for update using (public.is_company_member(company_id)) with check (public.is_company_member(company_id));
+create policy store_orders_company_update on public.store_orders for update to authenticated using (public.current_company_role(company_id) in ('admin','gestor','comercial')) with check (public.current_company_role(company_id) in ('admin','gestor','comercial'));
 grant select, update on public.store_orders to authenticated;
 
 -- Apenas dados comerciais públicos são retornados. Custos, margens e fornecedores ficam fora desta função.
@@ -34,7 +36,7 @@ as $$
       'short_description', coalesce(p.short_description, p.description, ''), 'price', p.price, 'stock', p.stock,
       'images', coalesce((select jsonb_agg(jsonb_build_object('storage_path', i.storage_path, 'alt_text', i.alt_text) order by i.sort_order) from public.product_images i where i.company_id=p.company_id and i.product_id=p.id), '[]'::jsonb),
       'variants', coalesce((select jsonb_agg(jsonb_build_object('id', v.id, 'name', v.name, 'price', coalesce(v.price,p.price), 'stock', v.stock, 'attributes', v.attributes) order by v.created_at) from public.product_variants v where v.company_id=p.company_id and v.product_id=p.id and v.active and v.stock > 0), '[]'::jsonb)
-    ) order by p.featured desc, p.name) from public.products p where p.company_id=c.id and p.active and (p.stock > 0 or exists(select 1 from public.product_variants v where v.company_id=p.company_id and v.product_id=p.id and v.active and v.stock > 0)), '[]'::jsonb)
+  ) order by p.featured desc, p.name) from public.products p where p.company_id=c.id and p.active and (p.price > 0 or exists(select 1 from public.product_variants v where v.company_id=p.company_id and v.product_id=p.id and v.active and v.stock > 0 and coalesce(v.price,p.price) > 0)) and (p.stock > 0 or exists(select 1 from public.product_variants v where v.company_id=p.company_id and v.product_id=p.id and v.active and v.stock > 0)), '[]'::jsonb)
   ) end from public.companies c where c.store_enabled and lower(c.store_slug)=lower(trim(p_slug)) limit 1;
 $$;
 revoke all on function public.get_public_storefront(text) from public;
@@ -60,6 +62,7 @@ begin
     select * into product_row from public.products p where p.id=(input_item->>'product_id')::uuid and p.company_id=target_company_id and p.active for update;
     if product_row.id is null then raise exception 'Produto não encontrado'; end if;
     if nullif(input_item->>'variant_id','') is not null then select * into variant_row from public.product_variants v where v.id=(input_item->>'variant_id')::uuid and v.product_id=product_row.id and v.company_id=target_company_id and v.active for update; if variant_row.id is null or variant_row.stock < qty then raise exception 'Variação sem estoque'; end if; unit_price := coalesce(variant_row.price,product_row.price); else if product_row.stock < qty then raise exception 'Produto sem estoque'; end if; unit_price := product_row.price; end if;
+    if unit_price is null or unit_price::text in ('NaN','Infinity','-Infinity') or unit_price <= 0 then raise exception 'Produto sem preço publicável'; end if;
     total := total + qty * unit_price; normalized := normalized || jsonb_build_array(jsonb_build_object('product_id',product_row.id,'variant_id',nullif(input_item->>'variant_id','')::uuid,'name',product_row.name,'qty',qty,'price',unit_price));
   end loop;
   insert into public.store_orders(company_id,customer_id,customer_name,customer_email,customer_phone,items,total) values(target_company_id,customer_id,trim(p_customer->>'name'),nullif(trim(p_customer->>'email'),''),nullif(trim(p_customer->>'phone'),''),normalized,round(total,2)) returning * into order_row;

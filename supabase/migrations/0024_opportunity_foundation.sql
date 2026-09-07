@@ -27,3 +27,5 @@ alter table public.product_opportunities drop constraint if exists product_oppor
 alter table public.product_opportunities add constraint product_opportunities_status_check check (status in ('descoberta','em_analise','validada','teste','descartada','convertida_em_produto'));
 alter table public.opportunity_product_drafts drop constraint if exists opportunity_product_drafts_status_check;
 alter table public.opportunity_product_drafts add constraint opportunity_product_drafts_status_check check (status in ('draft','active','archived'));
+alter table public.product_opportunities add constraint product_opportunities_scores_check check (opportunity_score between 0 and 100 and supplier_score between 0 and 100 and trust_score between 0 and 100 and channel_score between 0 and 100);
+alter table public.opportunity_product_drafts add constraint opportunity_product_drafts_amounts_check check (price >= 0 and cost >= 0 and stock >= 0);

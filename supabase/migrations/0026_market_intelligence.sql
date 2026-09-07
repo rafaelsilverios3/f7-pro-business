@@ -31,3 +31,6 @@ end;
 $$;
 drop trigger if exists market_opportunity_sources_company_check on public.market_opportunities;
 create trigger market_opportunity_sources_company_check before insert or update of company_id, source_ids on public.market_opportunities for each row execute function public.validate_market_opportunity_sources();
+alter table public.market_sources add constraint market_sources_confidence_check check (confidence is null or confidence between 0 and 100);
+alter table public.market_signals add constraint market_signals_confidence_check check (confidence is null or confidence between 0 and 100);
+alter table public.market_opportunities add constraint market_opportunities_scores_check check ((opportunity_score is null or opportunity_score between 0 and 100) and (trust_score is null or trust_score between 0 and 100) and (estimated_capital is null or estimated_capital >= 0));

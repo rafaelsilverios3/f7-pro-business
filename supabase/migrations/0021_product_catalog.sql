@@ -86,8 +86,10 @@ create or replace function public.cancel_sale(target_sale uuid) returns public.s
 language plpgsql security invoker set search_path = public as $$
 declare result public.sales; item jsonb; variant uuid;
 begin
+  if auth.uid() is null then raise exception 'Sessão obrigatória'; end if;
   select * into result from public.sales where id=target_sale and public.is_company_member(company_id) for update;
   if result.id is null then raise exception 'Venda não encontrada'; end if;
+  if public.current_company_role(result.company_id) not in ('admin','gestor','comercial','vendedor') then raise exception 'Sem permissão para cancelar venda'; end if;
   if result.status='cancelled' then return result; end if;
   for item in select * from jsonb_array_elements(result.items) loop
     variant:=nullif(item->>'variant_id','')::uuid;
@@ -106,7 +108,7 @@ create or replace function public.finalize_sale(sale_payload jsonb) returns publ
 language plpgsql security invoker set search_path = public as $$
 declare company uuid := (sale_payload->>'company_id')::uuid; customer uuid := nullif(sale_payload->>'customer_id','')::uuid; sale_row public.sales; item jsonb; product_row public.products; variant_row public.product_variants; existing public.sales; normalized_items jsonb := '[]'::jsonb; subtotal numeric(14,2):=0; cost_total numeric(14,2):=0; total numeric(14,2); qty numeric; unit_price numeric; unit_cost numeric; variant uuid; item_rate numeric:=0; commission_total numeric(14,2):=0; commission_rate numeric(8,3):=0;
 begin
-  if auth.uid() is null or not public.is_company_member(company) then raise exception 'Usuário não pertence à empresa'; end if;
+  if auth.uid() is null or public.current_company_role(company) not in ('admin','gestor','comercial','vendedor') then raise exception 'Sem permissão para finalizar venda'; end if;
   if jsonb_typeof(sale_payload->'items') <> 'array' or jsonb_array_length(sale_payload->'items') = 0 then raise exception 'Venda sem itens'; end if;
   if nullif(sale_payload->>'idempotency_key','') is not null then select * into existing from public.sales where company_id=company and idempotency_key=sale_payload->>'idempotency_key'; if existing.id is not null then return existing; end if; end if;
   for item in select * from jsonb_array_elements(sale_payload->'items') loop

@@ -18,7 +18,7 @@ create table if not exists public.product_pricing_history (
 
 alter table public.product_pricing_history enable row level security;
 drop policy if exists pricing_history_company on public.product_pricing_history;
-create policy pricing_history_company on public.product_pricing_history for select using (public.is_company_member(company_id));
+create policy pricing_history_company on public.product_pricing_history for select to authenticated using (public.current_company_role(company_id) in ('admin','gestor','comercial','financeiro','estoque'));
 grant select on public.product_pricing_history to authenticated;
 
 create or replace function public.apply_product_price(target_company uuid, target_product uuid, new_price numeric, pricing_data jsonb default '{}'::jsonb)

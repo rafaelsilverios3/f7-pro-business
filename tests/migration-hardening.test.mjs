@@ -10,6 +10,9 @@ test('precificação rejeita preço inválido e mínimo informado no backend', (
   assert.match(sql, /new_price <= 0/);
   assert.match(sql, /minimumPrice/);
   assert.match(sql, /new_price < \(payload->>'minimumPrice'\)/);
+  assert.match(sql, /pricing_history_company.*current_company_role/s);
+  assert.match(sql, /financeiro.*estoque/s);
+  assert.doesNotMatch(sql, /grant insert, update, delete on public\.product_pricing_history/);
 });
 
 test('catálogo separa leitura de gerenciamento por role', () => {
@@ -25,6 +28,14 @@ test('loja pública limita payload e calcula preço no banco', () => {
   assert.match(sql, /jsonb_array_length\(p_items\)>100/);
   assert.match(sql, /length\(trim\(p_customer->>'name'\)\) > 160/);
   assert.match(sql, /unit_price := product_row\.price/);
+  assert.match(sql, /store_orders_status_check/);
+  assert.match(sql, /store_orders_total_check/);
+});
+
+test('vendas exigem role operacional e sessão autenticada', () => {
+  const sql = read('0021_product_catalog.sql');
+  assert.match(sql, /current_company_role\(result\.company_id\) not in \('admin','gestor','comercial','vendedor'\)/);
+  assert.match(sql, /current_company_role\(company\) not in \('admin','gestor','comercial','vendedor'\)/);
 });
 
 test('módulos avançados usam current_company_role e métricas não negativas', () => {
@@ -35,6 +46,10 @@ test('módulos avançados usam current_company_role e métricas não negativas',
   assert.match(sales, /channel_metrics_nonnegative_check/);
   assert.match(sales, /fee_rate_check/);
   assert.match(sales, /conversion_check/);
+  assert.match(read('0024_opportunity_foundation.sql'), /product_opportunities_scores_check/);
+  assert.match(read('0025_supplier_intelligence.sql'), /supplier_intelligence_scores_check/);
+  assert.match(read('0026_market_intelligence.sql'), /market_opportunities_scores_check/);
+  assert.match(sales, /channel_metrics_period_check/);
 });
 
 test('policies não deixam roles somente leitura escrever módulos avançados', () => {

@@ -27,3 +27,5 @@ alter table public.channel_metrics add constraint channel_metrics_nonnegative_ch
 alter table public.product_channel_links add constraint product_channel_links_price_check check (price is null or price >= 0);
 alter table public.product_channel_links add constraint product_channel_links_fee_rate_check check (fee_rate is null or fee_rate between 0 and 100);
 alter table public.channel_metrics add constraint channel_metrics_conversion_check check (conversion is null or conversion between 0 and 100);
+alter table public.channel_metrics add constraint channel_metrics_period_check check (period_start is null or period_end is null or period_end >= period_start);
+alter table public.sales_channels add constraint sales_channels_connected_status_check check ((connected and status = 'connected') or (not connected and status <> 'connected'));
