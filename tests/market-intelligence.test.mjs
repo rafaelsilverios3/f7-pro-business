@@ -27,6 +27,19 @@ test('migration mantém mercado separado do estoque e isolado por empresa', () =
   assert.match(migration, /validate_market_opportunity_sources/);
 });
 
+test('migration torna checks e fontes idempotentes e preserva validações', () => {
+  assert.match(migration, /alter table public\.market_sources drop constraint if exists market_sources_confidence_check/);
+  assert.match(migration, /alter table public\.market_signals drop constraint if exists market_signals_confidence_check/);
+  assert.match(migration, /alter table public\.market_opportunities drop constraint if exists market_opportunities_scores_check/);
+  assert.match(migration, /confidence is null or confidence between 0 and 100/);
+  assert.match(migration, /opportunity_score is null or opportunity_score between 0 and 100/);
+  assert.match(migration, /trust_score is null or trust_score between 0 and 100/);
+  assert.match(migration, /estimated_capital is null or estimated_capital >= 0/);
+  assert.match(migration, /foreign key \(company_id, source_id\) references public\.market_sources\(company_id, id\)/);
+  assert.match(migration, /validate_market_opportunity_sources/);
+  assert.match(migration, /id = source_id and company_id = new\.company_id/);
+});
+
 test('permissões de Market Intelligence são separadas', () => {
   assert.match(permissions, /market_intelligence\.view/);
   assert.match(permissions, /market_intelligence\.manage/);
