@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import CompanyLogoDialog from './CompanyLogoDialog';
 import { getCompanyLogoUrl } from '@/services/companyBrandingService';
 import { useCompany } from '@/lib/useCompany';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 
 const NAV = [
   {
@@ -51,9 +52,30 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
   const location = useLocation();
   const [companyLogo, setCompanyLogo] = React.useState('');
   const [logoOpen, setLogoOpen] = React.useState(false);
+  const [memberRole, setMemberRole] = React.useState('');
   const { refresh } = useCompany();
-  const role = String(user?.role || '').toLowerCase();
+  const role = String(memberRole || user?.role || '').toLowerCase();
   const isAdmin = role === 'admin';
+  React.useEffect(() => {
+    let cancelled = false;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) {
+      setMemberRole(String(user?.role || '').toLowerCase());
+      return undefined;
+    }
+    getSupabaseClient()
+      .from('company_users')
+      .select('role')
+      .eq('company_id', company.id)
+      .eq('user_id', user.id)
+      .eq('active', true)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setMemberRole(error ? String(user?.role || '').toLowerCase() : String(data?.role || user?.role || '').toLowerCase());
+      })
+      .catch(() => { if (!cancelled) setMemberRole(String(user?.role || '').toLowerCase()); });
+    return () => { cancelled = true; };
+  }, [company?.id, user?.id, user?.role]);
   React.useEffect(() => { let cancelled = false; if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.logo_path) { setCompanyLogo(''); return undefined; } getCompanyLogoUrl(company.logo_path).then((url) => { if (!cancelled) setCompanyLogo(url); }).catch(() => { if (!cancelled) setCompanyLogo(''); }); return () => { cancelled = true; }; }, [company?.logo_path]);
   const companyName = company?.name || 'Sua empresa';
 
@@ -109,7 +131,7 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
       <aside className="hidden w-[245px] shrink-0 flex-col border-r border-slate-800/70 bg-[#091426] md:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
           <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700/70 bg-slate-800 text-slate-300">{companyLogo ? <img src={companyLogo} alt={`Logo de ${companyName}`} className="h-full w-full object-contain" /> : <Store className="h-5 w-5" />}{isAdmin && <button type="button" aria-label="Editar logo da empresa" onClick={() => setLogoOpen(true)} className="absolute inset-0 flex items-center justify-center bg-slate-950/65 opacity-0 transition hover:opacity-100"><Pencil className="h-4 w-4 text-white" /></button>}</div>
-          <div className="min-w-0 leading-tight"><p className="truncate text-sm font-bold tracking-tight text-white">{companyName}</p>{isAdmin && <button type="button" onClick={() => setLogoOpen(true)} className="text-[10px] text-slate-400 hover:text-blue-300">Personalizar logo</button>}</div>
+          <div className="min-w-0 leading-tight"><p className="truncate text-sm font-bold tracking-tight text-white">{companyName}</p>{isAdmin && <button type="button" onClick={() => setLogoOpen(true)} className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-blue-300"><Pencil className="h-3 w-3" /> Editar logo</button>}</div>
         </div>
         <NavList />
         <div className="border-t border-slate-800 px-4 py-3"><div className="flex items-center gap-2.5 rounded-lg px-2 py-2"><img src="/branding/f7-icon.png" alt="F7 PRO BUSINESS" className="h-9 w-9 object-contain" /><div className="min-w-0 leading-tight"><p className="truncate text-xs font-bold text-white">F7 PRO BUSINESS</p><p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p></div></div></div>
