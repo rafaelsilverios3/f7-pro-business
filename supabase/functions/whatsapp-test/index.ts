@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
     const meta = await graphRequest(`${integration.external_phone_id}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`);
     const valid = meta.ok && phoneValidation(meta.data, integration.external_phone_id);
     const result = { api_reachable: meta.ok, number_configured: valid, webhook_configured: 'unknown', send_ready: valid && integration.status === 'connected', receive_ready: valid && integration.status === 'connected' ? 'unknown' : false, status: valid ? 'ok' : 'error' };
-    await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'connection_tested', status: valid ? 'success' : 'error', metadata: { api_reachable: meta.ok, number_configured: valid, provider_status: result.status } });
+    await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: valid ? 'connection_tested' : 'whatsapp.meta_validation_failed', status: valid ? 'success' : 'error', metadata: valid ? { api_reachable: meta.ok, number_configured: valid, provider_status: result.status, graph_version: meta.graph_version } : { meta_code: meta.meta_error?.code || null, meta_subcode: meta.meta_error?.subcode || null, meta_type: meta.meta_error?.type || null, graph_version: meta.graph_version, http_status: meta.status } });
     return json(valid ? result : { ...result, ...publicProviderError(meta) }, valid ? 200 : 502);
   } catch { return json({ code: 'PROVIDER_ERROR' }, 500); }
 });

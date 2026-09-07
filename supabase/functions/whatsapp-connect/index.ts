@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     const meta = await graphRequest(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`);
     if (!phoneValidation(meta.data, phoneId)) {
-      await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'connection_validation_failed', status: 'error', metadata: { http_status: meta.status, code: meta.code } });
+      await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'whatsapp.meta_validation_failed', status: 'error', metadata: { meta_code: meta.meta_error?.code || null, meta_subcode: meta.meta_error?.subcode || null, meta_type: meta.meta_error?.type || null, graph_version: meta.graph_version, http_status: meta.status } });
       return json(publicProviderError(meta), 502);
     }
     const businessId = meta.data?.whatsapp_business_account?.id || null;

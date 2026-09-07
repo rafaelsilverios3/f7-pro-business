@@ -37,7 +37,12 @@ async function invokeIntegration(functionName, body) {
   if (error) {
     let detail = null;
     try { detail = await error.context?.json?.(); } catch { /* provider errors stay generic */ }
-    const cause = new Error(detail?.code || error.message || 'Não foi possível concluir a ação.');
+    const meta = detail?.meta;
+    const metaCode = meta?.code ?? detail?.meta_code;
+    const metaSubcode = meta?.subcode ?? detail?.meta_subcode;
+    const cause = new Error(metaCode != null
+      ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
+      : detail?.code || error.message || 'Não foi possível concluir a ação.');
     throw cause;
   }
   if (data?.code && data.code !== 'OK') throw new Error(data.code);

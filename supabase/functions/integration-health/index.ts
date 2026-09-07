@@ -1,5 +1,5 @@
 import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
-import { graphRequest, phoneValidation } from '../_shared/whatsapp.ts';
+import { graphRequest, phoneValidation, publicProviderError } from '../_shared/whatsapp.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -14,12 +14,14 @@ Deno.serve(async (req) => {
     const result = [];
     for (const companyId of ids) {
       const integration = integrations?.find((item) => item.company_id === companyId && item.provider === 'whatsapp');
-      let provider = 'unknown'; let phone = integration?.external_phone_id ? 'configured' : 'not_configured';
+      let provider = 'unknown'; let phone = integration?.external_phone_id ? 'configured' : 'not_configured'; let providerDiagnostic = null; let graph_version = null;
       if (integration?.external_phone_id) {
         const meta = await graphRequest(`${integration.external_phone_id}?fields=id`);
         provider = meta.ok && phoneValidation(meta.data, integration.external_phone_id) ? 'ok' : 'error';
+        providerDiagnostic = meta.ok ? null : publicProviderError(meta);
+        graph_version = meta.graph_version;
       }
-      result.push({ company_id: companyId, whatsapp: { status: integration?.status || 'not_configured', database: 'ok', provider, phone, webhook: 'unknown', send: integration?.status === 'connected' && provider === 'ok' ? 'ready' : 'unknown', receive: 'unknown' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
+      result.push({ company_id: companyId, whatsapp: { status: integration?.status || 'not_configured', database: 'ok', provider, provider_diagnostic: providerDiagnostic, graph_version, phone, webhook: 'unknown', send: integration?.status === 'connected' && provider === 'ok' ? 'ready' : 'unknown', receive: 'unknown' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
     }
     return json({ integrations: result });
   } catch { return json({ code: 'PROVIDER_ERROR' }, 500); }
