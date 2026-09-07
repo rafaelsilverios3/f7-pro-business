@@ -1,6 +1,10 @@
 // F7 PRO BUSINESS — Produtos
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { useAuth } from '@/lib/AuthContext';
+import { can } from '@/lib/permissions';
+import { applyProductPrice } from '@/services/pricingService';
 import { Plus, Search, Pencil, Trash2, AlertTriangle, Package } from 'lucide-react';
 import { productsRepository } from '@/data/repositories/productsRepository';
 import { productsService } from '@/services/productsService';
@@ -11,16 +15,20 @@ import { Button } from '@/components/ui/button';
 
 export default function Produtos() {
   const { company } = useOutletContext();
+  const { user } = useAuth();
+  const [role, setRole] = useState(user?.role || '');
   const [items, setItems] = useState(null);
   const [query, setQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const canManagePricing = can({ role }, 'pricing.manage');
 
   const load = async () => {
     if (!company) return;
     setItems(await productsRepository.list(company.id));
   };
   useEffect(() => { load(); }, [company]);
+  useEffect(() => { let cancelled = false; if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) { setRole(user?.role || ''); return undefined; } getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => { if (!cancelled) setRole(data?.role || ''); }); return () => { cancelled = true; }; }, [company?.id, user?.id, user?.role]);
 
   const filtered = useMemo(() => {
     if (!items) return [];
@@ -130,7 +138,7 @@ export default function Produtos() {
         )}
       </div>
 
-      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} />
+      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} canManagePricing={canManagePricing} onApplyPricing={async ({ product, price, summary }) => { await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); }} />
     </div>
   );
 }

@@ -6,7 +6,7 @@ const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
 export const productsService = {
   list: (companyId) => productsRepository.list(companyId),
   create: (companyId, data) => {
-    const parsed = productSchema.parse({ ...data, company_id: companyId });
+    const parsed = productSchema.parse({ ...data, company_id: companyId, price: data.price ?? data.sale_price, cost: data.cost ?? data.cost_price, minimum_stock: data.minimum_stock ?? data.min_stock });
     const payload = isSupabase() ? parsed : {
       ...parsed,
       sale_price: parsed.price,

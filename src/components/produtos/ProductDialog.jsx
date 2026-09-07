@@ -5,16 +5,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import PricingDialog from '@/components/pricing/PricingDialog';
 
-export default function ProductDialog({ open, onClose, onSave, initial }) {
+export default function ProductDialog({ open, onClose, onSave, initial, canManagePricing = false, onApplyPricing }) {
   const [form, setForm] = useState({
-    sku: '', name: '', category: '', brand: '', description: '',
+    sku: '', barcode: '', name: '', category: '', brand: '', description: '',
     cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
   });
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   useEffect(() => {
     if (initial) setForm({ ...form, ...initial });
-    else setForm({ sku: '', name: '', category: '', brand: '', description: '', cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true });
+    else setForm({ sku: '', barcode: '', name: '', category: '', brand: '', description: '', cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true });
   }, [initial, open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -40,6 +42,10 @@ export default function ProductDialog({ open, onClose, onSave, initial }) {
             <div className="space-y-1.5">
               <Label className="text-xs">Categoria</Label>
               <Input value={form.category} onChange={(e) => set('category', e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Código de barras</Label>
+              <Input value={form.barcode || ''} onChange={(e) => set('barcode', e.target.value)} placeholder="EAN / GTIN" />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -70,6 +76,7 @@ export default function ProductDialog({ open, onClose, onSave, initial }) {
               <div className="flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-600">{margin.toFixed(1)}%</div>
             </div>
           </div>
+          <Button type="button" variant="outline" className="w-full" onClick={() => setPricingOpen(true)}>Calcular preço de venda</Button>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Estoque</Label>
@@ -94,6 +101,7 @@ export default function ProductDialog({ open, onClose, onSave, initial }) {
           </DialogFooter>
         </form>
       </DialogContent>
+      <PricingDialog open={pricingOpen} onClose={() => setPricingOpen(false)} product={form} canManage={Boolean(initial && canManagePricing)} onSelectPrice={(value) => set('sale_price', value)} onApply={async ({ price, summary }) => { await onApplyPricing?.({ product: initial, price, summary }); set('sale_price', price); }} />
     </Dialog>
   );
 }

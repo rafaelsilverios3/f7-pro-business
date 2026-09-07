@@ -15,7 +15,7 @@ const normalize = (name, row) => {
 };
 const columns = {
   Customer: ['company_id', 'name', 'document', 'email', 'phone', 'total_purchased', 'sale_count', 'avg_ticket'],
-  Product: ['company_id', 'name', 'sku', 'cost', 'price', 'stock', 'minimum_stock', 'active'],
+  Product: ['company_id', 'name', 'sku', 'barcode', 'cost', 'price', 'stock', 'minimum_stock', 'active'],
   Supplier: ['company_id', 'name', 'document', 'email', 'phone'],
   PurchaseOrder: ['company_id', 'supplier_id', 'status', 'total', 'expected_date'],
   PurchaseItem: ['company_id', 'purchase_id', 'product_id', 'quantity', 'cost'],
