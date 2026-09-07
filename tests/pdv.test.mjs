@@ -23,6 +23,7 @@ test('PDV permission is limited to commercial roles', () => {
   const roleLine = (role) => matrix.match(new RegExp(`\\n  ${role}: \\[(.*?)\\n`))?.[1] || '';
   assert.match(roleLine('comercial'), /pdv\.use/);
   assert.match(roleLine('vendedor'), /pdv\.use/);
+  assert.match(roleLine('gestor'), /pdv\.use/);
   assert.doesNotMatch(roleLine('financeiro'), /pdv\.use/);
   assert.doesNotMatch(roleLine('estoque'), /pdv\.use/);
   assert.doesNotMatch(roleLine('atendimento'), /pdv\.use/);

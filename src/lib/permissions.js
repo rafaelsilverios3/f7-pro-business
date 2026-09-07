@@ -9,7 +9,7 @@ export const PERMISSION_LABELS = {
 };
 export const ROLE_PERMISSIONS = {
   admin: ['*'],
-  gestor: ['dashboard.view', 'customers.*', 'products.*', 'inventory.*', 'sales.*', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
+  gestor: ['dashboard.view', 'customers.*', 'products.*', 'inventory.*', 'sales.*', 'pdv.use', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
   financeiro: ['dashboard.view', 'finance.*', 'reports.view', 'pricing.view', 'notifications.view'],
   comercial: ['dashboard.view', 'customers.*', 'products.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view'],
   vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view'],
