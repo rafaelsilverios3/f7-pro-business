@@ -31,6 +31,18 @@ test('0029 grants only server-side webhook privileges and usage RPC access', () 
   assert.doesNotMatch(sql, /disable row level security/i);
 });
 
+test('0030 audits duplicate WhatsApp keys and creates an ON CONFLICT-compatible unique index', () => {
+  const sql = read('0030_whatsapp_message_idempotency.sql');
+  assert.match(sql, /where external_message_id is not null/i);
+  assert.match(sql, /group by company_id, channel, external_message_id/i);
+  assert.match(sql, /having count\(\*\) > 1/i);
+  assert.match(sql, /raise exception '0030 aborted/i);
+  assert.match(sql, /create unique index if not exists messages_company_channel_external_message_uidx/i);
+  assert.match(sql, /on public\.messages \(company_id, channel, external_message_id\)/i);
+  assert.doesNotMatch(sql, /delete from public\.messages/i);
+  assert.doesNotMatch(sql, /where external_message_id is not null\s*;/i);
+});
+
 test('catálogo separa leitura de gerenciamento por role', () => {
   const sql = read('0021_product_catalog.sql');
   assert.match(sql, /create policy catalog_select/);
