@@ -38,7 +38,7 @@ as $$
         jsonb_build_object(
           'id', p.id,
           'name', p.name,
-          'category', p.category,
+          'category', null::text,
           'subcategory', p.subcategory,
           'short_description', coalesce(p.short_description, p.description, ''),
           'price', p.price,

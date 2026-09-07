@@ -17,6 +17,8 @@ test('função pública não seleciona custo, margem ou fornecedor', () => {
   const publicFunction = migration.split('create or replace function public.get_public_storefront')[1].split('revoke all on function')[0];
   assert.doesNotMatch(publicFunction, /p\.cost|cost_price|margin|supplier/i);
   assert.match(publicFunction, /short_description/);
+  assert.match(publicFunction, /'category', null::text/);
+  assert.doesNotMatch(publicFunction, /p\.category/);
   assert.match(publicFunction, /price/);
   assert.match(publicFunction, /stock/);
   assert.match(publicFunction, /jsonb_agg\([\s\S]*order by p\.featured desc, p\.name/);
