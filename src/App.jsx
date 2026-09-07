@@ -30,6 +30,7 @@ import Onboarding from './pages/Onboarding.jsx';
 import Usuarios from './pages/Usuarios.jsx';
 import PDV from './pages/PDV.jsx';
 import Precificacao from './pages/Precificacao.jsx';
+import Storefront from './pages/Storefront.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -71,6 +72,7 @@ const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
   const location = useLocation();
   const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password'];
+  if (location.pathname.startsWith('/loja/')) return <Routes><Route path="/loja/:slug" element={<Storefront />} /></Routes>;
   if (publicPaths.includes(location.pathname) || location.pathname.startsWith('/invite/')) return <Routes><Route path="/login" element={<Login />} /><Route path="/register" element={<Register />} /><Route path="/forgot-password" element={<ForgotPassword />} /><Route path="/reset-password" element={<ResetPassword />} /><Route path="/invite/:token" element={<Invite />} /></Routes>;
 
   // Show loading spinner while checking app public settings or auth

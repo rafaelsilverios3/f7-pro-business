@@ -26,6 +26,7 @@ export default function Configuracoes() {
     await getDataProvider().entity('Company').update(form.id, {
       name: form.name, legal_name: form.legal_name, document: form.document,
       phone: form.phone, whatsapp: form.whatsapp, email: form.email,
+      store_slug: form.store_slug, store_enabled: Boolean(form.store_enabled),
       address: form.address, currency: form.currency,
     });
     await refresh();
@@ -89,6 +90,15 @@ export default function Configuracoes() {
         <div className="space-y-1.5">
           <Label className="text-xs">Endereço</Label>
           <Input value={form.address || ''} onChange={(e) => set('address', e.target.value)} />
+        </div>
+
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+          <p className="text-sm font-semibold text-slate-800">Loja online</p>
+          <p className="mt-1 text-xs text-slate-500">Defina o endereço público e publique somente produtos ativos com estoque.</p>
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className="space-y-1.5"><Label className="text-xs">Slug público</Label><Input value={form.store_slug || ''} onChange={(e) => set('store_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-'))} placeholder="minha-empresa" /><p className="text-[11px] text-slate-500">/loja/{form.store_slug || 'minha-empresa'}</p></div>
+            <label className="flex items-center gap-2 self-start pt-7 text-sm text-slate-700"><input type="checkbox" checked={Boolean(form.store_enabled)} onChange={(e) => set('store_enabled', e.target.checked)} /> Publicar loja</label>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 pt-2">

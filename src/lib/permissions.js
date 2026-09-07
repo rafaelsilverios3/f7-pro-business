@@ -5,14 +5,14 @@ export const PERMISSION_LABELS = {
   'dashboard.view': 'Dashboard', 'customers.view': 'Clientes', 'products.view': 'Produtos', 'inventory.view': 'Estoque',
   'sales.view': 'Vendas', 'pdv.use': 'PDV', 'quotes.view': 'Orçamentos', 'finance.view': 'Financeiro', 'purchases.view': 'Compras',
   'goals.view': 'Metas', 'reports.view': 'Relatórios', 'pricing.view': 'Precificação', 'pricing.manage': 'Gerenciar preços', 'catalog.view': 'Catálogo', 'catalog.manage': 'Gerenciar catálogo', 'conversation.view': 'Smart Atendimento', 'conversation.manage': 'Gerenciar atendimento', 'orders.create_from_conversation': 'Criar pedido pelo atendimento', 'automation.view': 'Automações',
-  'intelligence.view': 'F7 Intelligence', 'notifications.view': 'Notificações', 'users.view': 'Usuários', 'settings.view': 'Configurações',
+  'intelligence.view': 'F7 Intelligence', 'notifications.view': 'Notificações', 'users.view': 'Usuários', 'settings.view': 'Configurações', 'store.view': 'Loja online', 'store.manage': 'Gerenciar loja online',
 };
 export const ROLE_PERMISSIONS = {
   admin: ['*'],
-  gestor: ['dashboard.view', 'customers.*', 'products.*', 'catalog.view', 'catalog.manage', 'inventory.*', 'sales.*', 'pdv.use', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
+  gestor: ['dashboard.view', 'customers.*', 'products.*', 'catalog.view', 'catalog.manage', 'inventory.*', 'sales.*', 'pdv.use', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'pricing.view', 'pricing.manage', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*', 'store.view', 'store.manage'],
   financeiro: ['dashboard.view', 'finance.*', 'reports.view', 'pricing.view', 'notifications.view'],
-  comercial: ['dashboard.view', 'customers.*', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view', 'conversation.*', 'orders.create_from_conversation'],
-  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'conversation.*', 'orders.create_from_conversation'],
+  comercial: ['dashboard.view', 'customers.*', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view', 'pricing.view', 'conversation.*', 'orders.create_from_conversation', 'store.view', 'store.manage'],
+  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'catalog.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'conversation.*', 'orders.create_from_conversation', 'store.view'],
   estoque: ['dashboard.view', 'products.view', 'catalog.view', 'inventory.*', 'purchases.*', 'notifications.view'],
   atendimento: ['dashboard.view', 'customers.view', 'customers.create', 'conversation.*', 'orders.create_from_conversation'],
 };
