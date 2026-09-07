@@ -21,6 +21,12 @@ test('migration isola oportunidades e rascunhos por empresa', () => {
   assert.match(migration, /channel_score/);
   assert.match(migration, /current_company_role\(company_id\)/);
   assert.match(migration, /active boolean not null default false/);
+  assert.doesNotMatch(migration, /opportunity_id uuid not null references public\.product_opportunities\(id\)/);
+  assert.match(migration, /opportunity_product_drafts_company_opportunity_fk/);
+  assert.match(migration, /drop constraint if exists product_opportunities_scores_check/);
+  assert.match(migration, /drop constraint if exists opportunity_product_drafts_amounts_check/);
+  assert.match(migration, /opportunity_score between 0 and 100/);
+  assert.match(migration, /price >= 0 and cost >= 0 and stock >= 0/);
 });
 
 test('permissões do Opportunity não concedem acesso a estoque automaticamente', () => {
