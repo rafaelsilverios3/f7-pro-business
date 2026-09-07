@@ -97,6 +97,7 @@ begin
   select id into customer_id from public.customers c where c.company_id=target_company_id and lower(coalesce(c.email,''))=lower(coalesce(p_customer->>'email','')) and coalesce(p_customer->>'email','')<>'' limit 1;
   if customer_id is null then insert into public.customers(company_id,name,email,phone) values(target_company_id,trim(p_customer->>'name'),nullif(trim(p_customer->>'email'),''),nullif(trim(p_customer->>'phone'),'')) returning id into customer_id; end if;
   for input_item in select * from jsonb_array_elements(p_items) loop
+    product_id_value := null; variant_id_value := null; qty := null; unit_price := null;
     if jsonb_typeof(input_item) <> 'object' then raise exception 'Item inválido'; end if;
     product_id_text := nullif(trim(input_item->>'product_id'), ''); variant_id_text := nullif(trim(input_item->>'variant_id'), ''); quantity_text := nullif(trim(input_item->>'quantity'), '');
     if product_id_text is null or product_id_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then raise exception 'Item inválido'; end if;

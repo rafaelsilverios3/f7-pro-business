@@ -32,6 +32,11 @@ test('migration 0023 pode ser reexecutada sem duplicar constraints', () => {
   assert.match(migration, /variant_id_text !~\*/);
 });
 
+test('pedido público reinicia o estado de cada item', () => {
+  assert.match(migration, /for input_item in select \* from jsonb_array_elements\(p_items\) loop\s+product_id_value := null; variant_id_value := null; qty := null; unit_price := null;/);
+  assert.match(migration, /if variant_id_text is not null then variant_id_value := variant_id_text::uuid; end if;/);
+});
+
 test('permissões da loja são separadas por função', () => {
   assert.match(permissions, /store\.view/);
   assert.match(permissions, /store\.manage/);
