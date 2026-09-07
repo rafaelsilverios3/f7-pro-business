@@ -3,7 +3,7 @@ export const ROLE_LABELS = { admin: 'Administrador', gestor: 'Gestor', financeir
 export const ROLE_COLORS = { admin: 'bg-violet-100 text-violet-700', gestor: 'bg-blue-100 text-blue-700', financeiro: 'bg-emerald-100 text-emerald-700', comercial: 'bg-amber-100 text-amber-700', vendedor: 'bg-slate-100 text-slate-700', estoque: 'bg-orange-100 text-orange-700', atendimento: 'bg-pink-100 text-pink-700' };
 export const PERMISSION_LABELS = {
   'dashboard.view': 'Dashboard', 'customers.view': 'Clientes', 'products.view': 'Produtos', 'inventory.view': 'Estoque',
-  'sales.view': 'Vendas', 'quotes.view': 'Orçamentos', 'finance.view': 'Financeiro', 'purchases.view': 'Compras',
+  'sales.view': 'Vendas', 'pdv.use': 'PDV', 'quotes.view': 'Orçamentos', 'finance.view': 'Financeiro', 'purchases.view': 'Compras',
   'goals.view': 'Metas', 'reports.view': 'Relatórios', 'conversation.view': 'Smart Atendimento', 'automation.view': 'Automações',
   'intelligence.view': 'F7 Intelligence', 'notifications.view': 'Notificações', 'users.view': 'Usuários', 'settings.view': 'Configurações',
 };
@@ -11,8 +11,8 @@ export const ROLE_PERMISSIONS = {
   admin: ['*'],
   gestor: ['dashboard.view', 'customers.*', 'products.*', 'inventory.*', 'sales.*', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
   financeiro: ['dashboard.view', 'finance.*', 'reports.view', 'notifications.view'],
-  comercial: ['dashboard.view', 'customers.*', 'products.view', 'sales.*', 'quotes.*', 'goals.view', 'reports.view'],
-  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'sales.*', 'quotes.*', 'goals.view'],
+  comercial: ['dashboard.view', 'customers.*', 'products.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view', 'reports.view'],
+  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'sales.*', 'pdv.use', 'quotes.*', 'goals.view'],
   estoque: ['dashboard.view', 'products.view', 'inventory.*', 'purchases.*', 'notifications.view'],
   atendimento: ['dashboard.view', 'customers.view', 'customers.create', 'conversation.*'],
 };

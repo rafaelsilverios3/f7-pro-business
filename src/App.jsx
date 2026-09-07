@@ -28,6 +28,7 @@ import Relatorios from './pages/Relatorios.jsx';
 import Notificacoes from './pages/Notificacoes.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Usuarios from './pages/Usuarios.jsx';
+import PDV from './pages/PDV.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -106,6 +107,7 @@ const AuthenticatedApp = () => {
           <Route path="/produtos" element={<RoleGuard permission="products.view"><Produtos /></RoleGuard>} />
           <Route path="/estoque" element={<RoleGuard permission="inventory.view"><Estoque /></RoleGuard>} />
           <Route path="/vendas" element={<RoleGuard permission="sales.view"><Vendas /></RoleGuard>} />
+          <Route path="/pdv" element={<RoleGuard permission="pdv.use"><PDV /></RoleGuard>} />
           <Route path="/financeiro" element={<RoleGuard permission="finance.view"><Financeiro /></RoleGuard>} />
           <Route path="/configuracoes" element={<RoleGuard permission="settings.view"><Configuracoes /></RoleGuard>} />
           <Route path="/configuracoes/integracoes" element={<RoleGuard permission="settings.view"><Integracoes /></RoleGuard>} />

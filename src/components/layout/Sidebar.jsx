@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Package, Boxes, ShoppingCart, FileText,
   Wallet, Truck, MessageSquare, Zap, BrainCircuit, BarChart3,
-  Settings, Bell, Target, Shield, Store, Pencil,
+  Settings, Bell, Target, Shield, Store, Pencil, ScanLine,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CompanyLogoDialog from './CompanyLogoDialog';
@@ -20,6 +20,7 @@ const NAV = [
   {
     group: 'Operação',
     items: [
+      { to: '/pdv', label: 'PDV', icon: ScanLine, permission: 'pdv.use' },
       { to: '/clientes', label: 'Clientes', icon: Users, permission: 'customers.view' },
       { to: '/produtos', label: 'Produtos', icon: Package, permission: 'products.view' },
       { to: '/estoque', label: 'Estoque', icon: Boxes, permission: 'inventory.view' },
