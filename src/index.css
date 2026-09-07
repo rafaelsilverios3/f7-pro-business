@@ -29,6 +29,18 @@
   --input: 214 54% 16%;
   --ring: 195 100% 57%;
   --radius: 0.625rem;
+  --app-bg: #07111f;
+  --surface: #0e1a2b;
+  --surface-elevated: #101f33;
+  --card-bg: #0e1a2b;
+  --card-border: rgba(148, 163, 184, .24);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --sidebar-bg: #091426;
+  --sidebar-active: linear-gradient(145deg, #1677ff, #4f46e5);
+  --input-bg: #101f33;
+  --app-border: rgba(148, 163, 184, .2);
+  --app-accent: #1677ff;
 }
 html,body,#root { min-height:100%; }
 body { background:#07111f; color:#f8fafc; }
@@ -99,7 +111,22 @@ button:focus-visible,a:focus-visible { outline:2px solid #27b8ff; outline-offset
 /* Light mode keeps the same F7 hierarchy while replacing dark surfaces with
    readable day-mode surfaces. */
 body.light-theme { background: #eef3f9; color: #172033; }
-body.light-theme .app-shell { background: #eef3f9; }
+body.light-theme {
+  --app-bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-elevated: #f8fafc;
+  --card-bg: linear-gradient(135deg, #727d8a 0%, #626d7a 45%, #4f5966 100%);
+  --card-border: rgba(255, 255, 255, .2);
+  --text-primary: #142033;
+  --text-secondary: #64748b;
+  --sidebar-bg: #ffffff;
+  --sidebar-active: linear-gradient(145deg, #687381, #505a67);
+  --input-bg: #f8fafc;
+  --app-border: #d8e0ea;
+  --app-accent: #1677ff;
+  background: var(--app-bg);
+}
+body.light-theme .app-shell { background: var(--app-bg); }
 body.light-theme .app-shell [class*="bg-[#07111f"],
 body.light-theme .app-shell [class*="bg-[#091426"],
 body.light-theme .app-shell [class*="bg-[#0e1a2b"],
@@ -151,3 +178,65 @@ body.light-theme .app-shell textarea,
 body.light-theme .app-shell select { background: #4b5563 !important; color: #f8fafc !important; border-color: #718096 !important; }
 body.light-theme .app-shell input,
 body.light-theme .app-shell textarea { background: #ffffff !important; color: #172033 !important; border-color: #c5d2e0 !important; }
+
+/* F7 Light Premium: all rules below are scoped to light mode. */
+body.light-theme .app-shell > aside,
+body.light-theme .app-shell aside { background: var(--sidebar-bg) !important; border-color: #e2e8f0 !important; }
+body.light-theme .app-shell main > .sticky { background: var(--surface) !important; border-color: var(--app-border) !important; }
+body.light-theme .app-shell .f7-kpi-card,
+body.light-theme .app-shell .f7-quick-actions,
+body.light-theme .app-shell .border-slate-200.bg-white,
+body.light-theme .app-shell .border-slate-100.bg-white {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+  box-shadow: 0 14px 30px rgba(51, 65, 85, .16) !important;
+}
+body.light-theme .app-shell .f7-kpi-card,
+body.light-theme .app-shell .f7-quick-actions { color: #f8fafc !important; }
+body.light-theme .app-shell .f7-kpi-card .text-white,
+body.light-theme .app-shell .f7-kpi-card .text-slate-100,
+body.light-theme .app-shell .f7-kpi-card .text-slate-200,
+body.light-theme .app-shell .f7-kpi-card .text-slate-300,
+body.light-theme .app-shell .f7-kpi-card .text-slate-400,
+body.light-theme .app-shell .f7-kpi-card .text-slate-500,
+body.light-theme .app-shell .f7-quick-actions .text-white,
+body.light-theme .app-shell .f7-quick-actions .text-slate-100,
+body.light-theme .app-shell .f7-quick-actions .text-slate-200,
+body.light-theme .app-shell .f7-quick-actions .text-slate-300,
+body.light-theme .app-shell .f7-quick-actions .text-slate-400,
+body.light-theme .app-shell .f7-quick-actions .text-slate-500 { color: #f8fafc !important; }
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-900,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-800,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-700,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-600,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-500,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-900,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-800,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-700,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-600,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-500 { color: #f8fafc !important; }
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-400,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-400 { color: #d9e1ea !important; }
+body.light-theme .app-shell .f7-quick-actions a { background: rgba(255, 255, 255, .08) !important; color: #ffffff !important; border-color: rgba(255, 255, 255, .2) !important; }
+body.light-theme .app-shell .f7-quick-actions a:hover { background: rgba(255, 255, 255, .14) !important; }
+body.light-theme .app-shell aside a:not(.bg-gradient-to-r) { color: #1e293b !important; }
+body.light-theme .app-shell aside a:not(.bg-gradient-to-r):hover { background: #f1f5f9 !important; color: #142033 !important; }
+body.light-theme .app-shell aside a.bg-gradient-to-r { background: var(--sidebar-active) !important; color: #ffffff !important; }
+body.light-theme .app-shell .f7-period-active { background: var(--sidebar-active) !important; color: #ffffff !important; }
+body.light-theme .app-shell .f7-dialog-content { background: #ffffff !important; color: #1e293b !important; border-color: #cbd5e1 !important; }
+body.light-theme .app-shell .f7-dialog-content label { color: #334155 !important; }
+body.light-theme .app-shell .f7-dialog-content input,
+body.light-theme .app-shell .f7-dialog-content textarea,
+body.light-theme .app-shell .f7-dialog-content select { background: #f8fafc !important; color: #1e293b !important; border-color: #cbd5e1 !important; }
+body.light-theme .app-shell .f7-dialog-content input::placeholder,
+body.light-theme .app-shell .f7-dialog-content textarea::placeholder { color: #64748b !important; }
+body.light-theme .app-shell select { background: #626d7a !important; color: #f8fafc !important; border-color: #7c8795 !important; }
+body.light-theme .app-shell .f7-dialog-content select { background: #f8fafc !important; color: #1e293b !important; border-color: #cbd5e1 !important; }
+body.light-theme .app-shell .text-slate-900,
+body.light-theme .app-shell .text-slate-800,
+body.light-theme .app-shell .text-slate-700 { color: var(--text-primary) !important; }
+body.light-theme .app-shell .text-slate-600,
+body.light-theme .app-shell .text-slate-500,
+body.light-theme .app-shell .text-slate-400 { color: var(--text-secondary) !important; }
+body.light-theme .app-shell .recharts-cartesian-grid line { stroke: rgba(255, 255, 255, .15) !important; }
+body.light-theme .app-shell .recharts-text { fill: #d5dde7 !important; }
