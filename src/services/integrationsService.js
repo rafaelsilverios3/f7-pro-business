@@ -25,6 +25,11 @@ export function safeMetaDiagnostic(error = {}) {
   };
 }
 
+export function safeInternalDiagnostic(error = {}) {
+  if (error.code !== 'INTERNAL_PROVIDER_ERROR') return null;
+  return { httpStatus: error.httpStatus ?? null, stage: typeof error.stage === 'string' ? error.stage : null, internalCode: typeof error.internalCode === 'string' ? error.internalCode : null };
+}
+
 export async function listIntegrations(companyId) {
   if (!companyId) return [];
   if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
@@ -95,6 +100,7 @@ function createIntegrationError(rawDetail, httpStatus) {
   const metaSubcode = meta.subcode;
   const cause = new Error(metaCode != null
     ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
+    : safeDetail.code === 'INTERNAL_PROVIDER_ERROR' ? 'Falha interna na integração.'
     : typeof safeDetail.message === 'string' ? redactDiagnosticText(safeDetail.message) : 'Não foi possível concluir a ação.');
   Object.assign(cause, {
     code: detail?.code || null,
@@ -104,6 +110,8 @@ function createIntegrationError(rawDetail, httpStatus) {
     metaSubcode,
     graphVersion: detail?.graph_version ? redactDiagnosticText(detail.graph_version) : null,
     httpStatus: detail?.http_status || httpStatus || null,
+    stage: typeof detail?.stage === 'string' ? detail.stage.slice(0, 80) : null,
+    internalCode: typeof detail?.internal_code === 'string' ? detail.internal_code.slice(0, 80) : null,
   });
   return cause;
 }
