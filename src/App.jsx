@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/toaster"
+import React from 'react';
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
@@ -34,12 +35,35 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import Invite from './pages/Invite.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
+import { can } from '@/lib/permissions';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
   if (loading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
   return company ? <Outlet context={{ company }} /> : <Navigate to="/onboarding" replace />;
 };
+
+function Forbidden() {
+  return <div className="mx-auto mt-20 max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm"><h1 className="text-xl font-semibold text-slate-900">Acesso restrito</h1><p className="mt-2 text-sm text-slate-500">Você não tem permissão para acessar esta área.</p></div>;
+}
+
+function RoleGuard({ permission, children }) {
+  const { user } = useAuth();
+  const { company } = useCompany();
+  const [role, setRole] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? '' : String(user?.role || ''));
+  const [checking, setChecking] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase');
+  React.useEffect(() => {
+    let cancelled = false;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setRole(String(user?.role || '')); setChecking(false); return undefined; }
+    if (!company?.id || !user?.id) return undefined;
+    setChecking(true);
+    getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => { if (!cancelled) { setRole(data?.role || ''); setChecking(false); } }).catch(() => { if (!cancelled) { setRole(''); setChecking(false); } });
+    return () => { cancelled = true; };
+  }, [company?.id, user?.id, user?.role]);
+  if (checking) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
+  return can({ role }, permission) ? children : <Forbidden />;
+}
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
@@ -76,24 +100,24 @@ const AuthenticatedApp = () => {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/invite/:token" element={<Invite />} />
         <Route element={<CompanyGuard />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/clientes" element={<Clientes />} />
-          <Route path="/produtos" element={<Produtos />} />
-          <Route path="/estoque" element={<Estoque />} />
-          <Route path="/vendas" element={<Vendas />} />
-          <Route path="/financeiro" element={<Financeiro />} />
-          <Route path="/configuracoes" element={<Configuracoes />} />
-          <Route path="/configuracoes/integracoes" element={<Integracoes />} />
-          <Route path="/usuarios" element={<Usuarios />} />
-          <Route path="/orcamentos" element={<Orcamentos />} />
-          <Route path="/compras" element={<Compras />} />
-          <Route path="/metas" element={<Metas />} />
-          <Route path="/atendimento" element={<Atendimento />} />
-          <Route path="/automacoes" element={<Automacoes />} />
-          <Route path="/intelligence" element={<Intelligence />} />
-          <Route path="/relatorios" element={<Relatorios />} />
-          <Route path="/notificacoes" element={<Notificacoes />} />
+          <Route path="/" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
+          <Route path="/dashboard" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
+          <Route path="/clientes" element={<RoleGuard permission="customers.view"><Clientes /></RoleGuard>} />
+          <Route path="/produtos" element={<RoleGuard permission="products.view"><Produtos /></RoleGuard>} />
+          <Route path="/estoque" element={<RoleGuard permission="inventory.view"><Estoque /></RoleGuard>} />
+          <Route path="/vendas" element={<RoleGuard permission="sales.view"><Vendas /></RoleGuard>} />
+          <Route path="/financeiro" element={<RoleGuard permission="finance.view"><Financeiro /></RoleGuard>} />
+          <Route path="/configuracoes" element={<RoleGuard permission="settings.view"><Configuracoes /></RoleGuard>} />
+          <Route path="/configuracoes/integracoes" element={<RoleGuard permission="settings.view"><Integracoes /></RoleGuard>} />
+          <Route path="/usuarios" element={<RoleGuard permission="users.view"><Usuarios /></RoleGuard>} />
+          <Route path="/orcamentos" element={<RoleGuard permission="quotes.view"><Orcamentos /></RoleGuard>} />
+          <Route path="/compras" element={<RoleGuard permission="purchases.view"><Compras /></RoleGuard>} />
+          <Route path="/metas" element={<RoleGuard permission="goals.view"><Metas /></RoleGuard>} />
+          <Route path="/atendimento" element={<RoleGuard permission="conversation.view"><Atendimento /></RoleGuard>} />
+          <Route path="/automacoes" element={<RoleGuard permission="automation.view"><Automacoes /></RoleGuard>} />
+          <Route path="/intelligence" element={<RoleGuard permission="intelligence.view"><Intelligence /></RoleGuard>} />
+          <Route path="/relatorios" element={<RoleGuard permission="reports.view"><Relatorios /></RoleGuard>} />
+          <Route path="/notificacoes" element={<RoleGuard permission="notifications.view"><Notificacoes /></RoleGuard>} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

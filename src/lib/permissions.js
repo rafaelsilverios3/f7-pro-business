@@ -1,9 +1,20 @@
 export const ROLES = Object.freeze(['admin', 'gestor', 'financeiro', 'comercial', 'vendedor', 'estoque', 'atendimento']);
 export const ROLE_LABELS = { admin: 'Administrador', gestor: 'Gestor', financeiro: 'Financeiro', comercial: 'Comercial', vendedor: 'Vendedor', estoque: 'Estoque', atendimento: 'Atendimento' };
 export const ROLE_COLORS = { admin: 'bg-violet-100 text-violet-700', gestor: 'bg-blue-100 text-blue-700', financeiro: 'bg-emerald-100 text-emerald-700', comercial: 'bg-amber-100 text-amber-700', vendedor: 'bg-slate-100 text-slate-700', estoque: 'bg-orange-100 text-orange-700', atendimento: 'bg-pink-100 text-pink-700' };
-export const PERMISSION_LABELS = {};
-const ROLE_PERMISSIONS = {
-  admin: ['*'], gestor: ['*'], financeiro: ['finance.*', 'dashboard.view'], comercial: ['customers.*', 'products.view', 'sales.*', 'quotes.*', 'dashboard.view'], vendedor: ['customers.view', 'customers.create', 'products.view', 'sales.*', 'quotes.*'], estoque: ['products.view', 'inventory.*', 'purchases.*'], atendimento: ['customers.view', 'customers.create', 'conversation.*'],
+export const PERMISSION_LABELS = {
+  'dashboard.view': 'Dashboard', 'customers.view': 'Clientes', 'products.view': 'Produtos', 'inventory.view': 'Estoque',
+  'sales.view': 'Vendas', 'quotes.view': 'Orçamentos', 'finance.view': 'Financeiro', 'purchases.view': 'Compras',
+  'goals.view': 'Metas', 'reports.view': 'Relatórios', 'conversation.view': 'Smart Atendimento', 'automation.view': 'Automações',
+  'intelligence.view': 'F7 Intelligence', 'notifications.view': 'Notificações', 'users.view': 'Usuários', 'settings.view': 'Configurações',
+};
+export const ROLE_PERMISSIONS = {
+  admin: ['*'],
+  gestor: ['dashboard.view', 'customers.*', 'products.*', 'inventory.*', 'sales.*', 'quotes.*', 'finance.*', 'purchases.*', 'goals.*', 'reports.*', 'users.view', 'settings.view', 'notifications.view', 'conversation.*', 'automation.*', 'intelligence.*'],
+  financeiro: ['dashboard.view', 'finance.*', 'reports.view', 'notifications.view'],
+  comercial: ['dashboard.view', 'customers.*', 'products.view', 'sales.*', 'quotes.*', 'goals.view', 'reports.view'],
+  vendedor: ['dashboard.view', 'customers.view', 'customers.create', 'products.view', 'sales.*', 'quotes.*', 'goals.view'],
+  estoque: ['dashboard.view', 'products.view', 'inventory.*', 'purchases.*', 'notifications.view'],
+  atendimento: ['dashboard.view', 'customers.view', 'customers.create', 'conversation.*'],
 };
 export const ROLE_DEFAULTS = Object.fromEntries(ROLES.map((role) => [role, ROLE_PERMISSIONS[role] || []]));
 export function can(user, permission) { const permissions = ROLE_PERMISSIONS[user?.role] || []; return permissions.includes('*') || permissions.some((item) => item.endsWith('.*') ? permission.startsWith(item.slice(0, -1)) : item === permission); }

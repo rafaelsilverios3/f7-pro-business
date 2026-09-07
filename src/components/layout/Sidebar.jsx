@@ -10,40 +10,41 @@ import CompanyLogoDialog from './CompanyLogoDialog';
 import { getCompanyLogoUrl } from '@/services/companyBrandingService';
 import { useCompany } from '@/lib/useCompany';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { can } from '@/lib/permissions';
 
 const NAV = [
   {
     group: 'Principal',
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard }],
+    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' }],
   },
   {
     group: 'Operação',
     items: [
-      { to: '/clientes', label: 'Clientes', icon: Users },
-      { to: '/produtos', label: 'Produtos', icon: Package },
-      { to: '/estoque', label: 'Estoque', icon: Boxes },
-      { to: '/vendas', label: 'Vendas', icon: ShoppingCart },
-      { to: '/orcamentos', label: 'Orçamentos', icon: FileText },
-      { to: '/financeiro', label: 'Financeiro', icon: Wallet },
-      { to: '/compras', label: 'Compras', icon: Truck },
-      { to: '/metas', label: 'Metas e Comissões', icon: Target },
+      { to: '/clientes', label: 'Clientes', icon: Users, permission: 'customers.view' },
+      { to: '/produtos', label: 'Produtos', icon: Package, permission: 'products.view' },
+      { to: '/estoque', label: 'Estoque', icon: Boxes, permission: 'inventory.view' },
+      { to: '/vendas', label: 'Vendas', icon: ShoppingCart, permission: 'sales.view' },
+      { to: '/orcamentos', label: 'Orçamentos', icon: FileText, permission: 'quotes.view' },
+      { to: '/financeiro', label: 'Financeiro', icon: Wallet, permission: 'finance.view' },
+      { to: '/compras', label: 'Compras', icon: Truck, permission: 'purchases.view' },
+      { to: '/metas', label: 'Metas e Comissões', icon: Target, permission: 'goals.view' },
     ],
   },
   {
     group: 'Inteligência',
     items: [
-      { to: '/atendimento', label: 'Smart Atendimento', icon: MessageSquare },
-      { to: '/automacoes', label: 'Automações', icon: Zap },
-      { to: '/intelligence', label: 'F7 Intelligence', icon: BrainCircuit },
-      { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
+      { to: '/atendimento', label: 'Smart Atendimento', icon: MessageSquare, permission: 'conversation.view' },
+      { to: '/automacoes', label: 'Automações', icon: Zap, permission: 'automation.view' },
+      { to: '/intelligence', label: 'F7 Intelligence', icon: BrainCircuit, permission: 'intelligence.view' },
+      { to: '/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'reports.view' },
     ],
   },
   {
     group: 'Sistema',
     items: [
-      { to: '/notificacoes', label: 'Notificações', icon: Bell },
-      { to: '/usuarios', label: 'Usuários', icon: Shield },
-      { to: '/configuracoes', label: 'Configurações', icon: Settings },
+      { to: '/notificacoes', label: 'Notificações', icon: Bell, permission: 'notifications.view' },
+      { to: '/usuarios', label: 'Usuários', icon: Shield, permission: 'users.view' },
+      { to: '/configuracoes', label: 'Configurações', icon: Settings, permission: 'settings.view' },
     ],
   },
 ];
@@ -87,7 +88,7 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
             {section.group}
           </p>
           <div className="space-y-0.5">
-            {section.items.map((item) => {
+            {section.items.filter((item) => !item.permission || can({ role }, item.permission)).map((item) => {
               const active = location.pathname === item.to;
               if (item.soon) {
                 return (
