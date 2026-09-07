@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CompanyLogoDialog from './CompanyLogoDialog';
-import { getCachedCompanyLogo } from '@/services/companyBrandingService';
+import { getCompanyLogoUrl } from '@/services/companyBrandingService';
+import { useCompany } from '@/lib/useCompany';
 
 const NAV = [
   {
@@ -50,9 +51,10 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
   const location = useLocation();
   const [companyLogo, setCompanyLogo] = React.useState('');
   const [logoOpen, setLogoOpen] = React.useState(false);
+  const { refresh } = useCompany();
   const role = String(user?.role || '').toLowerCase();
   const isAdmin = role === 'admin';
-  React.useEffect(() => { setCompanyLogo(company?.logo_url || getCachedCompanyLogo(company?.id)); }, [company?.id, company?.logo_url]);
+  React.useEffect(() => { let cancelled = false; if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.logo_path) { setCompanyLogo(''); return undefined; } getCompanyLogoUrl(company.logo_path).then((url) => { if (!cancelled) setCompanyLogo(url); }).catch(() => { if (!cancelled) setCompanyLogo(''); }); return () => { cancelled = true; }; }, [company?.logo_path]);
   const companyName = company?.name || 'Sua empresa';
 
   const NavList = () => (
@@ -140,7 +142,7 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
       )}
 
       <div className="h-12 md:hidden" />
-      <CompanyLogoDialog open={logoOpen} onClose={() => setLogoOpen(false)} companyId={company?.id} role={role} currentLogo={companyLogo} onSaved={setCompanyLogo} />
+      <CompanyLogoDialog open={logoOpen} onClose={() => setLogoOpen(false)} companyId={company?.id} role={role} currentLogo={companyLogo} currentLogoPath={company?.logo_path} onSaved={async (result) => { setCompanyLogo(result?.url || ''); await refresh(); }} />
     </>
   );
 }
