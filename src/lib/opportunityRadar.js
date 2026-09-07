@@ -1,0 +1,4 @@
+export const RADAR_RISK_LABELS = Object.freeze({ LOW: 'baixo risco aparente', ATTENTION: 'atenção', HIGH: 'alto risco', UNKNOWN: 'dados insuficientes' });
+/** @param {{trustScore?: number|null, signalCount?: number, confidence?: number}} input */
+export function classifyRadarRisk({ trustScore, signalCount = 0, confidence = 0 } = {}) { if (confidence < 30 || signalCount === 0) return RADAR_RISK_LABELS.UNKNOWN; if (Number(trustScore) < 40) return RADAR_RISK_LABELS.HIGH; if (Number(trustScore) < 70) return RADAR_RISK_LABELS.ATTENTION; return RADAR_RISK_LABELS.LOW; }
+export function ageLabel(date) { if (!date) return 'idade indisponível'; const days = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 86400000)); return days === 0 ? 'coletado hoje' : `coletado há ${days} dia(s)`; }
