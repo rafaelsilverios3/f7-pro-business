@@ -43,6 +43,19 @@ test('0030 audits duplicate WhatsApp keys and creates an ON CONFLICT-compatible 
   assert.doesNotMatch(sql, /where external_message_id is not null\s*;/i);
 });
 
+test('0031 replaces only the partial WhatsApp index with a complete ON CONFLICT-compatible index', () => {
+  const sql = read('0031_fix_whatsapp_message_unique_index.sql');
+  assert.match(sql, /where external_message_id is not null/i);
+  assert.match(sql, /having count\(\*\) > 1/i);
+  assert.match(sql, /dependent_constraints/i);
+  assert.match(sql, /pg_constraint/i);
+  assert.match(sql, /drop index if exists public\.messages_company_channel_external_message_uidx/i);
+  assert.match(sql, /create unique index messages_company_channel_external_message_uidx/i);
+  assert.match(sql, /on public\.messages \(company_id, channel, external_message_id\)/i);
+  assert.doesNotMatch(sql, /create unique index[^;]+where external_message_id is not null/i);
+  assert.doesNotMatch(sql, /drop index if exists public\.(?!messages_company_channel_external_message_uidx)/i);
+});
+
 test('catálogo separa leitura de gerenciamento por role', () => {
   const sql = read('0021_product_catalog.sql');
   assert.match(sql, /create policy catalog_select/);
