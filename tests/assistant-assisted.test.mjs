@@ -160,3 +160,12 @@ test('provider configuration and model failures remain specific', () => {
   assert.match(edge, /rawModel !== rawModel\.trim\(\)/);
   assert.doesNotMatch(edge, /AI_API_KEY[^\n]*(console|metadata)/i);
 });
+
+test('OpenAI Chat Completions payload avoids unsupported sampling parameters and sanitizes provider diagnostics', () => {
+  assert.match(edge, /model, messages: \[\{ role: 'system'/);
+  assert.doesNotMatch(edge, /JSON\.stringify\(\{ model, temperature:/);
+  assert.match(edge, /provider_param/);
+  for (const code of ['invalid_request', 'unsupported_parameter', 'invalid_api_key', 'insufficient_quota', 'rate_limit_exceeded']) assert.match(edge, new RegExp(code));
+  for (const code of ['AI_PROVIDER_CONFIG_INVALID', 'AI_PROVIDER_MODEL_NOT_FOUND', 'AI_PROVIDER_QUOTA_EXCEEDED', 'AI_PROVIDER_RATE_LIMITED']) assert.match(edge, new RegExp(code));
+  assert.doesNotMatch(edge, /providerError\.message.*metadata|apiKey.*metadata/i);
+});
