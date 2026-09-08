@@ -43,6 +43,13 @@ test('assistant context does not require optional catalog or media columns', () 
   assert.doesNotMatch(edge, /products'\)\.select\('[^']*(?:brand|category|subcategory|short_description)/);
 });
 
+test('context lookup isolates resources and returns a safe failing resource', () => {
+  for (const resource of ['messages', 'products', 'company_quick_replies', 'company_handoff_rules']) assert.match(edge, new RegExp(`resource: '${resource}'`));
+  assert.match(edge, /resource: failedResource\.resource/);
+  assert.match(edge, /CONTEXT_MESSAGES_OK/);
+  assert.match(edge, /CONTEXT_PRODUCTS_OK/);
+});
+
 test('multisegment official source registry selects John Deere only for related context', () => {
   assert.match(sources, /OfficialSourcesRegistry/);
   assert.match(sources, /JohnDeereOfficialSource/);

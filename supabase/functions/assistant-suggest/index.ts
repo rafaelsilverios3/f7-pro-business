@@ -70,6 +70,7 @@ async function logStage(sb: any, companyId: string, stage: string, details: Reco
         provider_code: typeof details.provider_code === 'string' ? safeText(details.provider_code, 80) : undefined,
         provider_type: typeof details.provider_type === 'string' ? safeText(details.provider_type, 80) : undefined,
         provider_request_id: typeof details.provider_request_id === 'string' ? safeText(details.provider_request_id, 120) : undefined,
+        resource: typeof details.resource === 'string' ? safeText(details.resource, 80) : undefined,
         provider_config: details.provider_config,
         model: typeof details.model === 'string' ? safeText(details.model, 120) : undefined,
       },
@@ -228,19 +229,26 @@ Deno.serve(async (req) => {
     if (!aiEnabled) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_DISABLED', provider_config: providerConfig, model: providerConfig.model, http_status: 403 }); return json({ success: false, error: 'AI_DISABLED', code: 'AI_DISABLED', message: 'A IA está desativada neste ambiente.', suggestion: null, requires_human: true, sources: [] }, 403); }
     if (!providerConfig.api_key_configured) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_PROVIDER_NOT_CONFIGURED', provider_config: providerConfig, model: providerConfig.model, http_status: 503 }); return json({ success: false, error: 'AI_PROVIDER_NOT_CONFIGURED', code: 'AI_PROVIDER_NOT_CONFIGURED', message: 'O provedor de IA ainda não está configurado.', suggestion: null, requires_human: true, sources: [] }, 503); }
 
-    const [{ data: messages, error: messagesError }, { data: products, error: productsError }, { data: quickReplies, error: quickRepliesError }, { data: handoffRules, error: handoffRulesError }] = await Promise.all([
-      // Keep the assistant context compatible with the base schema. Rich catalog
-      // and media columns are optional migrations and must not block suggestions
-      // when an older company database has not applied them yet.
-      sb.from('messages').select('id,sender_type,content,message_type,created_at').eq('company_id', conversation.company_id).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(MAX_CONTEXT_MESSAGES),
-      sb.from('products').select('id,name,sku,price,stock,active').eq('company_id', conversation.company_id).eq('active', true).limit(200),
-      sb.from('company_quick_replies').select('reply_key,title,body,category,active').eq('company_id', conversation.company_id).eq('active', true).limit(100),
-      sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100),
-    ]);
-    if (messagesError || productsError || quickRepliesError || handoffRulesError) {
-      const firstContextError = messagesError || productsError || quickRepliesError || handoffRulesError;
-      return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao preparar o contexto da sugestão.', stage: 'context_lookup', internal_error_code: safeInternalCode(firstContextError) }, 500);
+    const contextResources = [
+      { resource: 'messages', okStage: 'CONTEXT_MESSAGES_OK', query: sb.from('messages').select('id,sender_type,content,message_type,created_at').eq('company_id', conversation.company_id).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(MAX_CONTEXT_MESSAGES) },
+      { resource: 'products', okStage: 'CONTEXT_PRODUCTS_OK', query: sb.from('products').select('id,name,sku,price,stock,active').eq('company_id', conversation.company_id).eq('active', true).limit(200) },
+      { resource: 'company_quick_replies', okStage: 'CONTEXT_QUICK_REPLIES_OK', query: sb.from('company_quick_replies').select('reply_key,title,body,category,active').eq('company_id', conversation.company_id).eq('active', true).limit(100) },
+      { resource: 'company_handoff_rules', okStage: 'CONTEXT_HANDOFF_RULES_OK', query: sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100) },
+    ];
+    const contextResults = await Promise.all(contextResources.map(({ query }) => query));
+    const [messagesResult, productsResult, quickRepliesResult, handoffRulesResult] = contextResults;
+    const contextFailureIndex = contextResults.findIndex((result) => result.error);
+    if (contextFailureIndex >= 0) {
+      const failedResource = contextResources[contextFailureIndex];
+      const contextError = contextResults[contextFailureIndex].error;
+      await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { resource: failedResource.resource, internal_error_code: safeInternalCode(contextError), http_status: 500, duration_ms: Date.now() - requestStartedAt });
+      return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao preparar o contexto da sugestão.', stage: 'context_lookup', resource: failedResource.resource, internal_error_code: safeInternalCode(contextError) }, 500);
     }
+    for (const resource of contextResources) await logStage(sb, conversation.company_id, resource.okStage);
+    const { data: messages } = messagesResult;
+    const { data: products } = productsResult;
+    const { data: quickReplies } = quickRepliesResult;
+    const { data: handoffRules } = handoffRulesResult;
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
