@@ -33,10 +33,10 @@ test('assistant service whitelists fields and validates controlled placeholders'
 });
 
 test('assistant UI keeps automatic modes unavailable and preview is local', () => {
-  assert.match(page, /Manual · ativo/);
-  assert.match(page, /Assistido · em breve/);
-  assert.match(page, /Automático · em breve/);
-  assert.match(page, /Nenhuma resposta é gerada automaticamente/);
+  assert.match(page, /Manual/);
+  assert.match(page, /Assistido/);
+  assert.match(page, /Automático · bloqueado/);
+  assert.match(page, /A IA apenas sugere; a equipe revisa e envia/);
   assert.match(page, /Preview do atendimento/);
   assert.doesNotMatch(page, /invokeEdgeFunction|graph\.facebook\.com|VITE_AI_ENABLED/);
 });
