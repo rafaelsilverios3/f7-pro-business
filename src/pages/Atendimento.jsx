@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus, Search, ShoppingCart, CheckCircle2, FileText, Download } from 'lucide-react';
+import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus, Search, ShoppingCart, CheckCircle2, FileText, Download, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { conversationsService } from '@/services/conversationsService';
 import { opportunitiesService } from '@/services/opportunitiesService';
@@ -16,6 +16,8 @@ import { createConversationDraft, finalizeConfirmedConversationOrder } from '@/s
 import { useAuth } from '@/lib/AuthContext';
 import { can } from '@/lib/permissions';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { getAssistantSettings } from '@/services/assistantSettingsService';
+import { suggestConversationReply } from '@/services/assistantSuggestService';
 
 const STATUS_STYLE = {
   open: 'bg-sky-100 text-sky-700',
@@ -65,6 +67,9 @@ export default function Atendimento() {
   const [realtimeStatus, setRealtimeStatus] = useState('connecting');
   const [authenticatedRealtime, setAuthenticatedRealtime] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
+  const [assistantSettings, setAssistantSettings] = useState({ mode: 'manual' });
+  const [assistantSuggestion, setAssistantSuggestion] = useState(null);
+  const [assistantError, setAssistantError] = useState('');
   const [products, setProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogOptions, setCatalogOptions] = useState([]);
@@ -104,6 +109,13 @@ export default function Atendimento() {
     } finally { setConversationLoading(false); }
   };
   useEffect(() => { load(); }, [company]);
+
+  useEffect(() => {
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) return undefined;
+    let cancelled = false;
+    getAssistantSettings(company.id).then((settings) => { if (!cancelled) setAssistantSettings(settings || { mode: 'manual' }); }).catch(() => { if (!cancelled) setAssistantSettings({ mode: 'manual' }); });
+    return () => { cancelled = true; };
+  }, [company?.id]);
 
   useEffect(() => {
     if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) return undefined;
@@ -204,6 +216,18 @@ export default function Atendimento() {
       const messages = { AUTH_REQUIRED: 'Sua sessão expirou. Entre novamente.', FORBIDDEN: 'Seu usuário não possui permissão para responder.', FEATURE_NOT_AVAILABLE: 'O WhatsApp não está disponível para esta empresa.', RATE_LIMITED: 'Limite temporário de envio atingido.', INTEGRATION_NOT_CONFIGURED: 'WhatsApp não está configurado para esta empresa.', INTEGRATION_NOT_FOUND: 'Integração do WhatsApp não encontrada.', INTEGRATION_NOT_CONNECTED: 'WhatsApp está conectado para recebimento, mas a integração de envio não está ativa.', PHONE_ID_MISSING: 'O identificador do número do WhatsApp não está configurado.', INVALID_PAYLOAD: 'A mensagem não pôde ser enviada. Verifique o texto.', PROVIDER_ERROR: 'A Meta recusou a mensagem.', INTERNAL_PROVIDER_ERROR: 'Falha interna ao registrar a mensagem.' };
       setSendError(messages[error?.code] || (error?.stage ? `Falha no envio (${error.stage}${error?.code ? ` · ${error.code}` : ''}).` : 'Não foi possível enviar a mensagem.'));
     } finally { setSending(false); }
+  };
+
+  const suggestReply = async () => {
+    if (!selected || assistantSettings.mode !== 'assisted' || !can(user, 'assistant.suggest') || aiThinking) return;
+    setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null);
+    try {
+      const result = await suggestConversationReply(selected.id);
+      if (result?.suggestion) setAssistantSuggestion(result);
+      else if (result?.code === 'AI_DISABLED') setAssistantError('A IA está desativada neste ambiente.');
+      else setAssistantError('Não foi possível gerar uma sugestão segura.');
+    } catch (error) { setAssistantError(error?.code === 'AI_DISABLED' ? 'A IA está desativada neste ambiente.' : error?.message || 'Não foi possível gerar uma sugestão segura.'); }
+    finally { setAiThinking(false); }
   };
 
   const aiRespond = async () => {
@@ -368,11 +392,8 @@ export default function Atendimento() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  {selected.ai_enabled && (
-                    <Button size="sm" variant="outline" onClick={aiRespond} disabled={aiThinking}>
-                      <Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Pensando...' : 'IA responder'}
-                    </Button>
-                  )}
+                  {selected.ai_enabled && <Button size="sm" variant="outline" onClick={aiRespond} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Pensando...' : 'IA responder'}</Button>}
+                  {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && assistantSettings.mode === 'assisted' && can(user, 'assistant.suggest') && <Button size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Analisando...' : 'Sugerir resposta'}</Button>}
                   <Button size="sm" variant="outline" onClick={createOpportunity}><UserPlus className="mr-1 h-3.5 w-3.5" /> Oportunidade</Button>
                   <Button size="sm" variant="outline" onClick={transferToHuman} disabled={selected.status === 'waiting_human'}>Transferir</Button>
                   <Button size="sm" variant="outline" onClick={finishConversation} disabled={selected.status === 'finished'}>Finalizar</Button>
@@ -410,6 +431,9 @@ export default function Atendimento() {
                   </div>
                 )}
               </div>
+
+              {assistantError && <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">{assistantError}</div>}
+              {assistantSuggestion && <div className="border-t border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-950"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-violet-600">✨ F7 IA · sugestão editável</p><textarea className="min-h-20 w-full rounded-lg border border-violet-200 bg-white p-2 text-sm" value={assistantSuggestion.suggestion} onChange={(event) => setAssistantSuggestion({ ...assistantSuggestion, suggestion: event.target.value })} /><p className="mt-1 text-[10px] text-violet-600">{assistantSuggestion.sources?.length ? `Fonte: ${assistantSuggestion.sources.map((source) => source.type === 'manufacturer_official' ? `${source.manufacturer || 'fabricante'} oficial` : 'catálogo interno').join(', ')}` : 'Fonte: dados internos da empresa'}</p></div><div className="flex shrink-0 gap-1"><Button type="button" size="sm" onClick={() => { setMessage(assistantSuggestion.suggestion); setAssistantSuggestion(null); }}>Usar resposta</Button><Button type="button" size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}>Gerar novamente</Button><Button type="button" size="sm" variant="ghost" onClick={() => setAssistantSuggestion(null)}><X className="h-4 w-4" /></Button></div></div></div>}
 
               {/* Input */}
               {sendError && <div className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs text-rose-700">{sendError}</div>}
