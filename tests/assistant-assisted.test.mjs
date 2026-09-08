@@ -169,3 +169,15 @@ test('OpenAI Chat Completions payload avoids unsupported sampling parameters and
   for (const code of ['AI_PROVIDER_CONFIG_INVALID', 'AI_PROVIDER_MODEL_NOT_FOUND', 'AI_PROVIDER_QUOTA_EXCEEDED', 'AI_PROVIDER_RATE_LIMITED']) assert.match(edge, new RegExp(code));
   assert.doesNotMatch(edge, /providerError\.message.*metadata|apiKey.*metadata/i);
 });
+
+test('assistant uses strict Structured Outputs JSON Schema on Chat Completions', () => {
+  assert.match(edge, /ASSISTANT_RESPONSE_FORMAT/);
+  assert.match(edge, /type: 'json_schema'/);
+  assert.match(edge, /name: 'assistant_suggestion'/);
+  assert.match(edge, /strict: true/);
+  assert.match(edge, /required: \['suggestion', 'requires_human', 'confidence'\]/);
+  assert.match(edge, /additionalProperties: false/);
+  assert.match(edge, /AI_STRUCTURED_OUTPUT_UNSUPPORTED/);
+  assert.match(integrations, /AI_STRUCTURED_OUTPUT_UNSUPPORTED/);
+  assert.match(edge, /keys\.some\(\(key\) => !allowedKeys\.includes\(key\)\)/);
+});

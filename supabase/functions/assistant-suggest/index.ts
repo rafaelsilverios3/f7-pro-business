@@ -11,6 +11,23 @@ const MAX_RULES_CHARS = 4000;
 const MAX_PROVIDER_CONTEXT_CHARS = 32_000;
 const PROVIDER_TIMEOUT_MS = 20_000;
 const DEFAULT_MODEL = 'gpt-5.6-luna';
+const ASSISTANT_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'assistant_suggestion',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        suggestion: { type: 'string' },
+        requires_human: { type: 'boolean' },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+      },
+      required: ['suggestion', 'requires_human', 'confidence'],
+      additionalProperties: false,
+    },
+  },
+} as const;
 
 function safeText(value: unknown, max = 600) { return String(value || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max); }
 function safeInternalCode(error: unknown) {
@@ -120,7 +137,9 @@ function validatedModelResponse(payload: any) {
   if (typeof content !== 'string' || !content.trim()) return { ok: false, code: 'AI_INVALID_RESPONSE' as const };
   let parsed: any;
   try { parsed = JSON.parse(content); } catch { return { ok: false, code: 'AI_INVALID_RESPONSE' as const }; }
-  if (typeof parsed?.suggestion !== 'string' || !parsed.suggestion.trim() || parsed.suggestion.length > 2000 || typeof parsed.requires_human !== 'boolean' || !['high', 'medium', 'low'].includes(parsed.confidence)) return { ok: false, code: 'AI_INVALID_RESPONSE' as const };
+  const allowedKeys = ['suggestion', 'requires_human', 'confidence'];
+  const keys = parsed && typeof parsed === 'object' ? Object.keys(parsed) : [];
+  if (keys.some((key) => !allowedKeys.includes(key)) || keys.length !== allowedKeys.length || typeof parsed?.suggestion !== 'string' || !parsed.suggestion.trim() || parsed.suggestion.length > 2000 || typeof parsed.requires_human !== 'boolean' || !['high', 'medium', 'low'].includes(parsed.confidence)) return { ok: false, code: 'AI_INVALID_RESPONSE' as const };
   return { ok: true, suggestion: safeText(parsed.suggestion, 2000), requires_human: parsed.requires_human, confidence: parsed.confidence as 'high' | 'medium' | 'low' };
 }
 
@@ -160,7 +179,7 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
     let response;
-    try { response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: context }], response_format: { type: 'json_object' } }), signal: controller.signal }); }
+    try { response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: context }], response_format: ASSISTANT_RESPONSE_FORMAT }), signal: controller.signal }); }
     catch (error) { clearTimeout(timeout); return { ok: false, code: error?.name === 'AbortError' ? 'AI_PROVIDER_TIMEOUT' as const : 'AI_PROVIDER_UNAVAILABLE' as const }; }
     clearTimeout(timeout);
     const payload = await response.json().catch(() => null);
@@ -172,7 +191,7 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
       const providerMessage = safeText(providerError.message, 240).toLocaleLowerCase('en-US');
       const code = providerCode.includes('model_not_found') || providerCode.includes('model_not_available') || providerCode.includes('invalid_model') || providerCode.includes('does_not_exist') || providerCode.includes('model_access') || providerMessage.includes('model access') || response.status === 404
         ? 'AI_PROVIDER_MODEL_NOT_FOUND' as const
-        : providerCode.includes('response_format') || providerMessage.includes('response_format') || providerMessage.includes('json_object') ? 'AI_JSON_MODE_UNSUPPORTED' as const
+        : providerParam === 'response_format' && (providerMessage.includes('json_schema') || providerMessage.includes('structured')) || providerCode.includes('response_format') || providerMessage.includes('response_format') || providerMessage.includes('json_object') ? 'AI_STRUCTURED_OUTPUT_UNSUPPORTED' as const
         : providerCode.includes('invalid_request') || providerCode.includes('unsupported_parameter') || providerCode.includes('unsupported') || providerMessage.includes('unsupported parameter') ? 'AI_PROVIDER_CONFIG_INVALID' as const
         : providerCode.includes('invalid_api_key') || response.status === 401 || response.status === 403 ? 'AI_PROVIDER_AUTH_ERROR' as const
           : providerCode.includes('insufficient_quota') ? 'AI_PROVIDER_QUOTA_EXCEEDED' as const
@@ -278,7 +297,7 @@ Deno.serve(async (req) => {
     const missingInformation = technicalMissingInformation(settings || {}, latestText, sourceMetadata);
     if (!providerSuggestion.ok) {
       await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'failure', providerSuggestion.code, bounded.length, relevantProducts.length, sourceMetadata.length);
-      const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_EXCEEDED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_PROVIDER_MODEL_NOT_FOUND' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_PROVIDER_CONFIG_INVALID' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
+      const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_EXCEEDED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_PROVIDER_MODEL_NOT_FOUND' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_STRUCTURED_OUTPUT_UNSUPPORTED' || providerSuggestion.code === 'AI_PROVIDER_CONFIG_INVALID' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
       await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: providerSuggestion.code, provider_code: providerSuggestion.provider_code, provider_type: providerSuggestion.provider_type, provider_param: providerSuggestion.provider_param, provider_request_id: providerSuggestion.request_id, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model }, http_status: status, model });
       return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: sourceMetadata, missing_information: missingInformation }, status);
     }

@@ -113,6 +113,7 @@ function createIntegrationError(rawDetail, httpStatus) {
     AI_MODEL_NOT_AVAILABLE: 'O modelo de IA configurado não está disponível para este provedor.',
     AI_PROVIDER_MODEL_NOT_FOUND: 'O modelo de IA configurado não foi encontrado no provedor.',
     AI_JSON_MODE_UNSUPPORTED: 'O provedor de IA não aceita o formato JSON configurado.',
+    AI_STRUCTURED_OUTPUT_UNSUPPORTED: 'O provedor de IA não aceitou Structured Outputs nesta chamada.',
     AI_INVALID_RESPONSE: 'O provedor de IA retornou uma resposta inválida.',
     ASSISTED_MODE_REQUIRED: 'Ative o modo assistido para gerar sugestões.',
     FEATURE_NOT_AVAILABLE: 'A IA não está disponível para esta empresa.',
