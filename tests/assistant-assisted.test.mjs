@@ -181,3 +181,9 @@ test('assistant uses strict Structured Outputs JSON Schema on Chat Completions',
   assert.match(integrations, /AI_STRUCTURED_OUTPUT_UNSUPPORTED/);
   assert.match(edge, /keys\.some\(\(key\) => !allowedKeys\.includes\(key\)\)/);
 });
+
+test('assistant suggestion panel follows the selected blue and indigo menu styling', () => {
+  assert.match(page, /bg-gradient-to-r from-blue-600 to-indigo-600/);
+  assert.match(page, /bg-\[#0b1424\].*text-white/);
+  assert.doesNotMatch(page, /bg-violet-50/);
+});
