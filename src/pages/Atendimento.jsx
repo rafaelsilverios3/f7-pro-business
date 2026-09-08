@@ -18,6 +18,7 @@ import { can } from '@/lib/permissions';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { getAssistantSettings } from '@/services/assistantSettingsService';
 import { suggestConversationReply } from '@/services/assistantSuggestService';
+import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 const STATUS_STYLE = {
   open: 'bg-sky-100 text-sky-700',
@@ -56,6 +57,7 @@ function MediaContent({ message }) {
 export default function Atendimento() {
   const { company } = useOutletContext();
   const { user } = useAuth();
+  const membership = useCompanyMembership(company?.id);
   const [conversations, setConversations] = useState(null);
   const [conversationLoading, setConversationLoading] = useState(true);
   const [conversationError, setConversationError] = useState('');
@@ -82,6 +84,7 @@ export default function Atendimento() {
   const [conversationSearch, setConversationSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const chatRef = useRef(null);
+  const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
 
   const load = async (silent = false) => {
     if (!company) return;
@@ -219,7 +222,7 @@ export default function Atendimento() {
   };
 
   const suggestReply = async () => {
-    if (!selected || assistantSettings.mode !== 'assisted' || !can(user, 'assistant.suggest') || aiThinking) return;
+    if (!assistantCanSuggest || aiThinking) return;
     setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null);
     try {
       const result = await suggestConversationReply(selected.id);
@@ -320,7 +323,7 @@ export default function Atendimento() {
 
       <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-700">
         <AlertCircle className="h-4 w-4 shrink-0" />
-        <span>WhatsApp conectado: mensagens recebidas e respostas manuais passam pela Cloud API. A IA permanece desativada nesta etapa.</span>
+        <span>WhatsApp conectado: mensagens recebidas e respostas manuais passam pela Cloud API. {assistantSettings.mode === 'assisted' ? 'A IA assistida gera sugestões para revisão humana.' : 'Ative o modo Assistido nas Configurações de Atendimento para habilitar sugestões.'}</span>
       </div>
 
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -396,7 +399,7 @@ export default function Atendimento() {
                 </div>
                 <div className="flex gap-2">
                   {selected.ai_enabled && <Button size="sm" variant="outline" onClick={aiRespond} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Pensando...' : 'IA responder'}</Button>}
-                  {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && assistantSettings.mode === 'assisted' && can(user, 'assistant.suggest') && <Button size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Analisando...' : 'Sugerir resposta'}</Button>}
+                  {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && assistantCanSuggest && <Button size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Gerando sugestão...' : 'Sugerir resposta'}</Button>}
                   <Button size="sm" variant="outline" onClick={createOpportunity}><UserPlus className="mr-1 h-3.5 w-3.5" /> Oportunidade</Button>
                   <Button size="sm" variant="outline" onClick={transferToHuman} disabled={selected.status === 'waiting_human'}>Transferir</Button>
                   <Button size="sm" variant="outline" onClick={finishConversation} disabled={selected.status === 'finished'}>Finalizar</Button>

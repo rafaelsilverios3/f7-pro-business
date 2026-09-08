@@ -114,3 +114,13 @@ test('frontend preserves provider diagnostics instead of showing an empty generi
   for (const code of ['AI_PROVIDER_AUTH_ERROR', 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT', 'AI_MODEL_NOT_AVAILABLE', 'AI_JSON_MODE_UNSUPPORTED', 'AI_PROVIDER_TIMEOUT']) assert.match(integrations, new RegExp(code));
   assert.match(integrations, /createIntegrationError/);
 });
+
+test('assisted controls use company membership and do not depend on VITE_AI_ENABLED', () => {
+  assert.match(page, /useCompanyMembership/);
+  assert.match(page, /assistantCanSuggest/);
+  assert.match(page, /can\(\{ role: membership\.role \}, 'assistant\.suggest'\)/);
+  assert.match(page, /assistantSettings\.mode === 'assisted'/);
+  assert.doesNotMatch(page, /VITE_AI_ENABLED/);
+  assert.match(page, /Ative o modo Assistido nas Configurações de Atendimento/);
+  assert.match(page, /Gerando sugestão/);
+});
