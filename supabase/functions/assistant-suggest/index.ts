@@ -229,8 +229,11 @@ Deno.serve(async (req) => {
     if (!providerConfig.api_key_configured) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_PROVIDER_NOT_CONFIGURED', provider_config: providerConfig, model: providerConfig.model, http_status: 503 }); return json({ success: false, error: 'AI_PROVIDER_NOT_CONFIGURED', code: 'AI_PROVIDER_NOT_CONFIGURED', message: 'O provedor de IA ainda não está configurado.', suggestion: null, requires_human: true, sources: [] }, 503); }
 
     const [{ data: messages, error: messagesError }, { data: products, error: productsError }, { data: quickReplies, error: quickRepliesError }, { data: handoffRules, error: handoffRulesError }] = await Promise.all([
-      sb.from('messages').select('id,sender_type,content,message_type,media_type,created_at').eq('company_id', conversation.company_id).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(MAX_CONTEXT_MESSAGES),
-      sb.from('products').select('id,name,sku,brand,category,subcategory,short_description,price,stock,active').eq('company_id', conversation.company_id).eq('active', true).limit(200),
+      // Keep the assistant context compatible with the base schema. Rich catalog
+      // and media columns are optional migrations and must not block suggestions
+      // when an older company database has not applied them yet.
+      sb.from('messages').select('id,sender_type,content,message_type,created_at').eq('company_id', conversation.company_id).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(MAX_CONTEXT_MESSAGES),
+      sb.from('products').select('id,name,sku,price,stock,active').eq('company_id', conversation.company_id).eq('active', true).limit(200),
       sb.from('company_quick_replies').select('reply_key,title,body,category,active').eq('company_id', conversation.company_id).eq('active', true).limit(100),
       sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100),
     ]);

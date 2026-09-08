@@ -36,6 +36,13 @@ test('assistant resolves the company server-side and keeps context scoped', () =
   assert.doesNotMatch(edge, /media_url|signedUrl/);
 });
 
+test('assistant context does not require optional catalog or media columns', () => {
+  assert.match(edge, /messages'\)\.select\('id,sender_type,content,message_type,created_at'/);
+  assert.match(edge, /products'\)\.select\('id,name,sku,price,stock,active'/);
+  assert.doesNotMatch(edge, /messages'\)\.select\('[^']*media_type/);
+  assert.doesNotMatch(edge, /products'\)\.select\('[^']*(?:brand|category|subcategory|short_description)/);
+});
+
 test('multisegment official source registry selects John Deere only for related context', () => {
   assert.match(sources, /OfficialSourcesRegistry/);
   assert.match(sources, /JohnDeereOfficialSource/);
