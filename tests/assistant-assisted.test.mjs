@@ -7,6 +7,7 @@ const sources = fs.readFileSync('supabase/functions/_shared/officialSources.ts',
 const page = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 const permissions = fs.readFileSync('src/lib/permissions.js', 'utf8');
 const service = fs.readFileSync('src/services/assistantSuggestService.js', 'utf8');
+const integrations = fs.readFileSync('src/services/integrationsService.js', 'utf8');
 
 test('assisted suggestion is gated and never auto-sends', () => {
   assert.match(edge, /mode.*assisted/);
@@ -95,4 +96,21 @@ test('technical missing information remains contextual and multisgment-safe', ()
   assert.match(edge, /technicalMissingInformation/);
   for (const field of ['model', 'serial_or_chassis', 'application_location', 'system_or_assembly', 'side_or_position', 'engraved_part_number']) assert.match(edge, new RegExp(field));
   assert.match(sources, /JohnDeereOfficialSource/);
+});
+
+test('assistant diagnostics expose safe stages and a stable success/error contract', () => {
+  for (const stage of ['ASSISTANT_REQUEST_RECEIVED', 'AUTH_OK', 'MEMBERSHIP_OK', 'PERMISSION_OK', 'ENTITLEMENT_OK', 'MODE_OK', 'CONTEXT_READY', 'AI_REQUEST_STARTED', 'AI_REQUEST_FINISHED', 'AI_RESPONSE_PARSED', 'ASSISTANT_SUCCESS', 'ASSISTANT_FAILED']) assert.match(edge, new RegExp(stage));
+  assert.match(edge, /success: true/);
+  assert.match(edge, /success: false/);
+  assert.match(edge, /internal_error_code/);
+  assert.match(edge, /provider_config/);
+  assert.match(edge, /provider_request_id/);
+  assert.doesNotMatch(edge, /AI_API_KEY.*metadata|Authorization.*integration_logs|prompt.*integration_logs/i);
+});
+
+test('frontend preserves provider diagnostics instead of showing an empty generic result', () => {
+  assert.match(page, /Código:/);
+  assert.match(page, /result\?\.success !== false/);
+  for (const code of ['AI_PROVIDER_AUTH_ERROR', 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT', 'AI_MODEL_NOT_AVAILABLE', 'AI_JSON_MODE_UNSUPPORTED', 'AI_PROVIDER_TIMEOUT']) assert.match(integrations, new RegExp(code));
+  assert.match(integrations, /createIntegrationError/);
 });

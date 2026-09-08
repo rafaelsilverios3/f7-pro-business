@@ -223,10 +223,13 @@ export default function Atendimento() {
     setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null);
     try {
       const result = await suggestConversationReply(selected.id);
-      if (result?.suggestion) setAssistantSuggestion(result);
-      else if (result?.code === 'AI_DISABLED') setAssistantError('A IA está desativada neste ambiente.');
-      else setAssistantError('Não foi possível gerar uma sugestão segura.');
-    } catch (error) { setAssistantError(error?.code === 'AI_DISABLED' ? 'A IA está desativada neste ambiente.' : error?.message || 'Não foi possível gerar uma sugestão segura.'); }
+      if (result?.success !== false && result?.suggestion) setAssistantSuggestion(result);
+      else setAssistantError(`${result?.message || 'Não foi possível gerar uma sugestão segura.'}${result?.code ? ` Código: ${result.code}` : ''}`);
+    } catch (error) {
+      const code = typeof error?.code === 'string' ? error.code : null;
+      const safeMessage = error?.message || 'Não foi possível gerar uma sugestão segura.';
+      setAssistantError(`${safeMessage}${code && !safeMessage.includes(code) ? ` Código: ${code}` : ''}`);
+    }
     finally { setAiThinking(false); }
   };
 

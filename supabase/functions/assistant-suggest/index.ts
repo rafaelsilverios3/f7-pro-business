@@ -51,6 +51,27 @@ function technicalMissingInformation(settings: Record<string, unknown>, text: st
 async function logObservation(sb: any, companyId: string, model: string, durationMs: number, result: string, errorCode: string | null, messageCount: number, productCount: number, sourceCount: number) {
   try { await sb.from('integration_logs').insert({ company_id: companyId, provider: 'assistant', event: 'assistant_suggest', status: result === 'success' ? 'success' : 'error', metadata: { provider: 'openai_compatible', model, duration_ms: durationMs, result, error_code: errorCode, context_message_count: messageCount, product_count: productCount, source_count: sourceCount } }); } catch { /* diagnostics must not change the suggestion result */ }
 }
+async function logStage(sb: any, companyId: string, stage: string, details: Record<string, unknown> = {}) {
+  try {
+    await sb.from('integration_logs').insert({
+      company_id: companyId,
+      provider: 'assistant',
+      event: 'assistant_suggest_stage',
+      status: stage === 'ASSISTANT_FAILED' ? 'error' : 'success',
+      metadata: {
+        stage: safeText(stage, 80),
+        duration_ms: typeof details.duration_ms === 'number' ? details.duration_ms : undefined,
+        http_status: typeof details.http_status === 'number' ? details.http_status : undefined,
+        internal_error_code: typeof details.internal_error_code === 'string' ? safeText(details.internal_error_code, 80) : undefined,
+        provider_code: typeof details.provider_code === 'string' ? safeText(details.provider_code, 80) : undefined,
+        provider_type: typeof details.provider_type === 'string' ? safeText(details.provider_type, 80) : undefined,
+        provider_request_id: typeof details.provider_request_id === 'string' ? safeText(details.provider_request_id, 120) : undefined,
+        provider_config: details.provider_config,
+        model: typeof details.model === 'string' ? safeText(details.model, 120) : undefined,
+      },
+    });
+  } catch { /* diagnostics must not change the request result */ }
+}
 function internalSuggestion(message: string, settings: Record<string, unknown>, products: any[]) {
   const rules = safeText(settings.specific_rules, 400);
   const hasProducts = products.length > 0;
@@ -133,18 +154,35 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     catch (error) { clearTimeout(timeout); return { ok: false, code: error?.name === 'AbortError' ? 'AI_PROVIDER_TIMEOUT' as const : 'AI_PROVIDER_UNAVAILABLE' as const }; }
     clearTimeout(timeout);
     const payload = await response.json().catch(() => null);
-    if (!response.ok) return { ok: false, code: response.status === 401 || response.status === 403 ? 'AI_PROVIDER_AUTH_ERROR' as const : response.status === 429 ? 'AI_PROVIDER_RATE_LIMITED' as const : response.status >= 500 ? 'AI_PROVIDER_UNAVAILABLE' as const : 'AI_INVALID_RESPONSE' as const };
+    const providerError = payload?.error && typeof payload.error === 'object' ? payload.error : {};
+    const providerCode = safeText(providerError.code || providerError.type, 80).toLocaleLowerCase('en-US');
+    const requestId = safeText(response.headers.get('x-request-id') || providerError.request_id, 120) || null;
+    if (!response.ok) {
+      const providerMessage = safeText(providerError.message, 240).toLocaleLowerCase('en-US');
+      const code = providerCode.includes('model_not_found') || providerCode.includes('model_not_available') || providerCode.includes('does_not_exist') || response.status === 404
+        ? 'AI_MODEL_NOT_AVAILABLE' as const
+        : providerCode.includes('response_format') || providerMessage.includes('response_format') || providerMessage.includes('json_object') ? 'AI_JSON_MODE_UNSUPPORTED' as const
+        : response.status === 401 || response.status === 403 ? 'AI_PROVIDER_AUTH_ERROR' as const
+          : response.status === 429 && (providerCode.includes('quota') || providerCode.includes('insufficient')) ? 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' as const
+            : response.status === 429 ? 'AI_PROVIDER_RATE_LIMITED' as const
+              : response.status >= 500 ? 'AI_PROVIDER_UNAVAILABLE' as const : 'AI_INVALID_RESPONSE' as const;
+      return { ok: false, code, provider_code: providerCode || null, provider_type: safeText(providerError.type, 80) || null, request_id: requestId, http_status: response.status };
+    }
     return validatedModelResponse(payload);
   } catch { return { ok: false, code: 'AI_PROVIDER_UNAVAILABLE' as const }; }
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  let stage = 'ASSISTANT_REQUEST_RECEIVED';
+  const requestStartedAt = Date.now();
+  let diagnosticCompanyId: string | null = null;
   try {
     const jwt = auth(req);
     const sb = admin();
     const { data: { user } } = await sb.auth.getUser(jwt);
     if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
+    stage = 'AUTH_OK';
     const body = await req.json().catch(() => ({}));
     const conversationId = typeof body?.conversation_id === 'string' ? body.conversation_id : '';
     if (!conversationId) return json({ code: 'CONVERSATION_REQUIRED' }, 400);
@@ -152,20 +190,34 @@ Deno.serve(async (req) => {
     const { data: conversation, error: conversationError } = await sb.from('conversations').select('id,company_id,customer_id,channel').eq('id', conversationId).maybeSingle();
     if (conversationError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'conversation_lookup' }, 500);
     if (!conversation) return json({ code: 'NOT_FOUND' }, 404);
+    diagnosticCompanyId = conversation.company_id;
+    await logStage(sb, conversation.company_id, 'ASSISTANT_REQUEST_RECEIVED');
+    await logStage(sb, conversation.company_id, stage);
     const { data: member, error: memberError } = await sb.from('company_users').select('role,active').eq('company_id', conversation.company_id).eq('user_id', user.id).maybeSingle();
     if (memberError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'membership_lookup' }, 500);
     if (!member?.active || !ALLOWED_ROLES.includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
+    stage = 'MEMBERSHIP_OK';
+    await logStage(sb, conversation.company_id, stage);
+    if (!['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
+    stage = 'PERMISSION_OK';
+    await logStage(sb, conversation.company_id, stage);
     const { data: allowed, error: featureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'ai' });
     if (featureError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'feature_lookup' }, 500);
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
+    stage = 'ENTITLEMENT_OK';
+    await logStage(sb, conversation.company_id, stage);
     const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: user.id, target_metric: 'assistant-suggest', max_count: 10, window_seconds: 60 });
     if (limited.error) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'rate_limit' }, 500);
     if (limited.data === false) return json({ code: 'RATE_LIMITED' }, 429);
     const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode').eq('company_id', conversation.company_id).maybeSingle();
     if (settingsError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'settings_lookup' }, 500);
     if ((settings?.mode || 'manual') !== 'assisted') return json({ code: 'ASSISTED_MODE_REQUIRED' }, 403);
-    if (Deno.env.get('AI_ENABLED') !== 'true') return json({ code: 'AI_DISABLED', suggestion: null, requires_human: true, sources: [] }, 403);
-    if (!Deno.env.get('AI_API_KEY')) return json({ code: 'AI_PROVIDER_NOT_CONFIGURED', suggestion: null, requires_human: true, sources: [] }, 503);
+    stage = 'MODE_OK';
+    await logStage(sb, conversation.company_id, stage);
+    const aiEnabled = (Deno.env.get('AI_ENABLED') || '').trim().toLocaleLowerCase() === 'true';
+    const providerConfig = { api_key_configured: Boolean(Deno.env.get('AI_API_KEY')), api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model: safeText(Deno.env.get('AI_MODEL') || DEFAULT_MODEL, 120) };
+    if (!aiEnabled) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_DISABLED', provider_config: providerConfig, model: providerConfig.model, http_status: 403 }); return json({ success: false, error: 'AI_DISABLED', code: 'AI_DISABLED', message: 'A IA está desativada neste ambiente.', suggestion: null, requires_human: true, sources: [] }, 403); }
+    if (!providerConfig.api_key_configured) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_PROVIDER_NOT_CONFIGURED', provider_config: providerConfig, model: providerConfig.model, http_status: 503 }); return json({ success: false, error: 'AI_PROVIDER_NOT_CONFIGURED', code: 'AI_PROVIDER_NOT_CONFIGURED', message: 'O provedor de IA ainda não está configurado.', suggestion: null, requires_human: true, sources: [] }, 503); }
 
     const [{ data: messages, error: messagesError }, { data: products, error: productsError }, { data: quickReplies, error: quickRepliesError }, { data: handoffRules, error: handoffRulesError }] = await Promise.all([
       sb.from('messages').select('id,sender_type,content,message_type,media_type,created_at').eq('company_id', conversation.company_id).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(MAX_CONTEXT_MESSAGES),
@@ -174,6 +226,8 @@ Deno.serve(async (req) => {
       sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100),
     ]);
     if (messagesError || productsError || quickRepliesError || handoffRulesError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'context_lookup' }, 500);
+    stage = 'CONTEXT_READY';
+    await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
     const latestText = bounded.map((item: any) => item.content || '').join(' ');
     const terms = normalizeTerms(latestText);
@@ -191,14 +245,24 @@ Deno.serve(async (req) => {
     // signed media URLs or credentials from the company data.
     const startedAt = Date.now();
     const model = Deno.env.get('AI_MODEL') || DEFAULT_MODEL;
+    stage = 'AI_REQUEST_STARTED';
+    await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
     const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata });
+    await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
     const missingInformation = technicalMissingInformation(settings || {}, latestText, sourceMetadata);
     if (!providerSuggestion.ok) {
       await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'failure', providerSuggestion.code, bounded.length, relevantProducts.length, sourceMetadata.length);
-      if (providerSuggestion.code === 'AI_PROVIDER_NOT_CONFIGURED') return json({ code: providerSuggestion.code, suggestion: null, requires_human: true, sources: sourceMetadata }, 503);
-      return json({ code: providerSuggestion.code, ...internalSuggestion(latestText, settings || {}, relevantProducts), sources: sourceMetadata, missing_information: missingInformation }, providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' ? 502 : providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503);
+      const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
+      await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: providerSuggestion.code, provider_code: providerSuggestion.provider_code, provider_type: providerSuggestion.provider_type, provider_request_id: providerSuggestion.request_id, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model }, http_status: status, model });
+      return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: sourceMetadata, missing_information: missingInformation }, status);
     }
+    await logStage(sb, conversation.company_id, 'AI_RESPONSE_PARSED', { duration_ms: Date.now() - requestStartedAt, model });
     await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'success', null, bounded.length, relevantProducts.length, sourceMetadata.length);
-    return json({ suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, sources: sourceMetadata, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: missingInformation });
-  } catch { return json({ code: 'INTERNAL_PROVIDER_ERROR' }, 500); }
+    await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
+    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, sources: sourceMetadata, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: missingInformation });
+  } catch (error) {
+    const safeCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : 'INTERNAL_PROVIDER_ERROR';
+    if (diagnosticCompanyId) await logStage(admin(), diagnosticCompanyId, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: safeCode, http_status: 500 });
+    return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao gerar a sugestão.', stage, internal_error_code: safeCode }, 500);
+  }
 });

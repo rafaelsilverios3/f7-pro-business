@@ -98,10 +98,28 @@ function createIntegrationError(rawDetail, httpStatus) {
   };
   const metaCode = meta.code;
   const metaSubcode = meta.subcode;
-  const cause = new Error(metaCode != null
+  const assistantMessages = {
+    AI_DISABLED: 'A IA está desativada neste ambiente.',
+    AI_PROVIDER_NOT_CONFIGURED: 'O provedor de IA ainda não está configurado.',
+    AI_PROVIDER_CONFIG_INVALID: 'A configuração do provedor de IA é inválida.',
+    AI_PROVIDER_AUTH_ERROR: 'O provedor de IA recusou a autenticação.',
+    AI_PROVIDER_RATE_LIMITED: 'O provedor de IA atingiu um limite temporário.',
+    AI_PROVIDER_QUOTA_OR_RATE_LIMIT: 'A cota ou o limite do provedor de IA foi atingido.',
+    AI_PROVIDER_UNAVAILABLE: 'O provedor de IA está indisponível no momento.',
+    AI_PROVIDER_TIMEOUT: 'O provedor de IA demorou demais para responder.',
+    AI_MODEL_NOT_AVAILABLE: 'O modelo de IA configurado não está disponível para este provedor.',
+    AI_JSON_MODE_UNSUPPORTED: 'O provedor de IA não aceita o formato JSON configurado.',
+    AI_INVALID_RESPONSE: 'O provedor de IA retornou uma resposta inválida.',
+    ASSISTED_MODE_REQUIRED: 'Ative o modo assistido para gerar sugestões.',
+    FEATURE_NOT_AVAILABLE: 'A IA não está disponível para esta empresa.',
+    RATE_LIMITED: 'Limite temporário de sugestões atingido.',
+  };
+  const message = metaCode != null
     ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
     : safeDetail.code === 'INTERNAL_PROVIDER_ERROR' ? 'Falha interna na integração.'
-    : typeof safeDetail.message === 'string' ? redactDiagnosticText(safeDetail.message) : 'Não foi possível concluir a ação.');
+      : assistantMessages[safeDetail.code]
+        || (typeof safeDetail.message === 'string' ? redactDiagnosticText(safeDetail.message) : 'Não foi possível concluir a ação.');
+  const cause = new Error(message);
   Object.assign(cause, {
     code: detail?.code || null,
     providerStatus: detail?.provider_status || null,
