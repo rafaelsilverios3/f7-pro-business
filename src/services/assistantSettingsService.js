@@ -5,7 +5,7 @@ export const QUICK_REPLY_PLACEHOLDERS = Object.freeze([
 ]);
 
 export const ASSISTANT_DEFAULTS = Object.freeze({
-  tone: 'professional', language: 'pt-BR', mode: 'manual', business_hours: {}, handoff_rules: [],
+  tone: 'professional', language: 'pt-BR', mode: 'manual', business_hours: {},
 });
 
 export const SEGMENT_PRESETS = Object.freeze({
@@ -17,7 +17,7 @@ export const SEGMENT_PRESETS = Object.freeze({
 const SETTINGS_FIELDS = [
   'commercial_name', 'segment', 'business_description', 'tone', 'language', 'business_hours',
   'welcome_message', 'out_of_hours_message', 'closing_message', 'payment_methods',
-  'delivery_policy', 'return_policy', 'important_information', 'specific_rules', 'mode', 'handoff_rules',
+  'delivery_policy', 'return_policy', 'important_information', 'specific_rules', 'mode',
 ];
 
 function client() { return getSupabaseClient(); }

@@ -12,6 +12,12 @@ test('assistant configuration migration is company scoped with manual default an
   assert.match(migration, /company_id uuid not null unique references public\.companies/);
   assert.match(migration, /mode text not null default 'manual'/);
   assert.match(migration, /mode in \('manual','assisted','automatic'\)/);
+  assert.doesNotMatch(migration, /handoff_rules jsonb/);
+  assert.match(migration, /company_handoff_rules/);
+  assert.match(migration, /create or replace function public\.set_updated_at\(\)/);
+  assert.match(migration, /company_assistant_settings_set_updated_at/);
+  assert.match(migration, /company_quick_replies_set_updated_at/);
+  assert.match(migration, /company_handoff_rules_set_updated_at/);
   assert.match(migration, /alter table public\.company_assistant_settings enable row level security/);
   assert.match(migration, /current_company_role\(company_id\)/);
   assert.doesNotMatch(migration, /access_token|app_secret|service_role|raw_prompt/i);
@@ -22,6 +28,7 @@ test('assistant service whitelists fields and validates controlled placeholders'
   assert.match(service, /onConflict: 'company_id'/);
   assert.match(service, /QUICK_REPLY_PLACEHOLDERS/);
   assert.match(service, /Placeholder não permitido/);
+  assert.match(service, /listHandoffRules/);
   assert.doesNotMatch(service, /graph\.facebook\.com|WHATSAPP_ACCESS_TOKEN|AI_ENABLED/);
 });
 

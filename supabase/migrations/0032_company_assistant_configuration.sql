@@ -17,7 +17,6 @@ create table if not exists public.company_assistant_settings (
   important_information text,
   specific_rules text,
   mode text not null default 'manual' check (mode in ('manual','assisted','automatic')),
-  handoff_rules jsonb not null default '[]',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -46,6 +45,33 @@ create table if not exists public.company_handoff_rules (
   updated_at timestamptz not null default now(),
   unique(company_id, trigger_key)
 );
+
+-- Keep timestamps consistent for updates made through the API or SQL.
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists company_assistant_settings_set_updated_at on public.company_assistant_settings;
+create trigger company_assistant_settings_set_updated_at
+before update on public.company_assistant_settings
+for each row execute function public.set_updated_at();
+
+drop trigger if exists company_quick_replies_set_updated_at on public.company_quick_replies;
+create trigger company_quick_replies_set_updated_at
+before update on public.company_quick_replies
+for each row execute function public.set_updated_at();
+
+drop trigger if exists company_handoff_rules_set_updated_at on public.company_handoff_rules;
+create trigger company_handoff_rules_set_updated_at
+before update on public.company_handoff_rules
+for each row execute function public.set_updated_at();
 
 alter table public.company_assistant_settings enable row level security;
 alter table public.company_quick_replies enable row level security;
