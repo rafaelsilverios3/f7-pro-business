@@ -45,6 +45,8 @@ export default function Atendimento() {
   const { company } = useOutletContext();
   const { user } = useAuth();
   const [conversations, setConversations] = useState(null);
+  const [conversationLoading, setConversationLoading] = useState(true);
+  const [conversationError, setConversationError] = useState('');
   const [selected, setSelected] = useState(null);
   const [newDialog, setNewDialog] = useState(false);
   const [message, setMessage] = useState('');
@@ -64,16 +66,20 @@ export default function Atendimento() {
 
   const load = async () => {
     if (!company) return;
-    const [convs, prods] = await Promise.all([
-      import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? conversationsService.list(company.id) : base44.entities.Conversation.filter({ company_id: company.id }, '-last_message_at', 200),
-      getDataProvider().entity('Product').list({ company_id: company.id, active: true }, '-name', 200),
-    ]);
-    setConversations(convs);
-    setProducts(prods);
-    if (selected) {
-      const updated = convs.find((c) => c.id === selected.id);
-      if (updated) setSelected(updated);
-    }
+    setConversationLoading(true); setConversationError('');
+    try {
+      const conversationPromise = import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? conversationsService.list(company.id) : base44.entities.Conversation.filter({ company_id: company.id }, '-last_message_at', 200);
+      const productPromise = getDataProvider().entity('Product').list({ company_id: company.id, active: true }, '-name', 200);
+      const [conversationResult, productResult] = await Promise.allSettled([conversationPromise, productPromise]);
+      if (conversationResult.status === 'rejected') throw conversationResult.reason;
+      const convs = conversationResult.value || [];
+      const prods = productResult.status === 'fulfilled' ? productResult.value || [] : [];
+      setConversations(convs); setProducts(prods);
+      if (selected) { const updated = (convs || []).find((c) => c.id === selected.id); if (updated) setSelected(updated); }
+    } catch (error) {
+      setConversationError(error?.message || 'Não foi possível carregar o atendimento.');
+      setConversations([]);
+    } finally { setConversationLoading(false); }
   };
   useEffect(() => { load(); }, [company]);
 
@@ -240,8 +246,10 @@ export default function Atendimento() {
             <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><Input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Buscar conversas..." className="pl-8 text-xs" /></div>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-600"><option value="all">Todos os status</option><option value="open">Abertas</option><option value="waiting_human">Aguardando humano</option><option value="in_progress">Em atendimento</option><option value="finished">Finalizadas</option></select>
           </div>
-          {conversations === null ? (
+          {conversationLoading ? (
             <div className="p-8 text-center text-sm text-slate-400">Carregando...</div>
+          ) : conversationError ? (
+            <div className="p-6 text-center"><AlertCircle className="mx-auto mb-2 h-7 w-7 text-rose-400" /><p className="text-sm font-medium text-rose-700">Não foi possível carregar as conversas.</p><p className="mt-1 text-xs text-slate-400">{conversationError}</p><Button type="button" variant="outline" size="sm" className="mt-3" onClick={load}>Tentar novamente</Button></div>
           ) : conversations.length === 0 ? (
             <div className="p-8 text-center">
               <MessageSquare className="mx-auto mb-2 h-8 w-8 text-slate-300" />
