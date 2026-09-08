@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const source = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
+const webhookSource = fs.readFileSync('supabase/functions/whatsapp-webhook/index.ts', 'utf8');
 
 test('Realtime subscription exposes connection diagnostics and secure auth', () => {
   assert.match(source, /subscribe\(async \(status\)/);
@@ -21,9 +22,9 @@ test('Realtime callback filters company events and cleans up channels', () => {
   assert.match(source, /smart-atendimento-\$\{company\.id\}/);
 });
 
-test('Polling fallback runs only while Realtime is not subscribed', () => {
+test('Polling fallback runs only while authenticated Realtime is not subscribed', () => {
   assert.match(source, /setInterval\(\(\) => load\(true\), 5000\)/);
-  assert.match(source, /realtimeStatus === 'subscribed'/);
+  assert.match(source, /realtimeStatus === 'subscribed' && authenticatedRealtime/);
   assert.match(source, /Atualização automática em modo compatibilidade/);
 });
 
@@ -39,4 +40,20 @@ test('Realtime authenticates before creating and subscribing the channel', () =>
 
 test('inbox opens the newest loaded conversation when no card is selected', () => {
   assert.match(source, /else if \(convs\[0\]\) \{[\s\S]*setSelected\(convs\[0\]\)/);
+});
+
+test('inbox renders WhatsApp delivery states without claiming delivery early', () => {
+  assert.match(source, /m\.status === 'sending' \? 'enviando\.\.\.'/);
+  assert.match(source, /m\.status === 'sent' \? 'enviada'/);
+  assert.match(source, /m\.status === 'delivered' \? 'entregue'/);
+  assert.match(source, /m\.status === 'read' \? 'lida'/);
+  assert.match(source, /m\.status === 'failed' \? 'falhou'/);
+});
+
+test('webhook persists provider delivery callbacks on the matching company message', () => {
+  assert.match(webhookSource, /external_status: String\(status\.status \|\| 'unknown'\)/);
+  assert.match(webhookSource, /\.eq\('external_message_id', status\.id\)/);
+  assert.match(webhookSource, /\.eq\('channel', 'whatsapp'\)/);
+  assert.match(webhookSource, /\.eq\('company_id', companyId\)/);
+  assert.match(webhookSource, /status\.errors\?\./);
 });
