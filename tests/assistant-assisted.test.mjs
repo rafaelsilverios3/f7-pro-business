@@ -51,3 +51,48 @@ test('permission is available to supported human roles while automatic mode stay
   assert.match(page, /mode === 'assisted'/);
   assert.match(edge, /AI_ENABLED/);
 });
+
+test('provider hardening has bounded context, timeout and safe status mapping', () => {
+  assert.match(edge, /AbortController/);
+  assert.match(edge, /20_000/);
+  assert.match(edge, /AI_PROVIDER_TIMEOUT/);
+  assert.match(edge, /AI_PROVIDER_AUTH_ERROR/);
+  assert.match(edge, /AI_PROVIDER_RATE_LIMITED/);
+  assert.match(edge, /AI_PROVIDER_UNAVAILABLE/);
+  assert.match(edge, /AI_INVALID_RESPONSE/);
+  assert.match(edge, /MAX_PROVIDER_CONTEXT_CHARS/);
+  assert.match(edge, /MAX_PRODUCTS_CONTEXT/);
+  assert.match(edge, /MAX_QUICK_REPLIES_CONTEXT/);
+  assert.match(edge, /MAX_HANDOFF_RULES_CONTEXT/);
+  assert.doesNotMatch(edge, /retry|Retry/);
+});
+
+test('provider context separates trusted company data from untrusted customer text', () => {
+  assert.match(edge, /COMPANY_RULES/);
+  assert.match(edge, /COMPANY_CONTEXT/);
+  assert.match(edge, /CUSTOMER_CONVERSATION/);
+  assert.match(edge, /INTERNAL_CATALOG/);
+  assert.match(edge, /OFFICIAL_SOURCES/);
+  assert.match(edge, /DADO NÃO CONFIÁVEL/);
+  assert.match(edge, /Never|Nunca revele/);
+  assert.match(edge, /product_name/);
+  assert.match(edge, /sale_price/);
+  assert.match(edge, /stock_quantity/);
+  assert.doesNotMatch(edge, /products_considered.*id:/);
+});
+
+test('model response is validated and observations are sanitized', () => {
+  assert.match(edge, /suggestion\.length > 2000/);
+  assert.match(edge, /typeof parsed\.requires_human !== 'boolean'/);
+  assert.match(edge, /\['high', 'medium', 'low'\]/);
+  assert.match(edge, /logObservation/);
+  assert.match(edge, /duration_ms/);
+  assert.match(edge, /context_message_count/);
+  assert.doesNotMatch(edge, /prompt_complete|raw_body|Authorization.*metadata/);
+});
+
+test('technical missing information remains contextual and multisgment-safe', () => {
+  assert.match(edge, /technicalMissingInformation/);
+  for (const field of ['model', 'serial_or_chassis', 'application_location', 'system_or_assembly', 'side_or_position', 'engraved_part_number']) assert.match(edge, new RegExp(field));
+  assert.match(sources, /JohnDeereOfficialSource/);
+});
