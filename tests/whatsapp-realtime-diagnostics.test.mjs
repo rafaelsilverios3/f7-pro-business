@@ -36,3 +36,7 @@ test('Realtime authenticates before creating and subscribing the channel', () =>
   assert.match(source, /if \(cancelled \|\| !token\).*setRealtimeStatus\('compatibility'\)/s);
   assert.match(source, /onAuthStateChange/);
 });
+
+test('inbox opens the newest loaded conversation when no card is selected', () => {
+  assert.match(source, /else if \(convs\[0\]\) \{[\s\S]*setSelected\(convs\[0\]\)/);
+});

@@ -81,7 +81,15 @@ export default function Atendimento() {
       const convs = conversationResult.value || [];
       const prods = productResult.status === 'fulfilled' ? productResult.value || [] : [];
       setConversations(convs); setProducts(prods);
-      if (selected) { const updated = (convs || []).find((c) => c.id === selected.id); if (updated) setSelected(updated); }
+      if (selected) {
+        const updated = convs.find((c) => c.id === selected.id);
+        if (updated) setSelected(updated);
+        else if (convs[0]) setSelected(convs[0]);
+      } else if (convs[0]) {
+        // Open the newest real conversation automatically so an inbound
+        // message is visible in the main panel without a second click.
+        setSelected(convs[0]);
+      }
     } catch (error) {
       setConversationError(error?.message || 'Não foi possível carregar o atendimento.');
       setConversations([]);
