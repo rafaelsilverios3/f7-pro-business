@@ -21,6 +21,8 @@ Deno.serve(async (req) => {
     const { data: members } = await sb.from('company_users').select('company_id,role,active').eq('user_id', user.id).eq('active', true);
     const ids = (members || []).filter((m) => ['admin', 'gestor'].includes(m.role)).map((m) => m.company_id).filter((id) => !body.company_id || id === body.company_id);
     const { data: integrations } = ids.length ? await sb.from('company_integrations').select('company_id,provider,status,external_phone_id').in('company_id', ids) : { data: [] };
+    const { data: inboundLogs } = ids.length ? await sb.from('integration_logs').select('company_id,event,status,created_at').in('company_id', ids).eq('provider', 'whatsapp').eq('event', 'whatsapp_inbound').eq('status', 'success').order('created_at', { ascending: false }).limit(200) : { data: [] };
+    const { data: outboundMessages } = ids.length ? await sb.from('messages').select('company_id,channel,external_status,external_message_id,created_at').in('company_id', ids).eq('channel', 'whatsapp').not('external_message_id', 'is', null).in('external_status', ['sent', 'delivered', 'read']).order('created_at', { ascending: false }).limit(200) : { data: [] };
     const result = [];
     for (const companyId of ids) {
       const integration = integrations?.find((item) => item.company_id === companyId && item.provider === 'whatsapp');
@@ -33,7 +35,9 @@ Deno.serve(async (req) => {
         graph_version = meta.graph_version;
       }
       const status = integration?.status || 'not_configured';
-      result.push({ company_id: companyId, whatsapp: { status, database: 'ok', provider, provider_diagnostic: providerDiagnostic, graph_version, phone, webhook: 'not_tested', send: 'not_tested', receive: 'not_tested' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
+      const inboundConfirmed = (inboundLogs || []).some((log) => log.company_id === companyId);
+      const outboundConfirmed = (outboundMessages || []).some((message) => message.company_id === companyId);
+      result.push({ company_id: companyId, whatsapp: { status, database: 'ok', provider, provider_diagnostic: providerDiagnostic, graph_version, phone, webhook: inboundConfirmed ? 'ok' : 'not_tested', send: outboundConfirmed ? 'ready' : 'not_tested', receive: inboundConfirmed ? 'ready' : 'not_tested' }, ai: { status: 'not_configured', database: 'ok', provider: 'unknown' } });
     }
     return json({ integrations: result });
   } catch { return json({ code: 'INTERNAL_PROVIDER_ERROR', provider_status: 'unavailable' }, 500); }

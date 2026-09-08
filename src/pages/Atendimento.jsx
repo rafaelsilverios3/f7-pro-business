@@ -17,6 +17,8 @@ import { useAuth } from '@/lib/AuthContext';
 import { can } from '@/lib/permissions';
 
 const STATUS_STYLE = {
+  open: 'bg-sky-100 text-sky-700',
+  ai: 'bg-slate-100 text-slate-600',
   ai_assisting: 'bg-violet-100 text-violet-700',
   waiting_human: 'bg-amber-100 text-amber-700',
   in_progress: 'bg-blue-100 text-blue-700',
@@ -24,6 +26,8 @@ const STATUS_STYLE = {
   finished: 'bg-slate-200 text-slate-600',
 };
 const STATUS_LABEL = {
+  open: 'Aberta',
+  ai: 'IA desativada',
   ai_assisting: 'IA Atendendo',
   waiting_human: 'Aguardando Humano',
   in_progress: 'Em Atendimento',
@@ -54,6 +58,8 @@ export default function Atendimento() {
   const [draftQuantity, setDraftQuantity] = useState(1);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
   const [orderLoading, setOrderLoading] = useState(false);
+  const [conversationSearch, setConversationSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const chatRef = useRef(null);
 
   const load = async () => {
@@ -113,13 +119,18 @@ export default function Atendimento() {
     e?.preventDefault();
     if (!message.trim() || !selected) return;
     const text = message.trim();
-    const now = new Date().toISOString();
-    const msg = { sender: 'agent', text, timestamp: now };
-    const newMessages = [...(selected.messages || []), msg];
     if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
-      await conversationsService.addMessage(company.id, selected.id, { sender: 'agent', content: text, message_type: 'text', created_at: now });
-      await conversationsService.update(company.id, selected.id, { last_message_at: now, status: 'in_progress' });
-    } else await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'in_progress' });
+      if (selected.channel === 'whatsapp') await conversationsService.sendWhatsApp(company.id, selected.id, text, crypto.randomUUID());
+      else {
+        const now = new Date().toISOString();
+        await conversationsService.addMessage(company.id, { conversation_id: selected.id, sender_type: 'user', content: text, message_type: 'text', created_at: now });
+        await conversationsService.update(company.id, selected.id, { last_message_at: now, status: 'in_progress' });
+      }
+    } else {
+      const now = new Date().toISOString();
+      const newMessages = [...(selected.messages || []), { sender: 'agent', text, timestamp: now }];
+      await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'in_progress' });
+    }
     setMessage('');
     load();
   };
@@ -208,9 +219,9 @@ export default function Atendimento() {
         action={<Button onClick={() => setNewDialog(true)}><Plus className="mr-1.5 h-4 w-4" /> Nova conversa</Button>}
       />
 
-      <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
+      <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-700">
         <AlertCircle className="h-4 w-4 shrink-0" />
-        <span>Canais externos (WhatsApp, Instagram, Telegram) ainda não estão configurados. Conversas manuais e por IA estão ativas. Configure a integração em Configurações.</span>
+        <span>WhatsApp conectado: mensagens recebidas e respostas manuais passam pela Cloud API. A IA permanece desativada nesta etapa.</span>
       </div>
 
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -225,6 +236,10 @@ export default function Atendimento() {
       <div className="flex flex-1 gap-4 overflow-hidden">
         {/* Conversation list */}
         <div className="w-72 shrink-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="sticky top-0 z-10 space-y-2 border-b border-slate-100 bg-white p-3">
+            <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><Input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Buscar conversas..." className="pl-8 text-xs" /></div>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-600"><option value="all">Todos os status</option><option value="open">Abertas</option><option value="waiting_human">Aguardando humano</option><option value="in_progress">Em atendimento</option><option value="finished">Finalizadas</option></select>
+          </div>
           {conversations === null ? (
             <div className="p-8 text-center text-sm text-slate-400">Carregando...</div>
           ) : conversations.length === 0 ? (
@@ -232,7 +247,11 @@ export default function Atendimento() {
               <MessageSquare className="mx-auto mb-2 h-8 w-8 text-slate-300" />
               <p className="text-sm font-medium text-slate-600">Nenhuma conversa</p>
             </div>
-          ) : conversations.map((c) => (
+          ) : conversations.filter((c) => {
+            const term = conversationSearch.trim().toLowerCase();
+            const matchesSearch = !term || `${c.customer_name || ''} ${c.customer_phone || ''} ${(c.messages || []).at(-1)?.text || ''}`.toLowerCase().includes(term);
+            return matchesSearch && (statusFilter === 'all' || c.status === statusFilter);
+          }).map((c) => (
             <button
               key={c.id}
               onClick={() => handleSelect(c)}
@@ -244,9 +263,7 @@ export default function Atendimento() {
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
                 <span className="rounded bg-slate-100 px-1.5 py-0.5">{CHANNEL_LABELS[c.channel]}</span>
-                {!CHANNEL_CONFIGURED[c.channel] && !c.channel_configured && c.channel !== 'manual' && (
-                  <span className="text-amber-500">não config.</span>
-                )}
+                {c.channel === 'whatsapp' && <span className="text-emerald-600">conectado</span>}
               </div>
               <p className="truncate text-xs text-slate-400">{(c.messages || []).slice(-1)[0]?.text || c.subject || 'Sem mensagens'}</p>
             </button>
@@ -300,8 +317,9 @@ export default function Atendimento() {
                     }`}>
                       {m.sender === 'ai' && <div className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-violet-500"><Bot className="h-3 w-3" /> IA</div>}
                       <p>{m.text}</p>
-                      <p className={`mt-0.5 text-[10px] ${m.sender === 'agent' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      <p className={`mt-0.5 flex items-center gap-1 text-[10px] ${m.sender === 'agent' ? 'text-indigo-200' : 'text-slate-400'}`}>
                         {new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {m.sender === 'agent' && m.status && <span>· {m.status === 'delivered' ? 'entregue' : m.status === 'read' ? 'lida' : m.status === 'failed' ? 'falhou' : m.status === 'sent' ? 'enviada' : m.status}</span>}
                       </p>
                     </div>
                     {m.sender !== 'customer' && (

@@ -57,7 +57,7 @@ export async function checkIntegrationHealth(companyId) {
   return data;
 }
 
-async function invokeIntegration(functionName, body) {
+export async function invokeEdgeFunction(functionName, body) {
   if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
     return getDataProvider().rpc(functionName, { body });
   }
@@ -116,6 +116,6 @@ function createIntegrationError(rawDetail, httpStatus) {
   return cause;
 }
 
-export const connectWhatsApp = (companyId, phoneNumberId) => invokeIntegration('whatsapp-connect', { company_id: companyId, phone_number_id: phoneNumberId });
-export const disconnectWhatsApp = (companyId) => invokeIntegration('whatsapp-disconnect', { company_id: companyId });
-export const testWhatsAppConnection = (companyId) => invokeIntegration('whatsapp-test', { company_id: companyId });
+export const connectWhatsApp = (companyId, phoneNumberId) => invokeEdgeFunction('whatsapp-connect', { company_id: companyId, phone_number_id: phoneNumberId });
+export const disconnectWhatsApp = (companyId) => invokeEdgeFunction('whatsapp-disconnect', { company_id: companyId });
+export const testWhatsAppConnection = (companyId) => invokeEdgeFunction('whatsapp-test', { company_id: companyId });
