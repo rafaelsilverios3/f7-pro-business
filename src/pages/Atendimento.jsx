@@ -204,7 +204,7 @@ export default function Atendimento() {
       setMessage('');
       await load(true);
     } catch (error) {
-      const messages = { AUTH_REQUIRED: 'Sua sessão expirou. Entre novamente.', FORBIDDEN: 'Seu usuário não possui permissão para responder.', FEATURE_NOT_AVAILABLE: 'O WhatsApp não está disponível para esta empresa.', RATE_LIMITED: 'Limite temporário de envio atingido.', INTEGRATION_NOT_CONFIGURED: 'WhatsApp não está configurado para esta empresa.', INVALID_PAYLOAD: 'A mensagem não pôde ser enviada. Verifique o texto.', PROVIDER_ERROR: 'A Meta recusou a mensagem.', INTERNAL_PROVIDER_ERROR: 'Falha interna ao registrar a mensagem.' };
+      const messages = { AUTH_REQUIRED: 'Sua sessão expirou. Entre novamente.', FORBIDDEN: 'Seu usuário não possui permissão para responder.', FEATURE_NOT_AVAILABLE: 'O WhatsApp não está disponível para esta empresa.', RATE_LIMITED: 'Limite temporário de envio atingido.', INTEGRATION_NOT_CONFIGURED: 'WhatsApp não está configurado para esta empresa.', INTEGRATION_NOT_FOUND: 'Integração do WhatsApp não encontrada.', INTEGRATION_NOT_CONNECTED: 'WhatsApp está conectado para recebimento, mas a integração de envio não está ativa.', PHONE_ID_MISSING: 'O identificador do número do WhatsApp não está configurado.', INVALID_PAYLOAD: 'A mensagem não pôde ser enviada. Verifique o texto.', PROVIDER_ERROR: 'A Meta recusou a mensagem.', INTERNAL_PROVIDER_ERROR: 'Falha interna ao registrar a mensagem.' };
       setSendError(messages[error?.code] || (error?.stage ? `Falha no envio (${error.stage}${error?.code ? ` · ${error.code}` : ''}).` : 'Não foi possível enviar a mensagem.'));
     } finally { setSending(false); }
   };

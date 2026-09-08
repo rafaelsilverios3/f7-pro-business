@@ -45,7 +45,19 @@ Deno.serve(async (req) => {
 
     const { data: integration, error: integrationError } = await sb.from('company_integrations').select('external_phone_id,status').eq('company_id', companyId).eq('provider', 'whatsapp').maybeSingle();
     if (integrationError) return stageFailure(sb, companyId, 'integration_lookup', safeCode(integrationError) || 'INTERNAL_PROVIDER_ERROR', 500, requestId);
-    if (integration?.status !== 'connected' || Deno.env.get('WHATSAPP_ENABLED') !== 'true') return json({ code: 'INTEGRATION_NOT_CONFIGURED' }, 503);
+    const integrationMeta = { stage: 'integration_lookup', integration_found: Boolean(integration), integration_status: integration?.status || null, has_external_phone_id: Boolean(String(integration?.external_phone_id || '').trim()), request_id: requestId };
+    if (!integration) {
+      await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'whatsapp_send_failed', status: 'error', metadata: { ...integrationMeta, code: 'INTEGRATION_NOT_FOUND' } });
+      return json({ code: 'INTEGRATION_NOT_FOUND', stage: 'integration_lookup', request_id: requestId }, 503);
+    }
+    if (integration.status !== 'connected') {
+      await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'whatsapp_send_failed', status: 'error', metadata: { ...integrationMeta, code: 'INTEGRATION_NOT_CONNECTED' } });
+      return json({ code: 'INTEGRATION_NOT_CONNECTED', stage: 'integration_lookup', request_id: requestId }, 503);
+    }
+    if (!String(integration.external_phone_id || '').trim()) {
+      await sb.from('integration_logs').insert({ company_id: companyId, provider: 'whatsapp', event: 'whatsapp_send_failed', status: 'error', metadata: { ...integrationMeta, code: 'PHONE_ID_MISSING' } });
+      return json({ code: 'PHONE_ID_MISSING', stage: 'integration_lookup', request_id: requestId }, 503);
+    }
 
     const to = normalizePhone(conversation.lead_phone || '');
     if (to.length < 8) return json({ code: 'INVALID_PAYLOAD' }, 400);
