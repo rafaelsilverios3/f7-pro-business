@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus, Search, ShoppingCart, CheckCircle2 } from 'lucide-react';
+import { Plus, Send, Bot, User, Headset, MessageSquare, AlertCircle, Sparkles, UserPlus, Search, ShoppingCart, CheckCircle2, FileText, Download } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { conversationsService } from '@/services/conversationsService';
 import { opportunitiesService } from '@/services/opportunitiesService';
@@ -41,6 +41,15 @@ const CHANNEL_LABELS = {
 const CHANNEL_CONFIGURED = {
   whatsapp: false, site: false, instagram: false, telegram: false, manual: true,
 };
+
+function MediaContent({ message }) {
+  if (!message.media_type) return <p>{message.text}</p>;
+  if (!message.media_url) return <p className="text-slate-400">Mídia indisponível</p>;
+  if (message.media_type === 'image' || message.media_type === 'sticker') return <><a href={message.media_url} target="_blank" rel="noreferrer"><img src={message.media_url} alt={message.media_filename || 'Mídia recebida'} className="max-h-64 max-w-full rounded-lg object-contain" /></a>{message.media_caption && <p className="mt-1">{message.media_caption}</p>}</>;
+  if (message.media_type === 'video') return <><video controls preload="metadata" src={message.media_url} className="max-h-64 max-w-full rounded-lg" />{message.media_caption && <p className="mt-1">{message.media_caption}</p>}</>;
+  if (message.media_type === 'audio') return <><audio controls preload="metadata" src={message.media_url} className="max-w-full" />{message.media_caption && <p className="mt-1">{message.media_caption}</p>}</>;
+  return <a href={message.media_url} target="_blank" rel="noreferrer" download className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-blue-200 hover:bg-white/5"><FileText className="h-4 w-4" />{message.media_filename || 'Documento recebido'}<Download className="ml-auto h-3.5 w-3.5" /></a>;
+}
 
 export default function Atendimento() {
   const { company } = useOutletContext();
@@ -384,7 +393,7 @@ export default function Atendimento() {
                       'bg-indigo-600 text-white'
                     }`}>
                       {m.sender === 'ai' && <div className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-violet-500"><Bot className="h-3 w-3" /> IA</div>}
-                      <p>{m.text}</p>
+                      <MediaContent message={m} />
                       <p className={`mt-0.5 flex items-center gap-1 text-[10px] ${m.sender === 'agent' ? 'text-indigo-200' : 'text-slate-400'}`}>
                         {new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         {m.sender === 'agent' && m.status && <span>· {m.status === 'delivered' ? 'entregue' : m.status === 'read' ? 'lida' : m.status === 'failed' ? 'falhou' : m.status === 'sent' ? 'enviada' : m.status}</span>}

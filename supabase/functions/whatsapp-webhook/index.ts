@@ -1,6 +1,29 @@
 import { corsHeaders, json, admin } from '../_shared/core.ts';
 import { normalizePhone } from '../_shared/phone.ts';
-import { messageContent, webhookItems, timestamp } from '../_shared/webhook.ts';
+import { messageContent, mediaDetails, webhookItems, timestamp } from '../_shared/webhook.ts';
+
+const MEDIA_LIMIT = 10 * 1024 * 1024;
+const MEDIA_TYPES = new Set(['image/jpeg','image/png','image/webp','video/mp4','audio/ogg','audio/mpeg','audio/mp4','application/pdf']);
+async function downloadMedia(sb: any, companyId: string, conversationId: string, externalId: string, media: any) {
+  if (!media?.media_id) return { path: null, size: null };
+  const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN') || '';
+  const version = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v20.0';
+  const metaResponse = await fetch(`https://graph.facebook.com/${version}/${media.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+  const metadata = await metaResponse.json().catch(() => ({}));
+  if (!metaResponse.ok || typeof metadata?.url !== 'string') return { path: null, size: null };
+  const mime = String(metadata.mime_type || media.mime_type || '').toLowerCase();
+  const size = Number(metadata.file_size || 0);
+  if (!MEDIA_TYPES.has(mime) || (size > MEDIA_LIMIT)) return { path: null, size: null };
+  const fileResponse = await fetch(metadata.url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!fileResponse.ok) return { path: null, size: null };
+  const blob = await fileResponse.blob();
+  if (blob.size > MEDIA_LIMIT || !MEDIA_TYPES.has((blob.type || mime).toLowerCase())) return { path: null, size: null };
+  const ext = (media.filename || media.media_type || 'media').split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'bin';
+  const path = `${companyId}/${conversationId}/${externalId}/${crypto.randomUUID()}.${ext}`;
+  const uploaded = await sb.storage.from('whatsapp-media').upload(path, blob, { contentType: blob.type || mime, upsert: false });
+  if (uploaded.error) return { path: null, size: null };
+  return { path, size: blob.size };
+}
 
 async function validSignature(req: Request, body: string) {
   const signature = req.headers.get('x-hub-signature-256') || '';
@@ -80,9 +103,11 @@ async function processMessage(sb: any, value: any, message: any) {
     conversation = created.data;
   }
   const parsed = messageContent(message);
+  const media = mediaDetails(message);
+  const storedMedia = media ? await downloadMedia(sb, companyId, conversation.id, message.id, media) : { path: null, size: null };
   const existing = await sb.from('messages').select('id').eq('company_id', companyId).eq('channel', 'whatsapp').eq('external_message_id', message.id).maybeSingle();
   if (existing.error) stageError(existing.error, 'message_lookup');
-  const inserted = await sb.from('messages').upsert({ company_id: companyId, conversation_id: conversation.id, sender_type: 'customer', content: parsed.content, message_type: parsed.type, channel: 'whatsapp', external_message_id: message.id, external_status: 'received', external_status_at: new Date().toISOString() }, { onConflict: 'company_id,channel,external_message_id' });
+  const inserted = await sb.from('messages').upsert({ company_id: companyId, conversation_id: conversation.id, sender_type: 'customer', content: media?.caption || parsed.content, message_type: parsed.type, channel: 'whatsapp', external_message_id: message.id, external_status: 'received', external_status_at: new Date().toISOString(), media_path: storedMedia.path, media_mime_type: media?.mime_type || null, media_filename: media?.filename || null, media_size: storedMedia.size, media_caption: media?.caption || null, media_type: media?.media_type || null }, { onConflict: 'company_id,channel,external_message_id' });
   if (inserted.error) stageError(inserted.error, 'message_upsert');
   const nextStatus = conversation.status === 'finished' ? 'open' : conversation.status === 'opportunity' ? 'opportunity' : conversation.status || 'open';
   const conversationUpdate = await sb.from('conversations').update({ last_message_at: new Date().toISOString(), customer_id: customerId || undefined, lead_name: profile || undefined, status: nextStatus }).eq('id', conversation.id).eq('company_id', companyId);
