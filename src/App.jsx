@@ -17,6 +17,7 @@ import Estoque from './pages/Estoque.jsx';
 import Vendas from './pages/Vendas.jsx';
 import Financeiro from './pages/Financeiro.jsx';
 import Configuracoes from './pages/Configuracoes.jsx';
+import AssistenteConfiguracao from './pages/AssistenteConfiguracao.jsx';
 import Integracoes from './pages/Integracoes.jsx';
 import Orcamentos from './pages/Orcamentos.jsx';
 import Compras from './pages/Compras.jsx';
@@ -137,6 +138,7 @@ const AuthenticatedApp = () => {
           <Route path="/precificacao" element={<RoleGuard permission="pricing.view"><Precificacao /></RoleGuard>} />
           <Route path="/financeiro" element={<RoleGuard permission="finance.view"><Financeiro /></RoleGuard>} />
           <Route path="/configuracoes" element={<RoleGuard permission="settings.view"><Configuracoes /></RoleGuard>} />
+          <Route path="/configuracoes/atendimento" element={<RoleGuard permission="assistant_settings.view"><AssistenteConfiguracao /></RoleGuard>} />
           <Route path="/configuracoes/integracoes" element={<RoleGuard permission="settings.view"><Integracoes /></RoleGuard>} />
           <Route path="/usuarios" element={<RoleGuard permission="users.view"><Usuarios /></RoleGuard>} />
           <Route path="/orcamentos" element={<RoleGuard permission="quotes.view"><Orcamentos /></RoleGuard>} />

@@ -53,6 +53,7 @@ const NAV = [
       { to: '/notificacoes', label: 'Notificações', icon: Bell, permission: 'notifications.view' },
       { to: '/usuarios', label: 'Usuários', icon: Shield, permission: 'users.view' },
       { to: '/configuracoes', label: 'Configurações', icon: Settings, permission: 'settings.view' },
+      { to: '/configuracoes/atendimento', label: 'Perfil de atendimento', icon: MessageSquare, permission: 'assistant_settings.view' },
     ],
   },
 ];
