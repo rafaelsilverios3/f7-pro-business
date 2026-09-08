@@ -68,11 +68,14 @@ async function processMessage(sb: any, value: any, message: any) {
   }
   const contactResult = await sb.from('whatsapp_contacts').upsert({ company_id: companyId, customer_id: customerId, wa_id: String(message.from || ''), phone, name: profile }, { onConflict: 'company_id,wa_id' });
   if (contactResult.error) stageError(contactResult.error, 'contact_upsert');
-  const conversationResult = await sb.from('conversations').select('id').eq('company_id', companyId).eq('channel', 'whatsapp').eq('lead_phone', phone).in('status', ['open', 'ai', 'waiting_human', 'in_progress']).maybeSingle();
+  // WhatsApp contacts have one continuous history. Reuse the most recent
+  // conversation regardless of its commercial status; finished/opportunity
+  // conversations are reopened or advanced instead of duplicated.
+  const conversationResult = await sb.from('conversations').select('id,status,customer_id').eq('company_id', companyId).eq('channel', 'whatsapp').eq('lead_phone', phone).order('last_message_at', { ascending: false, nullsFirst: false }).limit(1);
   if (conversationResult.error) stageError(conversationResult.error, 'conversation_lookup');
-  let conversation = conversationResult.data;
+  let conversation = conversationResult.data?.[0] || null;
   if (!conversation) {
-    const created = await sb.from('conversations').insert({ company_id: companyId, customer_id: customerId, channel: 'whatsapp', status: 'open', lead_phone: phone, lead_name: profile, last_message_at: new Date().toISOString() }).select('id').single();
+    const created = await sb.from('conversations').insert({ company_id: companyId, customer_id: customerId, channel: 'whatsapp', status: 'open', lead_phone: phone, lead_name: profile, last_message_at: new Date().toISOString() }).select('id,status').single();
     if (created.error) stageError(created.error, 'conversation_insert');
     conversation = created.data;
   }
@@ -81,7 +84,8 @@ async function processMessage(sb: any, value: any, message: any) {
   if (existing.error) stageError(existing.error, 'message_lookup');
   const inserted = await sb.from('messages').upsert({ company_id: companyId, conversation_id: conversation.id, sender_type: 'customer', content: parsed.content, message_type: parsed.type, channel: 'whatsapp', external_message_id: message.id, external_status: 'received', external_status_at: new Date().toISOString() }, { onConflict: 'company_id,channel,external_message_id' });
   if (inserted.error) stageError(inserted.error, 'message_upsert');
-  const conversationUpdate = await sb.from('conversations').update({ last_message_at: new Date().toISOString(), customer_id: customerId || undefined }).eq('id', conversation.id).eq('company_id', companyId);
+  const nextStatus = conversation.status === 'finished' ? 'open' : conversation.status === 'opportunity' ? 'opportunity' : conversation.status || 'open';
+  const conversationUpdate = await sb.from('conversations').update({ last_message_at: new Date().toISOString(), customer_id: customerId || undefined, lead_name: profile || undefined, status: nextStatus }).eq('id', conversation.id).eq('company_id', companyId);
   if (conversationUpdate.error) stageError(conversationUpdate.error, 'conversation_update');
   if (!existing.data) {
     const usage = await sb.rpc('increment_usage', { target_company: companyId, target_metric: 'whatsapp_messages_received', target_period: new Date().toISOString().slice(0, 10), amount: 1 });

@@ -15,6 +15,7 @@ import { searchCatalog } from '@/services/smartCatalogService';
 import { createConversationDraft, finalizeConfirmedConversationOrder } from '@/services/conversationOrderService';
 import { useAuth } from '@/lib/AuthContext';
 import { can } from '@/lib/permissions';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 
 const STATUS_STYLE = {
   open: 'bg-sky-100 text-sky-700',
@@ -50,6 +51,8 @@ export default function Atendimento() {
   const [selected, setSelected] = useState(null);
   const [newDialog, setNewDialog] = useState(false);
   const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
   const [aiThinking, setAiThinking] = useState(false);
   const [products, setProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -64,9 +67,9 @@ export default function Atendimento() {
   const [statusFilter, setStatusFilter] = useState('all');
   const chatRef = useRef(null);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     if (!company) return;
-    setConversationLoading(true); setConversationError('');
+    if (!silent) setConversationLoading(true); setConversationError('');
     try {
       const conversationPromise = import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? conversationsService.list(company.id) : base44.entities.Conversation.filter({ company_id: company.id }, '-last_message_at', 200);
       const productPromise = getDataProvider().entity('Product').list({ company_id: company.id, active: true }, '-name', 200);
@@ -82,6 +85,16 @@ export default function Atendimento() {
     } finally { setConversationLoading(false); }
   };
   useEffect(() => { load(); }, [company]);
+
+  useEffect(() => {
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) return undefined;
+    const channel = getSupabaseClient()
+      .channel(`smart-atendimento-${company.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, () => { load(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, () => { load(true); })
+      .subscribe();
+    return () => { getSupabaseClient().removeChannel(channel); };
+  }, [company?.id]);
 
   const searchProducts = async (event) => {
     event?.preventDefault();
@@ -123,22 +136,20 @@ export default function Atendimento() {
 
   const sendMessage = async (e) => {
     e?.preventDefault();
-    if (!message.trim() || !selected) return;
+    if (!message.trim() || !selected || sending) return;
     const text = message.trim();
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
-      if (selected.channel === 'whatsapp') await conversationsService.sendWhatsApp(company.id, selected.id, text, crypto.randomUUID());
-      else {
-        const now = new Date().toISOString();
-        await conversationsService.addMessage(company.id, { conversation_id: selected.id, sender_type: 'user', content: text, message_type: 'text', created_at: now });
-        await conversationsService.update(company.id, selected.id, { last_message_at: now, status: 'in_progress' });
-      }
-    } else {
-      const now = new Date().toISOString();
-      const newMessages = [...(selected.messages || []), { sender: 'agent', text, timestamp: now }];
-      await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'in_progress' });
-    }
-    setMessage('');
-    load();
+    setSending(true); setSendError('');
+    try {
+      if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+        if (selected.channel === 'whatsapp') await conversationsService.sendWhatsApp(company.id, selected.id, text, crypto.randomUUID());
+        else { const now = new Date().toISOString(); await conversationsService.addMessage(company.id, { conversation_id: selected.id, sender_type: 'user', content: text, message_type: 'text', created_at: now }); await conversationsService.update(company.id, selected.id, { last_message_at: now, status: 'in_progress' }); }
+      } else { const now = new Date().toISOString(); const newMessages = [...(selected.messages || []), { sender: 'agent', text, timestamp: now }]; await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'in_progress' }); }
+      setMessage('');
+      await load(true);
+    } catch (error) {
+      const messages = { AUTH_REQUIRED: 'Sua sessão expirou. Entre novamente.', FORBIDDEN: 'Seu usuário não possui permissão para responder.', FEATURE_NOT_AVAILABLE: 'O WhatsApp não está disponível para esta empresa.', RATE_LIMITED: 'Limite temporário de envio atingido.', INTEGRATION_NOT_CONFIGURED: 'WhatsApp não está configurado para esta empresa.', INVALID_PAYLOAD: 'A mensagem não pôde ser enviada. Verifique o texto.', PROVIDER_ERROR: 'A Meta recusou a mensagem.', INTERNAL_PROVIDER_ERROR: 'Falha interna ao registrar a mensagem.' };
+      setSendError(messages[error?.code] || (error?.stage ? `Falha no envio (${error.stage}).` : 'Não foi possível enviar a mensagem.'));
+    } finally { setSending(false); }
   };
 
   const aiRespond = async () => {
@@ -346,9 +357,10 @@ export default function Atendimento() {
               </div>
 
               {/* Input */}
+              {sendError && <div className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs text-rose-700">{sendError}</div>}
               <form onSubmit={sendMessage} className="flex gap-2 border-t border-slate-100 p-3">
                 <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Digite sua mensagem..." className="flex-1" />
-                <Button type="submit" disabled={!message.trim()}><Send className="h-4 w-4" /></Button>
+                <Button type="submit" disabled={!message.trim() || sending}><Send className="h-4 w-4" /> {sending ? 'Enviando...' : 'Enviar'}</Button>
               </form>
             </>
           )}
