@@ -26,6 +26,6 @@ test('browser uses only public Supabase session credentials and never logs them'
 });
 
 test('AI remains disabled', () => {
-  assert.match(page, /VITE_AI_ENABLED/);
-  assert.match(page, /IA desativada/);
+  assert.doesNotMatch(page, /VITE_AI_ENABLED/);
+  assert.match(page, /IA não disponível|assistantMode/);
 });

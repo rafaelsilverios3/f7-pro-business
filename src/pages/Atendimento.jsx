@@ -84,7 +84,10 @@ export default function Atendimento() {
   const [conversationSearch, setConversationSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const chatRef = useRef(null);
+  const loadRef = useRef(null);
+  const selectedRef = useRef(selected);
   const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
 
   const load = async (silent = false) => {
     if (!company) return;
@@ -111,6 +114,7 @@ export default function Atendimento() {
       setConversations([]);
     } finally { setConversationLoading(false); }
   };
+  useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { load(); }, [company]);
 
   useEffect(() => {
@@ -129,6 +133,14 @@ export default function Atendimento() {
     let authenticated = false;
     const supabase = getSupabaseClient();
     const isCurrentCompany = (payload) => payload?.new?.company_id === company.id || payload?.old?.company_id === company.id;
+    const handleRealtimeEvent = (table, payload) => {
+      const row = payload?.new || payload?.old || {};
+      const companyMatch = isCurrentCompany(payload);
+      const conversationMatch = table === 'messages' ? row.conversation_id === selectedRef.current?.id : row.id === selectedRef.current?.id;
+      if (!companyMatch) { console.info('[Realtime] REALTIME_EVENT_IGNORED', { table, company_match: false, conversation_match: conversationMatch, timestamp: new Date().toISOString() }); return; }
+      console.info(`[Realtime] ${table === 'messages' ? `REALTIME_MESSAGE_${payload.eventType === 'UPDATE' ? 'UPDATE' : 'INSERT'}` : 'REALTIME_CONVERSATION_UPDATE'}`, { table, company_match: true, conversation_match: conversationMatch, timestamp: new Date().toISOString() });
+      loadRef.current(true);
+    };
     const scheduleReconnect = () => { if (cancelled || reconnectTimer) return; setRealtimeStatus('reconnecting'); reconnectTimer = window.setTimeout(() => { reconnectTimer = undefined; if (!cancelled) setRealtimeStatus('connecting'); }, 3000); };
     const connectRealtime = async () => {
       setRealtimeStatus('connecting'); setAuthenticatedRealtime(false);
@@ -146,8 +158,8 @@ export default function Atendimento() {
       }).data?.subscription;
       channel = supabase
         .channel(`smart-atendimento-${company.id}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (payload) => { if (!isCurrentCompany(payload)) return; console.info('[Realtime] conversations event'); load(true); })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => { if (!isCurrentCompany(payload)) return; console.info('[Realtime] messages event'); load(true); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
         .subscribe(async (status) => {
           if (cancelled) return;
           console.info(`[Realtime] status: ${status}`);
@@ -161,7 +173,7 @@ export default function Atendimento() {
 
   useEffect(() => {
     if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || (realtimeStatus === 'subscribed' && authenticatedRealtime)) return undefined;
-    const timer = window.setInterval(() => load(true), 5000);
+    const timer = window.setInterval(() => loadRef.current(true), 5000);
     return () => window.clearInterval(timer);
   }, [company?.id, realtimeStatus, authenticatedRealtime]);
 

@@ -23,7 +23,7 @@ test('Realtime callback filters company events and cleans up channels', () => {
 });
 
 test('Polling fallback runs only while authenticated Realtime is not subscribed', () => {
-  assert.match(source, /setInterval\(\(\) => load\(true\), 5000\)/);
+  assert.match(source, /setInterval\(\(\) => loadRef\.current\(true\), 5000\)/);
   assert.match(source, /realtimeStatus === 'subscribed' && authenticatedRealtime/);
   assert.match(source, /Atualização automática em modo compatibilidade/);
 });
@@ -36,6 +36,14 @@ test('Realtime authenticates before creating and subscribing the channel', () =>
   assert.ok(authIndex >= 0 && setAuthIndex > authIndex && channelIndex > setAuthIndex && subscribeIndex > channelIndex);
   assert.match(source, /if \(cancelled \|\| !token\).*setRealtimeStatus\('compatibility'\)/s);
   assert.match(source, /onAuthStateChange/);
+});
+
+test('Realtime events use explicit company filters and refresh the latest selected state', () => {
+  assert.match(source, /filter: `company_id=eq\.\$\{company\.id\}`/);
+  assert.match(source, /loadRef\.current\(true\)/);
+  assert.match(source, /REALTIME_MESSAGE_\$\{/);
+  assert.match(source, /payload\.eventType === 'UPDATE'/);
+  assert.match(source, /REALTIME_EVENT_IGNORED/);
 });
 
 test('inbox opens the newest loaded conversation when no card is selected', () => {
