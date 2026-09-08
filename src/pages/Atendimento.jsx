@@ -243,7 +243,8 @@ export default function Atendimento() {
     } catch (error) {
       const code = typeof error?.code === 'string' ? error.code : null;
       const safeMessage = error?.message || 'Não foi possível gerar uma sugestão segura.';
-      setAssistantError(`${safeMessage}${code && !safeMessage.includes(code) ? ` Código: ${code}` : ''}`);
+      const diagnostic = error?.stage ? ` Etapa: ${error.stage}${error?.internalCode ? ` · Código interno: ${error.internalCode}` : ''}.` : '';
+      setAssistantError(`${safeMessage}${diagnostic}${code && !safeMessage.includes(code) ? ` Código: ${code}` : ''}`);
     }
     finally { setAiThinking(false); }
   };

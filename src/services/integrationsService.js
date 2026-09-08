@@ -98,6 +98,8 @@ function createIntegrationError(rawDetail, httpStatus) {
   };
   const metaCode = meta.code;
   const metaSubcode = meta.subcode;
+  const safeStage = typeof detail?.stage === 'string' ? detail.stage.slice(0, 80) : null;
+  const safeInternalCode = typeof detail?.internal_error_code === 'string' ? detail.internal_error_code.slice(0, 80) : null;
   const assistantMessages = {
     AI_DISABLED: 'A IA está desativada neste ambiente.',
     AI_PROVIDER_NOT_CONFIGURED: 'O provedor de IA ainda não está configurado.',
@@ -116,7 +118,7 @@ function createIntegrationError(rawDetail, httpStatus) {
   };
   const message = metaCode != null
     ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
-    : safeDetail.code === 'INTERNAL_PROVIDER_ERROR' ? 'Falha interna na integração.'
+    : safeDetail.code === 'INTERNAL_PROVIDER_ERROR' ? `Falha interna na integração.${safeStage ? ` Etapa: ${safeStage}.` : ''}${safeInternalCode ? ` Código interno: ${safeInternalCode}.` : ''}`
       : assistantMessages[safeDetail.code]
         || (typeof safeDetail.message === 'string' ? redactDiagnosticText(safeDetail.message) : 'Não foi possível concluir a ação.');
   const cause = new Error(message);
@@ -129,7 +131,7 @@ function createIntegrationError(rawDetail, httpStatus) {
     graphVersion: detail?.graph_version ? redactDiagnosticText(detail.graph_version) : null,
     httpStatus: detail?.http_status || httpStatus || null,
     stage: typeof detail?.stage === 'string' ? detail.stage.slice(0, 80) : null,
-    internalCode: typeof detail?.internal_code === 'string' ? detail.internal_code.slice(0, 80) : null,
+    internalCode: typeof detail?.internal_code === 'string' ? detail.internal_code.slice(0, 80) : typeof detail?.internal_error_code === 'string' ? detail.internal_error_code.slice(0, 80) : null,
   });
   return cause;
 }

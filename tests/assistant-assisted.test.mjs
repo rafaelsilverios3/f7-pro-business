@@ -124,3 +124,25 @@ test('assisted controls use company membership and do not depend on VITE_AI_ENAB
   assert.match(page, /Ative o modo Assistido nas Configurações de Atendimento/);
   assert.match(page, /Gerando sugestão/);
 });
+
+test('internal assistant failures preserve safe stage and internal code in the UI', () => {
+  assert.match(edge, /internal_error_code/);
+  assert.match(edge, /conversation_lookup/);
+  assert.match(edge, /membership_lookup/);
+  assert.match(edge, /feature_lookup/);
+  assert.match(edge, /rate_limit/);
+  assert.match(edge, /settings_lookup/);
+  assert.match(edge, /context_lookup/);
+  assert.match(page, /Etapa: \$\{error\.stage\}/);
+  assert.match(page, /Código interno: \$\{error\.internalCode\}/);
+  assert.match(integrations, /internal_error_code/);
+});
+
+test('provider configuration and model failures remain specific', () => {
+  assert.match(edge, /AI_MODEL_NOT_AVAILABLE/);
+  assert.match(edge, /AI_PROVIDER_CONFIG_INVALID/);
+  assert.match(edge, /AI_JSON_MODE_UNSUPPORTED/);
+  assert.match(edge, /rawEndpoint !== rawEndpoint\.trim\(\)/);
+  assert.match(edge, /rawModel !== rawModel\.trim\(\)/);
+  assert.doesNotMatch(edge, /AI_API_KEY[^\n]*(console|metadata)/i);
+});

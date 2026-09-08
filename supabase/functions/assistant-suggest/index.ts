@@ -13,6 +13,10 @@ const PROVIDER_TIMEOUT_MS = 20_000;
 const DEFAULT_MODEL = 'gpt-5.6-luna';
 
 function safeText(value: unknown, max = 600) { return String(value || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max); }
+function safeInternalCode(error: unknown) {
+  const code = typeof (error as any)?.code === 'string' ? (error as any).code : '';
+  return /^[A-Z0-9_]{1,80}$/.test(code) ? code : null;
+}
 function normalizeTerms(value: unknown) {
   const stop = new Set(['para', 'com', 'uma', 'que', 'das', 'dos', 'por', 'the', 'and', 'from', 'esse', 'essa', 'isso', 'mais', 'como']);
   return [...new Set(safeText(value, 8000).toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9][a-z0-9_-]{2,}/g) || [])].filter((term) => !stop.has(term)).slice(0, 50);
@@ -99,7 +103,9 @@ function segmentGuidance(settings: Record<string, unknown>, sources: any[]) {
 }
 
 function providerEndpoint() {
-  const endpoint = Deno.env.get('AI_API_URL') || 'https://api.openai.com/v1/chat/completions';
+  const rawEndpoint = Deno.env.get('AI_API_URL');
+  if (rawEndpoint && (rawEndpoint !== rawEndpoint.trim() || /^["']|["']$/.test(rawEndpoint))) return null;
+  const endpoint = rawEndpoint || 'https://api.openai.com/v1/chat/completions';
   try {
     const parsed = new URL(endpoint);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) return null;
@@ -121,7 +127,9 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
   if (!apiKey) return { ok: false, code: 'AI_PROVIDER_NOT_CONFIGURED' as const };
   const endpoint = providerEndpoint();
   if (!endpoint) return { ok: false, code: 'AI_PROVIDER_CONFIG_INVALID' as const };
-  const model = Deno.env.get('AI_MODEL') || DEFAULT_MODEL;
+  const rawModel = Deno.env.get('AI_MODEL');
+  if (rawModel && (rawModel !== rawModel.trim() || /^["']|["']$/.test(rawModel))) return { ok: false, code: 'AI_PROVIDER_CONFIG_INVALID' as const };
+  const model = rawModel || DEFAULT_MODEL;
   const system = [
     'Você é uma assistente comercial em modo assistido. Gere somente uma sugestão para revisão humana.',
     'Nunca invente produto, PN, aplicação, compatibilidade, preço, estoque, prazo ou substituição.',
@@ -159,9 +167,10 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     const requestId = safeText(response.headers.get('x-request-id') || providerError.request_id, 120) || null;
     if (!response.ok) {
       const providerMessage = safeText(providerError.message, 240).toLocaleLowerCase('en-US');
-      const code = providerCode.includes('model_not_found') || providerCode.includes('model_not_available') || providerCode.includes('does_not_exist') || response.status === 404
+      const code = providerCode.includes('model_not_found') || providerCode.includes('model_not_available') || providerCode.includes('invalid_model') || providerCode.includes('does_not_exist') || providerCode.includes('model_access') || providerMessage.includes('model access') || response.status === 404
         ? 'AI_MODEL_NOT_AVAILABLE' as const
         : providerCode.includes('response_format') || providerMessage.includes('response_format') || providerMessage.includes('json_object') ? 'AI_JSON_MODE_UNSUPPORTED' as const
+        : providerCode.includes('unsupported') || providerMessage.includes('unsupported parameter') ? 'AI_PROVIDER_CONFIG_INVALID' as const
         : response.status === 401 || response.status === 403 ? 'AI_PROVIDER_AUTH_ERROR' as const
           : response.status === 429 && (providerCode.includes('quota') || providerCode.includes('insufficient')) ? 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' as const
             : response.status === 429 ? 'AI_PROVIDER_RATE_LIMITED' as const
@@ -188,13 +197,13 @@ Deno.serve(async (req) => {
     if (!conversationId) return json({ code: 'CONVERSATION_REQUIRED' }, 400);
 
     const { data: conversation, error: conversationError } = await sb.from('conversations').select('id,company_id,customer_id,channel').eq('id', conversationId).maybeSingle();
-    if (conversationError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'conversation_lookup' }, 500);
+    if (conversationError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar a conversa.', stage: 'conversation_lookup', internal_error_code: safeInternalCode(conversationError) }, 500);
     if (!conversation) return json({ code: 'NOT_FOUND' }, 404);
     diagnosticCompanyId = conversation.company_id;
     await logStage(sb, conversation.company_id, 'ASSISTANT_REQUEST_RECEIVED');
     await logStage(sb, conversation.company_id, stage);
     const { data: member, error: memberError } = await sb.from('company_users').select('role,active').eq('company_id', conversation.company_id).eq('user_id', user.id).maybeSingle();
-    if (memberError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'membership_lookup' }, 500);
+    if (memberError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar a permissão da empresa.', stage: 'membership_lookup', internal_error_code: safeInternalCode(memberError) }, 500);
     if (!member?.active || !ALLOWED_ROLES.includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
     stage = 'MEMBERSHIP_OK';
     await logStage(sb, conversation.company_id, stage);
@@ -202,15 +211,15 @@ Deno.serve(async (req) => {
     stage = 'PERMISSION_OK';
     await logStage(sb, conversation.company_id, stage);
     const { data: allowed, error: featureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'ai' });
-    if (featureError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'feature_lookup' }, 500);
+    if (featureError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o entitlement da empresa.', stage: 'feature_lookup', internal_error_code: safeInternalCode(featureError) }, 500);
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     stage = 'ENTITLEMENT_OK';
     await logStage(sb, conversation.company_id, stage);
     const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: user.id, target_metric: 'assistant-suggest', max_count: 10, window_seconds: 60 });
-    if (limited.error) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'rate_limit' }, 500);
+    if (limited.error) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna no controle de uso.', stage: 'rate_limit', internal_error_code: safeInternalCode(limited.error) }, 500);
     if (limited.data === false) return json({ code: 'RATE_LIMITED' }, 429);
     const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode').eq('company_id', conversation.company_id).maybeSingle();
-    if (settingsError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'settings_lookup' }, 500);
+    if (settingsError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao carregar a configuração do assistente.', stage: 'settings_lookup', internal_error_code: safeInternalCode(settingsError) }, 500);
     if ((settings?.mode || 'manual') !== 'assisted') return json({ code: 'ASSISTED_MODE_REQUIRED' }, 403);
     stage = 'MODE_OK';
     await logStage(sb, conversation.company_id, stage);
@@ -225,7 +234,10 @@ Deno.serve(async (req) => {
       sb.from('company_quick_replies').select('reply_key,title,body,category,active').eq('company_id', conversation.company_id).eq('active', true).limit(100),
       sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100),
     ]);
-    if (messagesError || productsError || quickRepliesError || handoffRulesError) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'context_lookup' }, 500);
+    if (messagesError || productsError || quickRepliesError || handoffRulesError) {
+      const firstContextError = messagesError || productsError || quickRepliesError || handoffRulesError;
+      return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao preparar o contexto da sugestão.', stage: 'context_lookup', internal_error_code: safeInternalCode(firstContextError) }, 500);
+    }
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
@@ -246,6 +258,7 @@ Deno.serve(async (req) => {
     const startedAt = Date.now();
     const model = Deno.env.get('AI_MODEL') || DEFAULT_MODEL;
     stage = 'AI_REQUEST_STARTED';
+    stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
     const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata });
     await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
@@ -261,7 +274,7 @@ Deno.serve(async (req) => {
     await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
     return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, sources: sourceMetadata, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: missingInformation });
   } catch (error) {
-    const safeCode = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : 'INTERNAL_PROVIDER_ERROR';
+    const safeCode = safeInternalCode(error) || 'INTERNAL_PROVIDER_ERROR';
     if (diagnosticCompanyId) await logStage(admin(), diagnosticCompanyId, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: safeCode, http_status: 500 });
     return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao gerar a sugestão.', stage, internal_error_code: safeCode }, 500);
   }
