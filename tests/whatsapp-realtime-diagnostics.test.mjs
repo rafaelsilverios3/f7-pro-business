@@ -26,3 +26,13 @@ test('Polling fallback runs only while Realtime is not subscribed', () => {
   assert.match(source, /realtimeStatus === 'subscribed'/);
   assert.match(source, /Atualização automática em modo compatibilidade/);
 });
+
+test('Realtime authenticates before creating and subscribing the channel', () => {
+  const authIndex = source.indexOf('await supabase.auth.getSession()');
+  const setAuthIndex = source.indexOf('await supabase.realtime.setAuth(token)');
+  const channelIndex = source.indexOf(".channel(`smart-atendimento-${company.id}`)");
+  const subscribeIndex = source.indexOf('.subscribe(async (status)');
+  assert.ok(authIndex >= 0 && setAuthIndex > authIndex && channelIndex > setAuthIndex && subscribeIndex > channelIndex);
+  assert.match(source, /if \(cancelled \|\| !token\).*setRealtimeStatus\('compatibility'\)/s);
+  assert.match(source, /onAuthStateChange/);
+});

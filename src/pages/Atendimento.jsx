@@ -54,6 +54,7 @@ export default function Atendimento() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   const [realtimeStatus, setRealtimeStatus] = useState('connecting');
+  const [authenticatedRealtime, setAuthenticatedRealtime] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [products, setProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -91,30 +92,46 @@ export default function Atendimento() {
     if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) return undefined;
     let cancelled = false;
     let reconnectTimer;
+    let channel;
+    let authSubscription;
+    let authenticated = false;
     const supabase = getSupabaseClient();
     const isCurrentCompany = (payload) => payload?.new?.company_id === company.id || payload?.old?.company_id === company.id;
     const scheduleReconnect = () => { if (cancelled || reconnectTimer) return; setRealtimeStatus('reconnecting'); reconnectTimer = window.setTimeout(() => { reconnectTimer = undefined; if (!cancelled) setRealtimeStatus('connecting'); }, 3000); };
-    const channel = supabase
-      .channel(`smart-atendimento-${company.id}`)
-      // Filter in the callback as well as at the database layer. This keeps
-      // company isolation even when a hosted Realtime replica ignores filters.
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (payload) => { if (!isCurrentCompany(payload)) return; console.info('[Realtime] conversations event'); load(true); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => { if (!isCurrentCompany(payload)) return; console.info('[Realtime] messages event'); load(true); })
-      .subscribe(async (status) => {
-        if (cancelled) return;
-        console.info(`[Realtime] status: ${status}`);
-        if (status === 'SUBSCRIBED') { setRealtimeStatus('subscribed'); if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = undefined; } }
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') scheduleReconnect();
-      });
-    supabase.auth.getSession().then(({ data }) => { if (!cancelled && data?.session?.access_token) supabase.realtime.setAuth(data.session.access_token); }).catch(() => {});
-    return () => { cancelled = true; if (reconnectTimer) window.clearTimeout(reconnectTimer); setRealtimeStatus('closed'); supabase.removeChannel(channel); };
+    const connectRealtime = async () => {
+      setRealtimeStatus('connecting'); setAuthenticatedRealtime(false);
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (cancelled || !token) { setRealtimeStatus('compatibility'); return; }
+      await supabase.realtime.setAuth(token);
+      if (cancelled) return;
+      authenticated = true;
+      setAuthenticatedRealtime(true);
+      console.info('[Realtime] authenticated');
+      authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.access_token) supabase.realtime.setAuth(session.access_token);
+        else { setAuthenticatedRealtime(false); setRealtimeStatus('compatibility'); }
+      }).data?.subscription;
+      channel = supabase
+        .channel(`smart-atendimento-${company.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (payload) => { if (!isCurrentCompany(payload)) return; console.info('[Realtime] conversations event'); load(true); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => { if (!isCurrentCompany(payload)) return; console.info('[Realtime] messages event'); load(true); })
+        .subscribe(async (status) => {
+          if (cancelled) return;
+          console.info(`[Realtime] status: ${status}`);
+          if (status === 'SUBSCRIBED' && authenticated) { setRealtimeStatus('subscribed'); if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = undefined; } }
+          else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') { setRealtimeStatus(status === 'TIMED_OUT' ? 'timed_out' : 'error'); scheduleReconnect(); }
+        });
+    };
+    connectRealtime().catch(() => { if (!cancelled) { setAuthenticatedRealtime(false); setRealtimeStatus('compatibility'); } });
+    return () => { cancelled = true; if (reconnectTimer) window.clearTimeout(reconnectTimer); authSubscription?.unsubscribe(); if (channel) supabase.removeChannel(channel); setAuthenticatedRealtime(false); setRealtimeStatus('closed'); };
   }, [company?.id]);
 
   useEffect(() => {
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || realtimeStatus === 'subscribed') return undefined;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || (realtimeStatus === 'subscribed' && authenticatedRealtime)) return undefined;
     const timer = window.setInterval(() => load(true), 5000);
     return () => window.clearInterval(timer);
-  }, [company?.id, realtimeStatus]);
+  }, [company?.id, realtimeStatus, authenticatedRealtime]);
 
   const searchProducts = async (event) => {
     event?.preventDefault();
