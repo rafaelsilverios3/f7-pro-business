@@ -72,6 +72,8 @@ function sanitizeProductIntelligence(input: any) {
     need_external_research: input?.need_external_research === true,
     missing_information: Array.isArray(input?.missing_information) ? input.missing_information.slice(0, 20).map((item: unknown) => safeText(item, 120)) : [],
     candidates: candidates.slice(0, 30).map(normalizeCandidateForContext),
+    discovered_machine: input?.discovered_machine && typeof input.discovered_machine === 'object' ? { manufacturer: safeText(input.discovered_machine.manufacturer, 120) || null, model: safeText(input.discovered_machine.model, 80) || null, equipment_type: safeText(input.discovered_machine.equipment_type, 80) || null } : null,
+    research_state: input?.research_state && typeof input.research_state === 'object' ? { known_facts: Array.isArray(input.research_state.known_facts) ? input.research_state.known_facts.slice(0, 12) : [], discovered_facts: Array.isArray(input.research_state.discovered_facts) ? input.research_state.discovered_facts.slice(0, 12) : [], queries_executed: Array.isArray(input.research_state.queries_executed) ? input.research_state.queries_executed.slice(0, 5).map((item: unknown) => safeText(item, 300)) : [], confidence: Number(input.research_state.confidence) || 0 } : null,
     web_research: { searched: web.searched === true, search_provider: safeText(web.search_provider, 100), cache_hit: web.cache_hit === true, code: safeText(web.code, 100) || null, candidate_count: Array.isArray(web.candidates) ? web.candidates.length : 0, evidence: { part_numbers: Array.isArray(web.evidence?.part_numbers) ? web.evidence.part_numbers.slice(0, 30).map((item: unknown) => safeText(item, 80)) : [], source_urls: Array.isArray(web.evidence?.source_urls) ? web.evidence.source_urls.slice(0, 20).map((item: unknown) => safeText(item, 300)) : [], confidence: Number(web.evidence?.confidence) || 0, conflicts: Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts.slice(0, 10).map((item: unknown) => safeText(item, 240)) : [] } },
   };
 }
@@ -226,6 +228,7 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     'Você é uma assistente comercial em modo assistido. Gere somente uma sugestão para revisão humana.',
     'Nunca invente produto, PN, aplicação, compatibilidade, preço, estoque, prazo ou substituição.',
     'Use primeiro os dados internos e respeite segment, business_description e specific_rules da empresa.',
+    'Quando a solicitação tiver qualquer combinação técnica identificável, investigue primeiro com o PRODUCT_INTELLIGENCE e a pesquisa externa disponível; descubra fabricante e tipo de equipamento pelas fontes antes de perguntar. Pergunte somente fatos que apenas o cliente pode fornecer.',
     'Quando faltar confirmação técnica, faça uma pergunta curta e marque requires_human=true.',
     'A falta de chassis, serial, ano ou foto não bloqueia a descoberta: pesquise e apresente PNs candidatos quando houver evidência no PRODUCT_INTELLIGENCE. Solicite esses dados somente para confirmar a configuração final.',
     'Nunca diga que não pode pesquisar apenas porque falta chassis/serial. Se não houver candidatos, informe que pesquisou e não encontrou evidência suficiente.',
@@ -398,6 +401,8 @@ Deno.serve(async (req) => {
         }
         for (const result of webResearch.results || []) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, retrieved_at: result.retrieved_at });
         productIntelligence.web_research = { searched: true, search_provider: webResearch.provider, evidence: webResearch.evidence, candidates: webResearch.candidates || webResearch.evidence?.candidates || [], conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
+        productIntelligence.research_state = webResearch.research_state || null;
+        productIntelligence.discovered_machine = webResearch.discovered_machine || null;
         productIntelligence.candidates = [...(productIntelligence.candidates || []), ...(webResearch.candidates || webResearch.evidence?.candidates || [])];
         const researchEvent = webResearch.status === 'PARTIAL' ? 'WEB_RESEARCH_PARTIAL' : webResearch.status === 'FAILED' ? 'WEB_RESEARCH_FAILED' : 'WEB_RESEARCH_COMPLETED';
         const failedDiagnostic = webResearch.query_diagnostics?.find((item: any) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');

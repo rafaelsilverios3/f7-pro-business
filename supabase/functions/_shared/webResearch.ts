@@ -56,6 +56,11 @@ const DEFAULT_SEARCH_TIMEOUT = 8000;
 const DEFAULT_PAGE_TIMEOUT = 8000;
 const MAX_PAGE_BYTES = 1_000_000;
 export const RESEARCH_STRATEGY_VERSION = 2;
+export const MAX_RESEARCH_ROUNDS = 2;
+export const MAX_QUERIES_PER_ROUND = 3;
+export const MAX_TOTAL_RESULTS = 10;
+export const MAX_PAGE_FETCHES = 3;
+export const MAX_RESEARCH_TIME_MS = 15_000;
 const BLOCKED_HOSTS = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|::1|metadata(?:\.|$)|169\.254\.169\.254)$/i;
 
 function safeText(value: unknown, max: number) {
@@ -236,6 +241,43 @@ export type TechnicalResearchQueryInput = {
   user_text?: string;
 };
 
+export type ResearchFact = {
+  field: 'manufacturer' | 'model' | 'equipment_type' | 'part_description';
+  value: string;
+  provenance: 'customer' | 'web_research' | 'company_catalog';
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  sources: string[];
+};
+
+export type ResearchState = {
+  original_request: string;
+  known_facts: ResearchFact[];
+  discovered_facts: ResearchFact[];
+  unresolved_facts: string[];
+  queries_executed: string[];
+  sources: string[];
+  candidates: TechnicalPartCandidate[];
+  conflicts: string[];
+  confidence: number;
+};
+
+/** Resolve machine identity from public evidence without making it a prerequisite. */
+export function resolveMachineIdentity(results: WebSearchResult[], input: TechnicalResearchQueryInput = {}) {
+  const text = results.map((result) => `${result.title} ${result.snippet}`).join(' ');
+  const facts: ResearchFact[] = [];
+  const model = safeText(input.model, 80);
+  if (model) facts.push({ field: 'model', value: model, provenance: 'customer', confidence: 'HIGH', sources: [] });
+  const manufacturerMatches = [...text.matchAll(/\b(john\s+deere|new\s+holland|case\s+ih|caterpillar|komatsu|volvo\s+ce)\b/gi)].map((match) => match[1].replace(/\s+/g, ' '));
+  const manufacturer = manufacturerMatches[0] ? manufacturerMatches[0].replace(/\b\w/g, (letter) => letter.toUpperCase()) : safeText(input.manufacturer, 120);
+  if (manufacturer) {
+    const sources = results.filter((result) => `${result.title} ${result.snippet}`.toLocaleLowerCase().includes(manufacturer.toLocaleLowerCase())).map((result) => result.url).slice(0, 5);
+    facts.push({ field: 'manufacturer', value: manufacturer, provenance: input.manufacturer ? 'customer' : 'web_research', confidence: manufacturerMatches.length >= 2 ? 'HIGH' : 'MEDIUM', sources });
+  }
+  const equipment = /\b(?:tractor|trator|harvester|colheitadeira|sprayer|pulverizador|combine)\b/i.exec(text)?.[0];
+  if (equipment) facts.push({ field: 'equipment_type', value: equipment, provenance: 'web_research', confidence: 'MEDIUM', sources: results.slice(0, 5).map((result) => result.url) });
+  return { manufacturer: manufacturer || undefined, model: model || undefined, equipment_type: equipment || undefined, facts };
+}
+
 export function inferTechnicalResearchInput(text: string, products: any[] = [], settings: Record<string, unknown> = {}): TechnicalResearchQueryInput {
   const value = safeText(text, 1000);
   const model = value.match(/\b(?:[A-Z]{1,3}\s*)?\d{3,5}[A-Z]?\b/i)?.[0] || undefined;
@@ -314,7 +356,12 @@ export function extractTechnicalEvidence(results: WebSearchResult[], pages: Page
 export function isTechnicalResearchNeeded(input: { text: string; manufacturer?: string; model?: string; part_number?: string; userAskedExternal?: boolean }) {
   if (input.userAskedExternal) return true;
   const value = `${input.text} ${input.manufacturer || ''} ${input.model || ''} ${input.part_number || ''}`.toLocaleLowerCase('pt-BR');
-  return Boolean(input.manufacturer || input.model || input.part_number || /\b(pn|p\/?n|part.?number|c[oó]digo|compatibilidade|aplica[cç][aã]o|modelo|serial|chassi|pin|equivalente|fabricante)\b/i.test(value));
+  return Boolean(input.manufacturer || input.model || input.part_number || detectPartResearchIntent(value));
+}
+
+/** PART_RESEARCH_REQUIRED: dispatch research from technical intent, without waiting for the model. */
+export function detectPartResearchIntent(text: string) {
+  return /\b(pn|p\/?n|part.?number|c[oó]digo|compatibilidade|aplica[cç][aã]o|modelo|serial|chassi|pin|equivalente|fabricante|filtro|correia|rolamento|bomba|sensor|radiador|pe[cç]a)\b/i.test(safeText(text, MAX_QUERY));
 }
 
 export function manufacturerDomains(manufacturer?: string) {
@@ -330,6 +377,10 @@ function queryHash(input: WebSearchInput) {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized)).then((buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join(''));
 }
 
+function queriesDiagnosticsWithinBudget(diagnostics: ResearchQueryDiagnostic[], maxQueries: number) {
+  return diagnostics.length < maxQueries;
+}
+
 export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number; onQuery?: (event: 'WEB_SEARCH_QUERY_STARTED' | 'WEB_SEARCH_QUERY_COMPLETED' | 'WEB_SEARCH_QUERY_FAILED', details: ResearchQueryDiagnostic) => Promise<void> | void }) {
   const started = Date.now();
   const hash = await queryHash(input.query);
@@ -340,36 +391,65 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   } catch { /* cache is an optimization; research can continue */ }
   const provider = WebSearchProviderRegistry.create();
   const queryParts = [input.query.query, input.query.manufacturer, input.query.model, input.query.part_number, input.query.application].filter(Boolean).map((part) => safeText(part, 240));
-  const queries = planTechnicalResearchQueries({ manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, user_text: queryParts.join(' ') });
+  const initialInput = { manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, user_text: queryParts.join(' ') } satisfies TechnicalResearchQueryInput;
+  const researchState: ResearchState = { original_request: safeText(input.query.query, MAX_QUERY), known_facts: [], discovered_facts: [], unresolved_facts: [], queries_executed: [], sources: [], candidates: [], conflicts: [], confidence: 0 };
+  if (initialInput.model) researchState.known_facts.push({ field: 'model', value: safeText(initialInput.model, 80), provenance: 'customer', confidence: 'HIGH', sources: [] });
+  if (initialInput.manufacturer) researchState.known_facts.push({ field: 'manufacturer', value: safeText(initialInput.manufacturer, 120), provenance: 'customer', confidence: 'HIGH', sources: [] });
+  const queries = planTechnicalResearchQueries(initialInput);
+  const pendingQueries = [...queries];
   const allResults: WebSearchResult[] = [];
   const startedAt = Date.now();
   let queriesExecuted = 0;
   const queryDiagnostics: ResearchQueryDiagnostic[] = [];
-  for (const query of queries) {
-    if (Date.now() - startedAt > 15_000) break;
-    const queryIndex = queries.indexOf(query) + 1;
+  const maxQueries = Math.min(Math.max(Number(Deno.env.get('WEB_RESEARCH_MAX_QUERIES') || (MAX_RESEARCH_ROUNDS * MAX_QUERIES_PER_ROUND - 1)), 1), MAX_RESEARCH_ROUNDS * MAX_QUERIES_PER_ROUND - 1);
+  while (pendingQueries.length && queriesDiagnosticsWithinBudget(queryDiagnostics, maxQueries)) {
+    const query = pendingQueries.shift()!;
+    if (Date.now() - startedAt > MAX_RESEARCH_TIME_MS) break;
+    const queryIndex = queryDiagnostics.length + 1;
     const queryStarted = Date.now();
     const queryContext = { query_index: queryIndex, query_length: query.length, manufacturer_present: Boolean(input.query.manufacturer), model_present: Boolean(input.query.model), part_description_present: Boolean(input.query.application), parameter_names: ['q', 'count'], results_count: 0, duration_ms: 0 };
     await input.onQuery?.('WEB_SEARCH_QUERY_STARTED', queryContext);
-    const response = await provider.search({ ...input.query, query, domains: input.query.domains?.length ? input.query.domains : manufacturerDomains(input.query.manufacturer), max_results: input.query.max_results || 5 });
+    const discoveredManufacturer = researchState.known_facts.find((fact) => fact.field === 'manufacturer')?.value || researchState.discovered_facts.find((fact) => fact.field === 'manufacturer')?.value;
+    const response = await provider.search({ ...input.query, query, domains: input.query.domains?.length ? input.query.domains : manufacturerDomains(discoveredManufacturer || input.query.manufacturer), max_results: input.query.max_results || 5 });
+    researchState.queries_executed.push(query);
+    researchState.sources.push(...response.results.map((result) => result.url));
     queriesExecuted += response.queries_executed || 1;
     allResults.push(...response.results);
     const diagnostic = { ...queryContext, code: response.code, http_status: response.http_status ?? null, provider_code: response.provider_code ?? null, provider_error_message: response.provider_error_message ?? null, parameter_names: response.parameter_names || queryContext.parameter_names, results_count: response.results.length, duration_ms: Date.now() - queryStarted };
     queryDiagnostics.push(diagnostic);
     await input.onQuery?.(response.code && response.code !== 'WEB_SEARCH_NO_RESULTS' && response.code !== undefined ? 'WEB_SEARCH_QUERY_FAILED' : 'WEB_SEARCH_QUERY_COMPLETED', diagnostic);
     if (response.code === 'WEB_SEARCH_NOT_CONFIGURED') break;
+    if (response.results.length) {
+      const identity = resolveMachineIdentity(response.results, { ...initialInput, manufacturer: researchState.known_facts.find((fact) => fact.field === 'manufacturer')?.value || initialInput.manufacturer });
+      for (const fact of identity.facts) {
+        const target = fact.provenance === 'web_research' ? researchState.discovered_facts : researchState.known_facts;
+        if (!target.some((existing) => existing.field === fact.field && existing.value.toLocaleLowerCase() === fact.value.toLocaleLowerCase())) target.push(fact);
+      }
+      const discoveredManufacturer = identity.manufacturer;
+      if (discoveredManufacturer && !initialInput.manufacturer) {
+        const discoveredQueries = planTechnicalResearchQueries({ ...initialInput, manufacturer: discoveredManufacturer, user_text: `${queryParts.join(' ')} ${discoveredManufacturer}` });
+        for (const nextQuery of discoveredQueries) if (!researchState.queries_executed.includes(nextQuery) && !pendingQueries.includes(nextQuery)) pendingQueries.push(nextQuery);
+      }
+      const candidatePreview = extractTechnicalEvidence(allResults, [], { manufacturer: discoveredManufacturer || initialInput.manufacturer, model: initialInput.model, part_description: initialInput.part_description }).candidates;
+      researchState.candidates = candidatePreview;
+      researchState.confidence = candidatePreview.length ? Math.max(...candidatePreview.map((candidate) => candidate.confidence)) : 0;
+      // Stop once a strong candidate has independent evidence; otherwise use
+      // the remaining bounded queries to refine discovery and cross-checking.
+      if (candidatePreview.some((candidate) => candidate.confidence >= 0.9 && (candidate.evidence_count || 1) >= 2)) pendingQueries.length = 0;
+    }
   }
   const uniqueResults = [...new Map(allResults.map((result) => [result.url, result])).values()].slice(0, MAX_RESULTS);
   const pages: PageResponse[] = [];
-  for (const result of uniqueResults.slice(0, Math.min(input.max_pages || 2, 3))) {
+  for (const result of uniqueResults.slice(0, Math.min(input.max_pages || 2, MAX_PAGE_FETCHES))) {
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
-  const evidence = extractTechnicalEvidence(uniqueResults, pages, { manufacturer: input.query.manufacturer, model: input.query.model, part_description: input.query.application });
+  const resolvedIdentity = resolveMachineIdentity(uniqueResults, initialInput);
+  const evidence = extractTechnicalEvidence(uniqueResults, pages, { manufacturer: resolvedIdentity.manufacturer || input.query.manufacturer, model: resolvedIdentity.model || input.query.model, part_description: input.query.application });
   const failedQueries = queryDiagnostics.filter((item) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
   const noResultQueries = queryDiagnostics.filter((item) => item.code === 'WEB_SEARCH_NO_RESULTS');
   const successfulQueries = queryDiagnostics.length - failedQueries.length;
   const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : uniqueResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
-  const result = { provider: provider.name, status, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_strategy_version: RESEARCH_STRATEGY_VERSION, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: queries.length, queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const result = { provider: provider.name, status, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_state: { ...researchState, discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance === 'web_research')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1) }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {

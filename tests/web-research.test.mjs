@@ -136,3 +136,19 @@ test('technical planner does not require a year and uses official plus general q
   assert.match(assistant, /confirmation_fields_by_context/);
   assert.doesNotMatch(assistant, /year.*missing\.push|missing\.push\(['"]year/);
 });
+
+test('autonomous research keeps provenance and discovers machine identity from evidence', () => {
+  assert.match(provider, /export type ResearchState/);
+  assert.match(provider, /export function resolveMachineIdentity/);
+  assert.match(provider, /provenance: 'web_research'/);
+  assert.match(provider, /equipment_type/);
+  assert.match(provider, /discovered_machine/);
+});
+
+test('autonomous research refines queries with bounded adaptive rounds', () => {
+  assert.match(provider, /WEB_RESEARCH_MAX_QUERIES/);
+  assert.match(provider, /Math\.min\(Math\.max\(Number\(Deno\.env\.get\('WEB_RESEARCH_MAX_QUERIES'\)/);
+  assert.match(provider, /pendingQueries\.push/);
+  assert.match(provider, /discoveredManufacturer/);
+  assert.match(provider, /queriesDiagnosticsWithinBudget/);
+});
