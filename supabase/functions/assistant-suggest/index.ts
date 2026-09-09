@@ -1,6 +1,7 @@
 import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
 import { CompanyInternalSource, selectOfficialSources } from '../_shared/officialSources.ts';
 import { resolveProductOrPart } from '../_shared/productIntelligence.ts';
+import { conductWebResearch, isTechnicalResearchNeeded, manufacturerDomains } from '../_shared/webResearch.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -288,6 +289,23 @@ Deno.serve(async (req) => {
       external.push({ type: 'manufacturer_official', manufacturer: result.manufacturer, domain: new URL(result.source).hostname, url: result.source, retrieved_at: result.retrieved_at, confidence: result.confidence, code: result.code });
     }
     const sourceMetadata = [{ type: 'internal_catalog', domain: 'F7 interno', retrieved_at: new Date().toISOString() }, ...external];
+    let webResearch: any = { searched: false, results: [], pages: [], evidence: { part_numbers: [], source_urls: [], confidence: 0 }, code: 'WEB_RESEARCH_NOT_REQUESTED' };
+    const researchNeeded = isTechnicalResearchNeeded({ text: latestText, userAskedExternal: false, model: undefined, manufacturer: undefined, part_number: undefined }) && productIntelligence.need_external_research;
+    if (researchNeeded) {
+      const { data: researchAllowed, error: researchFeatureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'external_product_intelligence' });
+      if (!researchFeatureError && researchAllowed) {
+        await logStage(sb, conversation.company_id, 'WEB_RESEARCH_STARTED', { model: 'web-search' });
+        const safeResearchQuery = [...new Set([...terms, safeText(settings?.segment, 80), safeText((products || [])[0]?.brand, 100)].filter(Boolean))].join(' ').slice(0, 500);
+        webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, domains: manufacturerDomains((products || [])[0]?.brand), locale: 'pt-BR', max_results: 5 }, ttl_hours: 24, max_pages: 2 });
+        for (const result of webResearch.results || []) sourceMetadata.push({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, snippet: result.snippet, retrieved_at: result.retrieved_at, confidence: result.source_type === 'manufacturer_official' ? 'high' : 'low' });
+        productIntelligence.web_research = { searched: true, provider: webResearch.provider, evidence: webResearch.evidence, conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
+        await logStage(sb, conversation.company_id, webResearch.results?.length ? 'WEB_SEARCH_OK' : 'WEB_SEARCH_FAILED', { resource: webResearch.provider, duration_ms: webResearch.duration_ms });
+        await logStage(sb, conversation.company_id, 'EVIDENCE_EXTRACTED', { resource: `${webResearch.evidence?.source_urls?.length || 0}_sources` });
+        await logStage(sb, conversation.company_id, 'WEB_RESEARCH_COMPLETED', { duration_ms: webResearch.duration_ms });
+      } else {
+        productIntelligence.web_research = { searched: false, code: researchFeatureError ? 'WEB_RESEARCH_FEATURE_UNAVAILABLE' : 'WEB_RESEARCH_FEATURE_DENIED' };
+      }
+    }
     // The provider receives only sanitized context and source metadata, never
     // signed media URLs or credentials from the company data.
     const startedAt = Date.now();
