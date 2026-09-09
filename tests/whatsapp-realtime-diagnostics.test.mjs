@@ -22,9 +22,9 @@ test('Realtime callback filters company events and cleans up channels', () => {
   assert.match(source, /smart-atendimento-\$\{company\.id\}/);
 });
 
-test('Polling fallback runs only while authenticated Realtime is not subscribed', () => {
+test('Polling safety sync remains active even when Realtime is subscribed', () => {
   assert.match(source, /setInterval\(\(\) => loadRef\.current\(true\), 5000\)/);
-  assert.match(source, /realtimeStatus === 'subscribed' && authenticatedRealtime && realtimeEventReceived/);
+  assert.match(source, /Keep a low-frequency safety sync even after SUBSCRIBED/);
   assert.match(source, /Atualização automática em modo compatibilidade/);
 });
 

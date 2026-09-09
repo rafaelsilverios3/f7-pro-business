@@ -101,8 +101,9 @@ export default function Atendimento() {
       const convs = conversationResult.value || [];
       const prods = productResult.status === 'fulfilled' ? productResult.value || [] : [];
       setConversations(convs); setProducts(prods);
-      if (selected) {
-        const updated = convs.find((c) => c.id === selected.id);
+      const currentSelected = selectedRef.current;
+      if (currentSelected) {
+        const updated = convs.find((c) => c.id === currentSelected.id);
         if (updated) setSelected(updated);
         else if (convs[0]) setSelected(convs[0]);
       } else if (convs[0]) {
@@ -174,10 +175,12 @@ export default function Atendimento() {
   }, [company?.id]);
 
   useEffect(() => {
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || (realtimeStatus === 'subscribed' && authenticatedRealtime && realtimeEventReceived)) return undefined;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) return undefined;
+    // Keep a low-frequency safety sync even after SUBSCRIBED. Realtime can
+    // retain a healthy socket while a publication/RLS event is missed.
     const timer = window.setInterval(() => loadRef.current(true), 5000);
     return () => window.clearInterval(timer);
-  }, [company?.id, realtimeStatus, authenticatedRealtime, realtimeEventReceived]);
+  }, [company?.id]);
 
   const searchProducts = async (event) => {
     event?.preventDefault();
