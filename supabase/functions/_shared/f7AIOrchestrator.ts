@@ -1,4 +1,6 @@
 import { createAssistantDecision, type AssistantDecision } from './assistantDecision.ts';
+import { F7ToolRegistry } from './toolRegistry.ts';
+import { DomainSpecialistRegistry } from './specialistRegistry.ts';
 
 export type F7AIOrchestratorInput = {
   trace_id: string;
@@ -26,10 +28,13 @@ export const F7AIOrchestrator = Object.freeze({
     const web = intelligence.web_research && typeof intelligence.web_research === 'object' ? intelligence.web_research : {};
     const candidates = Array.isArray(intelligence.candidates) ? intelligence.candidates : [];
     const conflicts = Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts : [];
+    const domain = selectDomain(input);
+    const specialist = DomainSpecialistRegistry.select({ ...input.company, message: input.message, domain });
+    const tools = F7ToolRegistry.select({ intent: /\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(input.message) ? 'part_research' : 'general_support', domain, allow_web_research: true });
     return createAssistantDecision({
       traceId: input.trace_id,
       text: input.message,
-      domain: selectDomain(input),
+      domain,
       objective: input.message,
       candidates,
       knownFacts: research.known_facts,
@@ -40,6 +45,8 @@ export const F7AIOrchestrator = Object.freeze({
       graveConflict: conflicts.length > 1,
       automaticReplyEnabled: input.company.mode === 'automatic' && input.automatic_policy?.enabled === true,
       minConfidence: input.automatic_policy?.min_confidence,
+      specialist: specialist?.name || null,
+      tools: tools.map((tool) => tool.name),
     });
   },
 });

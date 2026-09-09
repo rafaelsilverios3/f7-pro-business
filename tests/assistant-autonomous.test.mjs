@@ -4,6 +4,8 @@ import fs from 'node:fs';
 
 const decision = fs.readFileSync('supabase/functions/_shared/assistantDecision.ts', 'utf8');
 const orchestrator = fs.readFileSync('supabase/functions/_shared/f7AIOrchestrator.ts', 'utf8');
+const tools = fs.readFileSync('supabase/functions/_shared/toolRegistry.ts', 'utf8');
+const specialists = fs.readFileSync('supabase/functions/_shared/specialistRegistry.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0041_autonomous_assistant.sql', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
 
@@ -13,6 +15,21 @@ test('autonomous decision engine is confidence and guardrail based', () => {
   assert.match(decision, /automaticReplyEnabled/);
   assert.match(decision, /graveConflict/);
   assert.match(decision, /auto_reply_eligible/);
+});
+
+test('tool registry declares policy metadata and keeps transactional tools disabled', () => {
+  for (const field of ['name', 'scope', 'required_permissions', 'input_schema', 'output_schema', 'timeout_ms', 'failure_mode', 'audit_event']) assert.match(tools, new RegExp(field));
+  for (const name of ['InternalCatalogTool', 'WebSearchTool', 'OfficialSourceTool', 'PartResearchTool', 'ConversationTool', 'CompanyKnowledgeTool']) assert.match(tools, new RegExp(name));
+  assert.match(tools, /blockedTool\('SalesTool'/);
+  assert.match(tools, /enabled: false/);
+});
+
+test('specialist registry is multisegment and selected by the orchestrator', () => {
+  for (const name of ['AgriculturalPartsSpecialist', 'AutoPartsSpecialist', 'RetailSpecialist', 'ElectronicsSpecialist', 'ConstructionMaterialsSpecialist', 'ClothingSpecialist', 'ServiceBusinessSpecialist', 'ProcurementSpecialist', 'SalesSpecialist', 'FinancialSpecialist']) assert.match(specialists, new RegExp(name));
+  assert.match(orchestrator, /DomainSpecialistRegistry\.select/);
+  assert.match(orchestrator, /F7ToolRegistry\.select/);
+  assert.match(decision, /specialist/);
+  assert.match(decision, /tools/);
 });
 
 test('autonomous assistant configuration defaults to disabled and separates auto reply from sales', () => {
