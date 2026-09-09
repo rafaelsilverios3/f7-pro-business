@@ -140,6 +140,15 @@ test('web research input failures fall back safely and do not prevent an assista
   assert.match(edge, /WEB_RESEARCH_FALLBACK/);
 });
 
+test('agricultural consultant guidance is contextual and presents external candidates', () => {
+  assert.match(edge, /agriculturalConsultantGuidance/);
+  assert.match(edge, /Pesquise antes de perguntar/);
+  assert.match(edge, /Nunca invente PN/);
+  assert.match(edge, /PIN\/chassi/);
+  assert.match(edge, /Existem candidatos externos no PRODUCT_INTELLIGENCE/);
+  assert.match(edge, /não aplique regras de peças agrícolas a outros segmentos/);
+});
+
 test('frontend preserves provider diagnostics instead of showing an empty generic result', () => {
   assert.match(page, /Código:/);
   assert.match(page, /result\?\.success !== false/);
