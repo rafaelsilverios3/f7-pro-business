@@ -6,6 +6,7 @@ const provider = fs.readFileSync('supabase/functions/_shared/webResearch.ts', 'u
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0040_web_research_backend_permissions.sql', 'utf8');
 const braveFixture = { web: { results: [{ title: 'Correia OEM', url: 'https://deere.com/parts/123', description: 'Aplicação S540 PN RE123' }] } };
+const deereFixture = { title: 'RE524723: Conjunto do Filtro de Combustível Final', url: 'https://shop.deere.com/us/product/RE524723', description: 'Compatível com John Deere 7230J; confirme a configuração pelo número de série.' };
 
 test('web research provider is server-side and disabled without backend configuration', () => {
   assert.match(provider, /WEB_SEARCH_API_KEY/);
@@ -86,4 +87,22 @@ test('research preserves per-query Brave diagnostics and partial results', () =>
   assert.match(assistant, /WEB_RESEARCH_PARTIAL/);
   assert.match(assistant, /provider_code/);
   assert.doesNotMatch(provider, /X-Subscription-Token[^\n]*integration_logs/);
+});
+
+test('technical extraction keeps an official John Deere PN candidate', () => {
+  assert.match(deereFixture.title, /RE524723/);
+  assert.match(deereFixture.description, /7230J/);
+  assert.match(provider, /extractPartCandidatesFromResult\(result, pages, context\)/);
+  assert.match(provider, /manufacturer_official/);
+  assert.match(provider, /context\.model/);
+  assert.match(provider, /shop\.deere\.com/);
+  assert.match(provider, /fuel filter/);
+});
+
+test('technical planner does not require a year and uses official plus general queries', () => {
+  assert.match(provider, /officialDomain/);
+  assert.match(provider, /site:\$\{officialDomain\}/);
+  assert.match(provider, /translatedPart/);
+  assert.match(assistant, /confirmation_fields_by_context/);
+  assert.doesNotMatch(assistant, /year.*missing\.push|missing\.push\(['"]year/);
 });

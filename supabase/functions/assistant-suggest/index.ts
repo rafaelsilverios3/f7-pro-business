@@ -64,9 +64,19 @@ function technicalMissingInformation(settings: Record<string, unknown>, text: st
   const technical = sourceMetadata.some((source) => source.manufacturer === 'John Deere') || /john\s*deere|deere|pe[cç]a agr[ií]cola|correia|chassi|p[ií]n|autope[cç]a/.test(context);
   if (!technical) return [];
   const missing = [];
+  const confirmation_fields_by_context = /john\s*deere|deere|agr[ií]col/.test(context)
+    ? ['serial_or_chassis', 'application_location', 'system_or_assembly']
+    : /autope[cç]a|ve[ií]culo|carro/.test(context)
+      ? ['model', 'application_location', 'serial_or_chassis']
+      : ['model', 'application_location'];
   if (!/s\s*\d{2,4}|modelo|model\b/.test(context)) missing.push('model');
-  if (!/chassi|serial|s[eé]rie|pin\b/.test(context)) missing.push('serial_or_chassis');
-  if (!/onde|aplica[cç][aã]o|local|conjunto|sistema|batedor|motor|ventilador/.test(context)) missing.push('application_location', 'system_or_assembly');
+  for (const field of confirmation_fields_by_context) {
+    if (field === 'model' && /s\s*\d{2,4}|modelo|model\b/.test(context)) continue;
+    if (field === 'serial_or_chassis' && /chassi|serial|s[eé]rie|pin\b/.test(context)) continue;
+    if (field === 'application_location' && /onde|aplica[cç][aã]o|local|conjunto|sistema|batedor|motor|ventilador/.test(context)) continue;
+    if (field === 'system_or_assembly' && /conjunto|sistema|motor|ventilador|filtro/.test(context)) continue;
+    if (!missing.includes(field)) missing.push(field);
+  }
   if (!/lado|posi[cç][aã]o|direit[oa]|esquerd[oa]/.test(context)) missing.push('side_or_position');
   if (!/pn\b|part\s*number|c[oó]digo|gravado/.test(context)) missing.push('engraved_part_number');
   return missing;
