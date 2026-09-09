@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const decision = fs.readFileSync('supabase/functions/_shared/assistantDecision.ts', 'utf8');
+const orchestrator = fs.readFileSync('supabase/functions/_shared/f7AIOrchestrator.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0041_autonomous_assistant.sql', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
 
@@ -26,9 +27,11 @@ test('autonomous assistant configuration defaults to disabled and separates auto
   assert.doesNotMatch(migration, /automatic.*sale|auto_sale/i);
 });
 
-test('assisted endpoint exposes a decision but never approves automatic reply', () => {
-  assert.match(assistant, /createAssistantDecision/);
-  assert.match(assistant, /automaticReplyEnabled: false/);
+test('assisted endpoint uses the central orchestrator and never approves automatic reply', () => {
+  assert.match(orchestrator, /F7AIOrchestrator/);
+  assert.match(orchestrator, /selectDomain/);
+  assert.match(assistant, /F7AIOrchestrator\.orchestrate/);
+  assert.match(assistant, /automatic_policy: \{ enabled: false \}/);
   assert.match(assistant, /decision: assistantDecision/);
   assert.doesNotMatch(assistant, /whatsapp-send/);
 });

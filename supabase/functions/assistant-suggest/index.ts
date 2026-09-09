@@ -2,7 +2,7 @@ import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
 import { CompanyInternalSource } from '../_shared/officialSources.ts';
 import { resolveProductOrPart } from '../_shared/productIntelligence.ts';
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains } from '../_shared/webResearch.ts';
-import { createAssistantDecision } from '../_shared/assistantDecision.ts';
+import { F7AIOrchestrator } from '../_shared/f7AIOrchestrator.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -433,15 +433,7 @@ Deno.serve(async (req) => {
     productIntelligenceContext.missing_for_search = researchNeeded ? [] : productIntelligenceContext.missing_information;
     productIntelligenceContext.missing_for_confirmation = missingForConfirmation;
     await logResearchEvent(sb, conversation.company_id, conversationId, 'AI_CONTEXT_READY', { research_trace_id: researchTraceId, candidate_count: productIntelligenceContext.candidates.length, top_candidate_pns: productIntelligenceContext.candidates.slice(0, 10).map((candidate: any) => candidate.part_number), source_domains: sourceMetadata.map((source: any) => source.domain || source.source_domain), source_types: sourceMetadata.map((source: any) => source.type || source.source_type), manufacturer: webResearch.discovered_machine?.manufacturer || technicalInput?.manufacturer, model: webResearch.discovered_machine?.model || technicalInput?.model, requested_part: technicalInput?.part_description, missing_for_confirmation: missingForConfirmation });
-    const assistantDecision = createAssistantDecision({
-      text: latestText,
-      candidates: productIntelligenceContext.candidates,
-      researchPending: productIntelligenceContext.web_research?.code === 'WEB_RESEARCH_NOT_REQUESTED',
-      unresolvedQuestions: productIntelligenceContext.missing_information,
-      // Automatic replies remain opt-in and are intentionally not enabled by
-      // the assisted suggestion endpoint.
-      automaticReplyEnabled: false,
-    });
+    const assistantDecision = F7AIOrchestrator.orchestrate({ trace_id: researchTraceId, message: latestText, company: { segment: settings?.segment, business_description: settings?.business_description, specific_rules: settings?.specific_rules, mode: 'assisted' }, product_intelligence: productIntelligenceContext, automatic_policy: { enabled: false } });
     stage = 'AI_CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage, { candidate_count: productIntelligenceContext.candidates.length });
     // The provider receives only sanitized context and source metadata, never
@@ -451,7 +443,7 @@ Deno.serve(async (req) => {
     stage = 'AI_REQUEST_STARTED';
     stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
-    const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata, productIntelligence: productIntelligenceContext });
+    const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata, productIntelligence: { ...productIntelligenceContext, decision: assistantDecision } });
     await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
     const missingInformation = missingForConfirmation;
     if (!providerSuggestion.ok) {
