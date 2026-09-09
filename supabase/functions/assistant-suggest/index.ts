@@ -358,19 +358,33 @@ Deno.serve(async (req) => {
       sourceMetadata.push({ type, domain, source_domain: domain, manufacturer: safeText(source.manufacturer, 120) || null, url: source.url || source.source_url || null, title: safeText(source.title, 240) || null, retrieved_at: source.retrieved_at || new Date().toISOString() });
     };
     let webResearch: any = { searched: false, results: [], pages: [], candidates: [], evidence: { part_numbers: [], source_urls: [], confidence: 0, candidates: [] }, code: 'WEB_RESEARCH_NOT_REQUESTED' };
-    const technicalInput = inferTechnicalResearchInput(latestText, products || [], settings || {});
+    let technicalInput: any;
     stage = 'WEB_RESEARCH_INPUT_READY';
     await logStage(sb, conversation.company_id, stage);
-    const researchNeeded = isTechnicalResearchNeeded({ text: latestText, userAskedExternal: false, model: technicalInput.model, manufacturer: technicalInput.manufacturer, part_number: technicalInput.old_part_number }) && productIntelligence.need_external_research;
+    try {
+      technicalInput = inferTechnicalResearchInput(String(latestText || ''), Array.isArray(products) ? products : [], settings && typeof settings === 'object' ? settings : {});
+    } catch (error) {
+      technicalInput = { manufacturer: undefined, model: undefined, part_description: String(latestText || '').slice(0, 180), user_text: String(latestText || '') };
+      await logStage(sb, conversation.company_id, 'WEB_RESEARCH_INPUT_FALLBACK', { error_name: safeErrorDetails(error).error_name, internal_error_code: safeInternalCode(error) });
+    }
+    let researchNeeded = false;
+    try { researchNeeded = isTechnicalResearchNeeded({ text: String(latestText || ''), userAskedExternal: false, model: technicalInput?.model, manufacturer: technicalInput?.manufacturer, part_number: technicalInput?.old_part_number }) && productIntelligence?.need_external_research !== false; }
+    catch (error) { researchNeeded = true; const safe = safeErrorDetails(error); await logStage(sb, conversation.company_id, 'WEB_RESEARCH_INPUT_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) }); }
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_DECISION', { technical_research_needed: researchNeeded, feature_enabled: false, reason: researchNeeded ? 'technical_question_without_reliable_internal_candidate' : 'not_technical_or_internal_confidence_sufficient' });
     if (researchNeeded) {
       const { data: researchAllowed, error: researchFeatureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'external_product_intelligence' });
       await logResearchEvent(sb, conversation.company_id, conversationId, researchAllowed ? 'WEB_RESEARCH_STARTED' : 'WEB_RESEARCH_SKIPPED', { technical_research_needed: true, feature_enabled: Boolean(researchAllowed), reason: researchFeatureError ? 'feature_lookup_failed' : researchAllowed ? 'feature_enabled' : 'feature_denied' });
       if (!researchFeatureError && researchAllowed) {
-        const safeResearchQuery = [...new Set([...terms, safeText(settings?.segment, 80)].filter(Boolean))].join(' ').slice(0, 500);
-        webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, manufacturer: technicalInput.manufacturer, model: technicalInput.model, year: technicalInput.year, application: technicalInput.part_description, part_number: technicalInput.old_part_number, domains: [], locale: 'pt-BR', max_results: 5 }, ttl_hours: 24, max_pages: 2, onQuery: (event, details) => logResearchEvent(sb, conversation.company_id, conversationId, event, { provider: 'BraveWebSearchProvider', ...details }) });
-        stage = 'WEB_RESEARCH_READY';
-        await logStage(sb, conversation.company_id, stage);
+        try {
+          const safeResearchQuery = [...new Set([...terms, safeText(settings?.segment, 80)].filter(Boolean))].join(' ').slice(0, 500);
+          webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, manufacturer: technicalInput?.manufacturer, model: technicalInput?.model, year: technicalInput?.year, application: technicalInput?.part_description, part_number: technicalInput?.old_part_number, domains: [], locale: 'pt-BR', max_results: 5 }, ttl_hours: 24, max_pages: 2, onQuery: (event, details) => logResearchEvent(sb, conversation.company_id, conversationId, event, { provider: 'BraveWebSearchProvider', ...details }) });
+          stage = 'WEB_RESEARCH_READY';
+          await logStage(sb, conversation.company_id, stage);
+        } catch (error) {
+          webResearch = { searched: true, results: [], candidates: [], evidence: { part_numbers: [], source_urls: [], confidence: 0, candidates: [] }, code: 'WEB_RESEARCH_FAILED' };
+          const safe = safeErrorDetails(error);
+          await logStage(sb, conversation.company_id, 'WEB_RESEARCH_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) });
+        }
         for (const result of webResearch.results || []) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, retrieved_at: result.retrieved_at });
         productIntelligence.web_research = { searched: true, search_provider: webResearch.provider, evidence: webResearch.evidence, candidates: webResearch.candidates || webResearch.evidence?.candidates || [], conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
         productIntelligence.candidates = [...(productIntelligence.candidates || []), ...(webResearch.candidates || webResearch.evidence?.candidates || [])];
