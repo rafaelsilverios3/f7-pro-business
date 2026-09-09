@@ -4,6 +4,9 @@ import fs from 'node:fs';
 
 const provider = fs.readFileSync('supabase/functions/_shared/webResearch.ts', 'utf8');
 const sourceTrust = fs.readFileSync('supabase/functions/_shared/sourceTrust.ts', 'utf8');
+const manufacturerRegistry = fs.readFileSync('supabase/functions/_shared/manufacturerAdapterRegistry.ts', 'utf8');
+const deereAdapter = fs.readFileSync('supabase/functions/_shared/adapters/johnDeere.ts', 'utf8');
+const agriculturalSpecialist = fs.readFileSync('supabase/functions/_shared/specialists/agriculturalParts.ts', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0040_web_research_backend_permissions.sql', 'utf8');
 const braveFixture = { web: { results: [{ title: 'Correia OEM', url: 'https://deere.com/parts/123', description: 'Aplicação S540 PN RE123' }] } };
@@ -56,7 +59,7 @@ test('Brave adapter follows the real endpoint contract and parses the web fixtur
 });
 
 test('Brave requests are bounded and record safe cost metrics', () => {
-  assert.match(provider, /slice\(0, 3\)/);
+  assert.match(provider, /slice\(0, MAX_QUERIES_PER_ROUND\)/);
   assert.match(provider, /queries_executed/);
   assert.match(provider, /results_count/);
   assert.match(assistant, /cache_hit/);
@@ -116,7 +119,7 @@ test('technical extraction keeps an official John Deere PN candidate', () => {
   assert.match(provider, /extractPartCandidatesFromResult\(result, pages, context\)/);
   assert.match(provider, /manufacturer_official/);
   assert.match(provider, /context\.model/);
-  assert.match(provider, /shop\.deere\.com/);
+  assert.match(deereAdapter, /shop\.deere\.com/);
   assert.match(provider, /fuel filter/);
   assert.match(provider, /evidence_count/);
   assert.match(provider, /is_official/);
@@ -178,4 +181,21 @@ test('assistant context preserves candidate trust and research provenance', () =
   assert.match(assistant, /trust_level/);
   assert.match(assistant, /current_objective/);
   assert.match(assistant, /next_research_step/);
+});
+
+test('agricultural specialist starts with model and part and ranks evidence dimensions separately', () => {
+  assert.match(agriculturalSpecialist, /researchCanStart/);
+  assert.match(agriculturalSpecialist, /input\.model/);
+  assert.match(agriculturalSpecialist, /input\.part_description/);
+  for (const factor of ['manufacturer_official', 'model', 'system', 'position', 'serial_range', 'evidence_count', 'trust_score', 'part_description']) assert.match(agriculturalSpecialist, new RegExp(factor));
+  assert.match(agriculturalSpecialist, /nextBestQuestion/);
+});
+
+test('John Deere behavior lives in a manufacturer adapter without hardcoded part numbers', () => {
+  assert.match(manufacturerRegistry, /JohnDeereAdapter/);
+  assert.match(deereAdapter, /partscatalog\.deere\.com.*shop\.deere\.com.*deere\.com.*digitalparts\.deere\.com/s);
+  for (const term of ['pin', 'serial', 'engine serial', 'part number', 'assembly', 'subassembly', 'primary', 'final', 'water separator', 'position', 'side', 'serial range']) assert.match(deereAdapter.toLocaleLowerCase(), new RegExp(term));
+  assert.doesNotMatch(deereAdapter, /\b(?:RE|AH|AR|AT)\d{4,}\b/);
+  assert.match(provider, /ManufacturerAdapterRegistry/);
+  assert.doesNotMatch(provider, /john\s*deere|partscatalog\.deere\.com/i);
 });

@@ -3,6 +3,8 @@ import { CompanyInternalSource } from '../_shared/officialSources.ts';
 import { resolveProductOrPart } from '../_shared/productIntelligence.ts';
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains } from '../_shared/webResearch.ts';
 import { F7AIOrchestrator } from '../_shared/f7AIOrchestrator.ts';
+import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
+import { AgriculturalPartsSpecialist } from '../_shared/specialists/agriculturalParts.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -105,11 +107,13 @@ function selectRelevantRows(rows: any[], terms: string[], limit: number, fields:
 }
 function technicalMissingInformation(settings: Record<string, unknown>, text: string, sourceMetadata: any[]) {
   const context = `${settings.segment || ''} ${settings.specific_rules || ''} ${text}`.toLocaleLowerCase('pt-BR');
-  const technical = sourceMetadata.some((source) => source.manufacturer === 'John Deere') || /john\s*deere|deere|pe[cç]a agr[ií]cola|correia|chassi|p[ií]n|autope[cç]a/.test(context);
+  const manufacturerAdapter = ManufacturerAdapterRegistry.select({ manufacturer: sourceMetadata.find((source) => source.manufacturer)?.manufacturer, text });
+  const agricultural = manufacturerAdapter?.specialist_domain === 'agricultural_parts' || AgriculturalPartsSpecialist.matches({ segment: String(settings.segment || ''), business_description: String(settings.business_description || ''), text });
+  const technical = agricultural || sourceMetadata.some((source) => source.type === 'manufacturer_official') || /correia|chassi|p[ií]n|autope[cç]a|part.?number|p\/?n/.test(context);
   if (!technical) return [];
   const missing = [];
-  const confirmation_fields_by_context = /john\s*deere|deere|agr[ií]col/.test(context)
-    ? ['serial_or_chassis', 'application_location', 'system_or_assembly']
+  const confirmation_fields_by_context = agricultural
+    ? AgriculturalPartsSpecialist.confirmationFields()
     : /autope[cç]a|ve[ií]culo|carro/.test(context)
       ? ['model', 'application_location', 'serial_or_chassis']
       : ['model', 'application_location'];
@@ -182,19 +186,21 @@ function segmentGuidance(settings: Record<string, unknown>, sources: any[]) {
         : segment.includes('servi') ? 'Para serviços, confirme tipo, localização, agenda, necessidade e orçamento.'
           : segment.includes('auto') ? 'Para autopeças, confirme veículo, ano, versão, motor, chassi, posição e lado.'
             : 'Descubra os dados necessários a partir do segmento e das regras específicas da empresa.';
-  const manufacturerGuidance = sources.some((source) => source.type === 'manufacturer_official' && source.manufacturer === 'John Deere')
-    ? 'Para John Deere, confirme modelo, chassi/PIN, conjunto, aplicação, posição, lado e PN gravado antes de indicar uma peça.' : '';
+  const manufacturerGuidance = ManufacturerAdapterRegistry.select({ manufacturer: sources.find((source) => source.type === 'manufacturer_official')?.manufacturer })?.prompt_guidance || '';
   return `${guidance} ${manufacturerGuidance} Priorize sempre specific_rules: ${safeText(settings.specific_rules, 600) || 'não configuradas'}`;
 }
 
 function agriculturalConsultantGuidance(settings: Record<string, unknown>, messages: any[], candidates: any[]) {
   const context = `${safeText(settings.segment, 120)} ${safeText(settings.business_description, 300)} ${messages.map((item) => safeText(item.content, 500)).join(' ')}`.toLocaleLowerCase('pt-BR');
-  const agricultural = /john\s*deere|deere|agr[ií]col|trator|colheit|pulverizador|plantadeira|implemento/.test(context);
+  const candidateContext = candidates.slice(0, 10).map((candidate) => `${safeText(candidate?.manufacturer, 120)} ${safeText(candidate?.application, 240)}`).join(' ');
+  const manufacturerAdapter = ManufacturerAdapterRegistry.select({ text: context, product_text: candidateContext });
+  const agricultural = manufacturerAdapter?.specialist_domain === 'agricultural_parts' || AgriculturalPartsSpecialist.matches({ segment: String(settings.segment || ''), business_description: String(settings.business_description || ''), text: `${context} ${candidateContext}` });
   if (!agricultural) return 'Descubra os campos de confirmação com base no segmento, catálogo e regras específicas desta empresa; não aplique regras de peças agrícolas a outros segmentos.';
+  const manufacturerGuidance = manufacturerAdapter?.prompt_guidance || '';
   const candidateRule = candidates.length
     ? 'Existem candidatos externos no PRODUCT_INTELLIGENCE: apresente os PNs relevantes, descrição, aplicação e fonte; nunca diga que não encontrou evidência.'
     : 'Pesquise antes de perguntar. Se a pesquisa não encontrar candidatos, informe isso com transparência e peça apenas o dado que mais reduz as alternativas.';
-  return `Atue como consultor de balcão de peças agrícolas. Entenda, investigue, pesquise, cruze evidências e só então confirme. ${candidateRule} Nunca invente PN ou compatibilidade. Diferencie possível, provável, alta confiança e confirmada. Para John Deere, o modelo inicia a investigação; PIN/chassi, serial, sistema/conjunto, posição e PN antigo refinam a confirmação. Não exija ano universalmente nem solicite todos os dados de uma vez. Preserve diferenças entre filtro primário, filtro final, elemento e conjunto. Fontes oficiais têm maior peso, mas resultados web são evidências e devem ser cruzados. Se houver PNs divergentes, apresente as alternativas e faça uma pergunta objetiva para eliminar candidatos.`;
+  return `Atue como consultor de balcão de peças agrícolas. Entenda, investigue, pesquise, cruze evidências e só então confirme. ${AgriculturalPartsSpecialist.prompt_guidance} ${manufacturerGuidance} ${candidateRule} Diferencie possível, provável, alta confiança e confirmada. Não exija ano universalmente nem solicite todos os dados de uma vez. Fontes oficiais têm maior peso, mas resultados web são evidências e devem ser cruzados. Se houver PNs divergentes, apresente as alternativas e faça uma pergunta objetiva para eliminar candidatos.`;
 }
 
 function providerEndpoint() {
@@ -409,7 +415,7 @@ Deno.serve(async (req) => {
           const safe = safeErrorDetails(error);
           await logStage(sb, conversation.company_id, 'WEB_RESEARCH_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) });
         }
-        for (const result of webResearch.results || []) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, retrieved_at: result.retrieved_at });
+        for (const result of webResearch.results || []) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, manufacturer: webResearch.discovered_machine?.manufacturer, retrieved_at: result.retrieved_at });
         productIntelligence.web_research = { searched: true, search_provider: webResearch.provider, evidence: webResearch.evidence, candidates: webResearch.candidates || webResearch.evidence?.candidates || [], conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
         productIntelligence.research_state = webResearch.research_state || null;
         productIntelligence.discovered_machine = webResearch.discovered_machine || null;

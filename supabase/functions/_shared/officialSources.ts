@@ -1,3 +1,6 @@
+import { JohnDeereAdapter } from './adapters/johnDeere.ts';
+import { ManufacturerAdapterRegistry } from './manufacturerAdapterRegistry.ts';
+
 export type OfficialSourceResult = {
   manufacturer: string;
   source: string;
@@ -7,21 +10,15 @@ export type OfficialSourceResult = {
   code?: string;
 };
 
-function normalized(value: unknown) {
-  return String(value || '').toLocaleLowerCase('pt-BR');
-}
-
 export function isJohnDeereContext(input: { manufacturer?: string; segment?: string; text?: string; productText?: string }) {
-  // A generic agricultural segment is not enough: the adapter is selected
-  // only when the manufacturer/product/question explicitly identifies Deere.
-  const directContext = [input.manufacturer, input.text, input.productText].map(normalized).join(' ');
-  return /john\s*deere|deere/.test(directContext);
+  return JohnDeereAdapter.matches({ manufacturer: input.manufacturer, text: input.text, product_text: input.productText });
 }
 
 export const JohnDeereOfficialSource = Object.freeze({
   name: 'JohnDeereOfficialSource',
   manufacturer: 'John Deere',
-  domains: ['partscatalog.deere.com', 'deere.com'],
+  domains: JohnDeereAdapter.official_domains,
+  adapter: JohnDeereAdapter,
   async searchOfficialSource(_input: Record<string, unknown>): Promise<OfficialSourceResult> {
     // No undocumented endpoint or scraping is assumed. A future adapter can
     // add an official API here without changing the assistant contract.
@@ -45,6 +42,7 @@ export const OfficialSourcesRegistry = Object.freeze({
   ManufacturerOfficialSource,
   CompanyInternalSource,
   SegmentSpecificSource,
+  manufacturerAdapters: ManufacturerAdapterRegistry,
 });
 
 export function selectOfficialSources(input: { manufacturer?: string; segment?: string; text?: string; productText?: string }) {

@@ -1,4 +1,6 @@
 import { evaluateSourceTrust } from './sourceTrust.ts';
+import { ManufacturerAdapterRegistry } from './manufacturerAdapterRegistry.ts';
+import { AgriculturalPartsSpecialist } from './specialists/agriculturalParts.ts';
 
 export type WebSearchInput = {
   query: string;
@@ -219,6 +221,10 @@ export type TechnicalPartCandidate = {
   part_number: string;
   description: string | null;
   manufacturer: string | null;
+  model?: string | null;
+  system?: string | null;
+  position?: string | null;
+  serial_range?: string | null;
   application: string | null;
   source_url: string;
   source_domain: string;
@@ -274,18 +280,17 @@ export type ResearchState = {
 
 /** Resolve machine identity from public evidence without making it a prerequisite. */
 export function resolveMachineIdentity(results: WebSearchResult[], input: TechnicalResearchQueryInput = {}) {
-  const text = results.map((result) => `${result.title} ${result.snippet}`).join(' ');
   const facts: ResearchFact[] = [];
   const model = safeText(input.model, 80);
   if (model) facts.push({ field: 'model', value: model, provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: new Date().toISOString() });
-  const manufacturerMatches = [...text.matchAll(/\b(john\s+deere|new\s+holland|case\s+ih|caterpillar|komatsu|volvo\s+ce)\b/gi)].map((match) => match[1].replace(/\s+/g, ' '));
-  const manufacturer = manufacturerMatches[0] ? manufacturerMatches[0].replace(/\b\w/g, (letter) => letter.toUpperCase()) : safeText(input.manufacturer, 120);
+  const adapterIdentity = ManufacturerAdapterRegistry.resolveMachineIdentity({ model, evidence: results });
+  const manufacturer = adapterIdentity?.manufacturer || safeText(input.manufacturer, 120);
   if (manufacturer) {
-    const sources = results.filter((result) => `${result.title} ${result.snippet}`.toLocaleLowerCase().includes(manufacturer.toLocaleLowerCase())).map((result) => result.url).slice(0, 5);
-    facts.push({ field: 'manufacturer', value: manufacturer, provenance: input.manufacturer ? 'customer' : results.some((result) => result.source_type === 'manufacturer_official') ? 'official_source' : 'public_web', confidence: manufacturerMatches.length >= 2 ? 'HIGH' : 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() });
+    const sources = adapterIdentity?.sources || results.filter((result) => `${result.title} ${result.snippet}`.toLocaleLowerCase().includes(manufacturer.toLocaleLowerCase())).map((result) => result.url).slice(0, 5);
+    facts.push({ field: 'manufacturer', value: manufacturer, provenance: input.manufacturer ? 'customer' : adapterIdentity?.provenance || 'public_web', confidence: input.manufacturer ? 'HIGH' : adapterIdentity?.confidence || 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() });
   }
-  const equipment = /\b(?:tractor|trator|harvester|colheitadeira|sprayer|pulverizador|combine)\b/i.exec(text)?.[0];
-  if (equipment) { const sources = results.slice(0, 5).map((result) => result.url); facts.push({ field: 'equipment_type', value: equipment, provenance: results.some((result) => result.source_type === 'manufacturer_official') ? 'official_source' : 'public_web', confidence: 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() }); }
+  const equipment = adapterIdentity?.equipment_type || undefined;
+  if (equipment) { const sources = adapterIdentity?.sources || results.slice(0, 5).map((result) => result.url); facts.push({ field: 'equipment_type', value: equipment, provenance: adapterIdentity?.provenance || 'public_web', confidence: adapterIdentity?.confidence || 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() }); }
   return { manufacturer: manufacturer || undefined, model: model || undefined, equipment_type: equipment || undefined, facts };
 }
 
@@ -310,15 +315,17 @@ export function planTechnicalResearchQueries(input: TechnicalResearchQueryInput)
   const compactPart = part.replace(/\s+/g, ' ').trim();
   const translatedPart = compactPart.replace(/filtro\s+(?:de\s+)?combust[ií]vel/gi, 'fuel filter').replace(/filtro\s+(?:de\s+)?[oó]leo/gi, 'oil filter');
   const base = [manufacturer, model, year, compactPart].filter(Boolean).join(' ');
-  const officialDomain = manufacturerDomains(manufacturer)[0];
+  const adapter = ManufacturerAdapterRegistry.select({ manufacturer, text: input.user_text });
+  const officialDomain = adapter?.official_domains[0];
   const queries = [
+    ...(adapter?.buildOfficialQueries({ model, part_description: compactPart, old_part_number: oldPart }) || []),
     manufacturer && model && compactPart && officialDomain ? `site:${officialDomain} ${model} ${compactPart} part number` : '',
     manufacturer && model && compactPart ? `${manufacturer} ${model} ${translatedPart} part number` : (base ? `${base} part number` : safeText(input.user_text, MAX_QUERY)),
     oldPart ? `${oldPart} replacement equivalent ${manufacturer}` : (model && compactPart ? `${model} ${translatedPart} PN` : (base ? `${base} OEM` : '')),
     manufacturer && model && part ? `site:${manufacturerDomains(manufacturer)[0] || manufacturer} ${model} ${part}` : '',
     manufacturer && model && part ? `${manufacturer} ${model} ${part} catalog` : '',
   ];
-  return [...new Set(queries.map((query) => safeText(query, MAX_QUERY)).filter(Boolean))].slice(0, 3);
+  return [...new Set(queries.map((query) => safeText(query, MAX_QUERY)).filter(Boolean))].slice(0, MAX_QUERIES_PER_ROUND);
 }
 
 function candidateLevel(confidence: number): TechnicalPartCandidate['confidence_level'] {
@@ -340,7 +347,11 @@ function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageRes
   const confidence = Math.min(0.98, (isOfficial ? 0.78 : result.source_type === 'distributor' || result.source_type === 'approved_catalog' ? 0.5 : 0.3) + (contextualMatch ? 0.17 : 0));
   const score = (isOfficial ? 100 : 40) + (contextualMatch ? 35 : 0) + (hasPartContext ? 20 : 0);
   const trust = evaluateSourceTrust({ source_type: result.source_type, domain: result.domain, evidence_count: 1, retrieved_at: result.retrieved_at });
-  return numbers.map((partNumber) => ({ part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score: score + Math.round(trust.score * 20), is_official, trust_score: trust.score, trust_level: trust.level, confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate));
+  return numbers.map((partNumber) => {
+    const candidate = { part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, model: safeText(context.model, 120) || null, system: null, position: null, serial_range: null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score: score + Math.round(trust.score * 20), is_official, trust_score: trust.score, trust_level: trust.level, confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate;
+    if (AgriculturalPartsSpecialist.matches({ text: `${context.manufacturer || ''} ${context.model || ''} ${context.part_description || ''}` })) candidate.score = AgriculturalPartsSpecialist.rankCandidate(candidate, context);
+    return candidate;
+  });
 }
 
 export function extractTechnicalEvidence(results: WebSearchResult[], pages: PageResponse[] = [], context: { manufacturer?: string; model?: string; part_description?: string } = {}): TechnicalEvidence {
@@ -378,9 +389,7 @@ export function detectPartResearchIntent(text: string) {
 }
 
 export function manufacturerDomains(manufacturer?: string) {
-  const value = safeText(manufacturer, 160).toLocaleLowerCase('pt-BR');
-  const registry: Record<string, string[]> = { 'john deere': ['shop.deere.com', 'deere.com', 'partscatalog.deere.com', 'digitalparts.deere.com'], skf: ['skf.com'], gates: ['gates.com'], bosch: ['bosch.com'] };
-  return Object.entries(registry).find(([key]) => value.includes(key))?.[1] || [];
+  return ManufacturerAdapterRegistry.domains(safeText(manufacturer, 160));
 }
 
 export { safeText };

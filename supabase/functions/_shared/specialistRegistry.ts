@@ -1,3 +1,5 @@
+import { AgriculturalPartsSpecialist as AgriculturalPartsDomain } from './specialists/agriculturalParts.ts';
+
 export type DomainSpecialist = {
   name: string;
   domain: string;
@@ -7,7 +9,7 @@ export type DomainSpecialist = {
 };
 
 const specialists: DomainSpecialist[] = [
-  { name: 'AgriculturalPartsSpecialist', domain: 'agricultural_parts', signals: [/agr[ií]col/i, /trator|colheit|pulverizador|plantadeira/i, /john\s*deere/i], preferred_tools: ['InternalCatalogTool', 'PartResearchTool', 'WebSearchTool', 'OfficialSourceTool'], confirmation_strategy: 'start_with_model_and_part_then_request_pin_only_to_resolve_remaining_variants' },
+  { name: AgriculturalPartsDomain.name, domain: AgriculturalPartsDomain.domain, signals: [/agr[ií]col/i, /trator|colheit|pulverizador|plantadeira/i], preferred_tools: ['InternalCatalogTool', 'PartResearchTool', 'WebSearchTool', 'OfficialSourceTool'], confirmation_strategy: 'start_with_model_and_part_then_request_pin_only_to_resolve_remaining_variants' },
   { name: 'AutoPartsSpecialist', domain: 'auto_parts', signals: [/autope[cç]a/i, /ve[ií]culo|carro|motor/i], preferred_tools: ['InternalCatalogTool', 'PartResearchTool', 'WebSearchTool'], confirmation_strategy: 'confirm_vehicle_version_engine_and_position_when_needed' },
   { name: 'RetailSpecialist', domain: 'retail', signals: [/varejo|loja|produto/i], preferred_tools: ['InternalCatalogTool', 'StockTool'], confirmation_strategy: 'confirm_product_variant_and_availability' },
   { name: 'ElectronicsSpecialist', domain: 'electronics', signals: [/eletr[oô]nic|notebook|celular|voltagem/i], preferred_tools: ['InternalCatalogTool', 'ProductTool'], confirmation_strategy: 'confirm_model_specification_compatibility_and_voltage' },

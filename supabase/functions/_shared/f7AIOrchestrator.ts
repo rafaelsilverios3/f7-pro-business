@@ -1,6 +1,8 @@
 import { createAssistantDecision, type AssistantDecision } from './assistantDecision.ts';
 import { F7ToolRegistry } from './toolRegistry.ts';
 import { DomainSpecialistRegistry } from './specialistRegistry.ts';
+import { ManufacturerAdapterRegistry } from './manufacturerAdapterRegistry.ts';
+import { AgriculturalPartsSpecialist } from './specialists/agriculturalParts.ts';
 
 export type F7AIOrchestratorInput = {
   trace_id: string;
@@ -11,8 +13,12 @@ export type F7AIOrchestratorInput = {
 };
 
 function selectDomain(input: F7AIOrchestratorInput) {
-  const context = `${input.company.segment || ''} ${input.company.business_description || ''} ${input.message}`.toLocaleLowerCase('pt-BR');
-  if (/trator|colheit|pulverizador|plantadeira|agr[ií]col|john\s*deere/.test(context)) return 'agricultural_parts';
+  const intelligence = input.product_intelligence && typeof input.product_intelligence === 'object' ? input.product_intelligence : {};
+  const discoveredMachine = intelligence.discovered_machine && typeof intelligence.discovered_machine === 'object' ? intelligence.discovered_machine : {};
+  const candidateContext = Array.isArray(intelligence.candidates) ? intelligence.candidates.slice(0, 10).map((candidate: any) => `${candidate?.manufacturer || ''} ${candidate?.application || ''}`).join(' ') : '';
+  const context = `${input.company.segment || ''} ${input.company.business_description || ''} ${input.message} ${discoveredMachine.manufacturer || ''} ${discoveredMachine.equipment_type || ''} ${candidateContext}`.toLocaleLowerCase('pt-BR');
+  const manufacturerAdapter = ManufacturerAdapterRegistry.select({ manufacturer: discoveredMachine.manufacturer, text: input.message, product_text: candidateContext });
+  if (manufacturerAdapter?.specialist_domain === 'agricultural_parts' || AgriculturalPartsSpecialist.matches({ segment: input.company.segment, business_description: input.company.business_description, text: context })) return 'agricultural_parts';
   if (/autope[cç]a|ve[ií]culo|carro|motor/.test(context)) return 'auto_parts';
   if (/roup|camiseta|tamanho|vestu[aá]rio/.test(context)) return 'clothing';
   if (/eletr[oô]nic|voltagem|notebook|celular/.test(context)) return 'electronics';

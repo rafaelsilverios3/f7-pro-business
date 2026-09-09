@@ -8,6 +8,9 @@ const page = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 const permissions = fs.readFileSync('src/lib/permissions.js', 'utf8');
 const service = fs.readFileSync('src/services/assistantSuggestService.js', 'utf8');
 const integrations = fs.readFileSync('src/services/integrationsService.js', 'utf8');
+const manufacturerRegistry = fs.readFileSync('supabase/functions/_shared/manufacturerAdapterRegistry.ts', 'utf8');
+const agricultural = fs.readFileSync('supabase/functions/_shared/specialists/agriculturalParts.ts', 'utf8');
+const deere = fs.readFileSync('supabase/functions/_shared/adapters/johnDeere.ts', 'utf8');
 
 test('assisted suggestion is gated and never auto-sends', () => {
   assert.match(edge, /mode.*assisted/);
@@ -30,7 +33,7 @@ test('assistant resolves the company server-side and keeps context scoped', () =
   assert.match(edge, /company_quick_replies/);
   assert.match(edge, /company_handoff_rules/);
   assert.match(edge, /segmentGuidance/);
-  assert.match(edge, /Para John Deere/);
+  assert.match(edge, /ManufacturerAdapterRegistry/);
   assert.match(edge, /products/);
   assert.match(edge, /media_type/);
   assert.doesNotMatch(edge, /media_url|signedUrl/);
@@ -57,6 +60,8 @@ test('multisegment official source registry selects John Deere only for related 
   assert.match(sources, /isJohnDeereContext/);
   assert.match(sources, /return isJohnDeereContext\(input\) \? \[JohnDeereOfficialSource\] : \[\]/);
   assert.match(sources, /OFFICIAL_SOURCE_UNAVAILABLE/);
+  assert.match(sources, /JohnDeereAdapter/);
+  assert.match(manufacturerRegistry, /ManufacturerAdapterRegistry/);
   assert.match(edge, /manufacturer_official/);
 });
 
@@ -143,10 +148,12 @@ test('web research input failures fall back safely and do not prevent an assista
 test('agricultural consultant guidance is contextual and presents external candidates', () => {
   assert.match(edge, /agriculturalConsultantGuidance/);
   assert.match(edge, /Pesquise antes de perguntar/);
-  assert.match(edge, /Nunca invente PN/);
-  assert.match(edge, /PIN\/chassi/);
+  assert.match(edge, /AgriculturalPartsSpecialist\.prompt_guidance/);
+  assert.match(agricultural, /Nunca invente PN/);
+  assert.match(agricultural, /PIN\/chassi/);
   assert.match(edge, /Existem candidatos externos no PRODUCT_INTELLIGENCE/);
   assert.match(edge, /não aplique regras de peças agrícolas a outros segmentos/);
+  assert.match(deere, /prompt_guidance/);
 });
 
 test('frontend preserves provider diagnostics instead of showing an empty generic result', () => {
