@@ -63,6 +63,26 @@ test('Brave requests are bounded and record safe cost metrics', () => {
   assert.doesNotMatch(assistant, /WEB_SEARCH_API_KEY/);
 });
 
+test('Brave request builder sends only the minimal validated parameters', () => {
+  assert.match(provider, /export function buildBraveSearchParams/);
+  assert.match(provider, /q: safeText\(input\.query, 600\)/);
+  assert.match(provider, /count: String\(Math\.min\(Math\.max\(Number\(input\.max_results \|\| 5\), 1\), 5\)\)/);
+  assert.doesNotMatch(provider, /params\.set\('search_lang'/);
+  assert.doesNotMatch(provider, /params\.set\('country'/);
+  assert.doesNotMatch(provider, /params\.set\('safesearch'/);
+  assert.match(provider, /method: 'GET'/);
+  assert.match(provider, /pathname !== '\/res\/v1\/web\/search'/);
+});
+
+test('Brave validation errors preserve safe 422 diagnostics', () => {
+  assert.match(provider, /provider_error_message/);
+  assert.match(provider, /http_status: response\.status/);
+  assert.match(provider, /provider_code: braveCode/);
+  assert.match(assistant, /parameter_names/);
+  assert.match(assistant, /provider_error_message/);
+  assert.doesNotMatch(provider, /X-Subscription-Token[^\n]*integration_logs/);
+});
+
 test('technical research plans discovery before serial confirmation and creates evidence candidates', () => {
   assert.match(provider, /TechnicalResearchQueryPlanner|planTechnicalResearchQueries/);
   assert.match(provider, /part number/);

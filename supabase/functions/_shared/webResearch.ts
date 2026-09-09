@@ -28,6 +28,8 @@ export type WebSearchResponse = {
   queries_executed?: number;
   http_status?: number | null;
   provider_code?: string | null;
+  provider_error_message?: string | null;
+  parameter_names?: string[];
 };
 
 export type ResearchQueryDiagnostic = {
@@ -39,6 +41,8 @@ export type ResearchQueryDiagnostic = {
   code?: string;
   http_status?: number | null;
   provider_code?: string | null;
+  provider_error_message?: string | null;
+  parameter_names?: string[];
   results_count: number;
   duration_ms: number;
 };
@@ -135,13 +139,7 @@ export class BraveWebSearchProvider implements WebSearchProvider {
     const configuredEndpoint = config.endpoint || BRAVE_ENDPOINT;
     const endpoint = safeUrl(configuredEndpoint);
     if (!endpoint || endpoint.origin !== 'https://api.search.brave.com' || endpoint.pathname !== '/res/v1/web/search') return { results: [], provider: this.name, searched: false, code: 'WEB_SEARCH_ENDPOINT_INVALID', duration_ms: Date.now() - started, queries_executed: 0 };
-    const params = new URLSearchParams({ q: safeText(input.query, 600), count: String(Math.min(Math.max(Number(input.max_results || 5), 1), 20)) });
-    const locale = safeText(input.locale || 'pt-BR', 20).split('-');
-    if (locale[0]) params.set('search_lang', locale[0].toLowerCase());
-    if (locale[1]) params.set('country', locale[1].toUpperCase());
-    const safesearch = safeText(Deno.env.get('WEB_SEARCH_SAFESEARCH') || 'moderate', 20).toLowerCase();
-    if (['off', 'moderate', 'strict'].includes(safesearch)) params.set('safesearch', safesearch);
-    endpoint.search = params.toString();
+    endpoint.search = buildBraveSearchParams(input).toString();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Number(Deno.env.get('WEB_SEARCH_TIMEOUT_MS') || DEFAULT_SEARCH_TIMEOUT));
     if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -150,14 +148,28 @@ export class BraveWebSearchProvider implements WebSearchProvider {
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         const braveCode = safeText(payload?.error?.code, 80).toUpperCase();
+        const providerErrorMessage = safeProviderMessage(payload?.error?.message);
         const code = response.status === 401 || response.status === 403 ? 'WEB_SEARCH_AUTH_ERROR' : response.status === 429 || braveCode === 'RATE_LIMITED' || braveCode === 'QUOTA_LIMITED' ? 'WEB_SEARCH_RATE_LIMITED' : response.status >= 500 ? 'WEB_SEARCH_UNAVAILABLE' : 'WEB_SEARCH_PROVIDER_ERROR';
-        return { results: [], provider: this.name, searched: true, code, provider_code: braveCode || null, http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
+        return { results: [], provider: this.name, searched: true, code, provider_code: braveCode || null, provider_error_message: providerErrorMessage, parameter_names: ['q', 'count'], http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
       }
       const results = normalizeBraveResponse(payload, input.domains, new Date().toISOString());
-      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
+      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', parameter_names: ['q', 'count'], http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
     } catch (error) { return { results: [], provider: this.name, searched: true, code: error?.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started, queries_executed: 1 }; }
     finally { clearTimeout(timeout); }
   }
+}
+
+export function buildBraveSearchParams(input: Pick<WebSearchInput, 'query' | 'max_results'>) {
+  return new URLSearchParams({
+    q: safeText(input.query, 600),
+    count: String(Math.min(Math.max(Number(input.max_results || 5), 1), 5)),
+  });
+}
+
+function safeProviderMessage(value: unknown) {
+  return safeText(String(value || ''), 160)
+    .replace(/bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/(token|secret|authorization|api[_ -]?key)\s*[:=]\s*\S+/gi, '$1=[redacted]');
 }
 
 export class UnavailableWebSearchProvider implements WebSearchProvider {
@@ -328,12 +340,12 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
     if (Date.now() - startedAt > 15_000) break;
     const queryIndex = queries.indexOf(query) + 1;
     const queryStarted = Date.now();
-    const queryContext = { query_index: queryIndex, query_length: query.length, manufacturer_present: Boolean(input.query.manufacturer), model_present: Boolean(input.query.model), part_description_present: Boolean(input.query.application), results_count: 0, duration_ms: 0 };
+    const queryContext = { query_index: queryIndex, query_length: query.length, manufacturer_present: Boolean(input.query.manufacturer), model_present: Boolean(input.query.model), part_description_present: Boolean(input.query.application), parameter_names: ['q', 'count'], results_count: 0, duration_ms: 0 };
     await input.onQuery?.('WEB_SEARCH_QUERY_STARTED', queryContext);
     const response = await provider.search({ ...input.query, query, domains: input.query.domains?.length ? input.query.domains : manufacturerDomains(input.query.manufacturer), max_results: input.query.max_results || 5 });
     queriesExecuted += response.queries_executed || 1;
     allResults.push(...response.results);
-    const diagnostic = { ...queryContext, code: response.code, http_status: response.http_status ?? null, provider_code: response.provider_code ?? null, results_count: response.results.length, duration_ms: Date.now() - queryStarted };
+    const diagnostic = { ...queryContext, code: response.code, http_status: response.http_status ?? null, provider_code: response.provider_code ?? null, provider_error_message: response.provider_error_message ?? null, parameter_names: response.parameter_names || queryContext.parameter_names, results_count: response.results.length, duration_ms: Date.now() - queryStarted };
     queryDiagnostics.push(diagnostic);
     await input.onQuery?.(response.code && response.code !== 'WEB_SEARCH_NO_RESULTS' && response.code !== undefined ? 'WEB_SEARCH_QUERY_FAILED' : 'WEB_SEARCH_QUERY_COMPLETED', diagnostic);
     if (response.code === 'WEB_SEARCH_NOT_CONFIGURED') break;
