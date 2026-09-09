@@ -73,3 +73,17 @@ test('technical research plans discovery before serial confirmation and creates 
   assert.match(assistant, /PART_CANDIDATES_READY/);
   assert.match(assistant, /productIntelligence\.candidates =/);
 });
+
+test('research preserves per-query Brave diagnostics and partial results', () => {
+  assert.match(provider, /WEB_SEARCH_QUERY_STARTED/);
+  assert.match(provider, /WEB_SEARCH_QUERY_COMPLETED/);
+  assert.match(provider, /WEB_SEARCH_QUERY_FAILED/);
+  assert.match(provider, /query_diagnostics/);
+  assert.match(provider, /failure_codes/);
+  assert.match(provider, /successful_queries/);
+  assert.match(provider, /no_result_queries/);
+  assert.match(provider, /const status = failedQueries\.length === queryDiagnostics\.length/);
+  assert.match(assistant, /WEB_RESEARCH_PARTIAL/);
+  assert.match(assistant, /provider_code/);
+  assert.doesNotMatch(provider, /X-Subscription-Token[^\n]*integration_logs/);
+});

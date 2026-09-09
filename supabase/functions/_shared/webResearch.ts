@@ -26,6 +26,21 @@ export type WebSearchResponse = {
   code?: string;
   duration_ms: number;
   queries_executed?: number;
+  http_status?: number | null;
+  provider_code?: string | null;
+};
+
+export type ResearchQueryDiagnostic = {
+  query_index: number;
+  query_length: number;
+  manufacturer_present: boolean;
+  model_present: boolean;
+  part_description_present: boolean;
+  code?: string;
+  http_status?: number | null;
+  provider_code?: string | null;
+  results_count: number;
+  duration_ms: number;
 };
 
 export type PageResponse = { url: string; title: string | null; text: string; retrieved_at: string; code?: string };
@@ -98,14 +113,14 @@ export class PublicWebSearchProvider implements WebSearchProvider {
       const query = safeText(input.query, MAX_QUERY);
       const response = await fetch(endpoint.toString(), { method: 'POST', headers: { Authorization: `Bearer ${config.key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ query, manufacturer: safeText(input.manufacturer, 160), part_number: safeText(input.part_number, 120), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), domains: (input.domains || []).slice(0, 10).map((item) => safeText(item, 120)), locale: safeText(input.locale || 'pt-BR', 20), max_results: Math.min(Math.max(Number(input.max_results || 5), 1), MAX_RESULTS) }), signal: controller.signal });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) return { results: [], provider: this.name, searched: true, code: `WEB_SEARCH_HTTP_${response.status}`, duration_ms: Date.now() - started };
+      if (!response.ok) return { results: [], provider: this.name, searched: true, code: `WEB_SEARCH_HTTP_${response.status}`, http_status: response.status, duration_ms: Date.now() - started };
       const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : Array.isArray(payload?.items) ? payload.items : [];
       const results = rows.map((row: any) => {
         const parsed = safeUrl(row?.url || row?.link || row?.href);
         if (!parsed) return null;
         return { title: safeText(row?.title, 240), url: parsed.toString(), domain: parsed.hostname, snippet: safeText(row?.snippet || row?.description || row?.text, MAX_SNIPPET), retrieved_at: new Date().toISOString(), source_type: sourceType(parsed, input.domains) } satisfies WebSearchResult;
       }).filter((row: WebSearchResult | null): row is WebSearchResult => Boolean(row)).slice(0, MAX_RESULTS);
-      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', duration_ms: Date.now() - started };
+      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', http_status: response.status, duration_ms: Date.now() - started };
     } catch (error) { return { results: [], provider: this.name, searched: true, code: error?.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started }; }
     finally { clearTimeout(timeout); }
   }
@@ -136,10 +151,10 @@ export class BraveWebSearchProvider implements WebSearchProvider {
       if (!response.ok) {
         const braveCode = safeText(payload?.error?.code, 80).toUpperCase();
         const code = response.status === 401 || response.status === 403 ? 'WEB_SEARCH_AUTH_ERROR' : response.status === 429 || braveCode === 'RATE_LIMITED' || braveCode === 'QUOTA_LIMITED' ? 'WEB_SEARCH_RATE_LIMITED' : response.status >= 500 ? 'WEB_SEARCH_UNAVAILABLE' : 'WEB_SEARCH_PROVIDER_ERROR';
-        return { results: [], provider: this.name, searched: true, code, duration_ms: Date.now() - started, queries_executed: 1 };
+        return { results: [], provider: this.name, searched: true, code, provider_code: braveCode || null, http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
       }
       const results = normalizeBraveResponse(payload, input.domains, new Date().toISOString());
-      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', duration_ms: Date.now() - started, queries_executed: 1 };
+      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
     } catch (error) { return { results: [], provider: this.name, searched: true, code: error?.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started, queries_executed: 1 }; }
     finally { clearTimeout(timeout); }
   }
@@ -287,7 +302,7 @@ function queryHash(input: WebSearchInput) {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized)).then((buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join(''));
 }
 
-export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number }) {
+export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number; onQuery?: (event: 'WEB_SEARCH_QUERY_STARTED' | 'WEB_SEARCH_QUERY_COMPLETED' | 'WEB_SEARCH_QUERY_FAILED', details: ResearchQueryDiagnostic) => Promise<void> | void }) {
   const started = Date.now();
   const hash = await queryHash(input.query);
   const now = new Date().toISOString();
@@ -301,11 +316,19 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   const allResults: WebSearchResult[] = [];
   const startedAt = Date.now();
   let queriesExecuted = 0;
+  const queryDiagnostics: ResearchQueryDiagnostic[] = [];
   for (const query of queries) {
     if (Date.now() - startedAt > 15_000) break;
+    const queryIndex = queries.indexOf(query) + 1;
+    const queryStarted = Date.now();
+    const queryContext = { query_index: queryIndex, query_length: query.length, manufacturer_present: Boolean(input.query.manufacturer), model_present: Boolean(input.query.model), part_description_present: Boolean(input.query.application), results_count: 0, duration_ms: 0 };
+    await input.onQuery?.('WEB_SEARCH_QUERY_STARTED', queryContext);
     const response = await provider.search({ ...input.query, query, domains: input.query.domains?.length ? input.query.domains : manufacturerDomains(input.query.manufacturer), max_results: input.query.max_results || 5 });
     queriesExecuted += response.queries_executed || 1;
     allResults.push(...response.results);
+    const diagnostic = { ...queryContext, code: response.code, http_status: response.http_status ?? null, provider_code: response.provider_code ?? null, results_count: response.results.length, duration_ms: Date.now() - queryStarted };
+    queryDiagnostics.push(diagnostic);
+    await input.onQuery?.(response.code && response.code !== 'WEB_SEARCH_NO_RESULTS' && response.code !== undefined ? 'WEB_SEARCH_QUERY_FAILED' : 'WEB_SEARCH_QUERY_COMPLETED', diagnostic);
     if (response.code === 'WEB_SEARCH_NOT_CONFIGURED') break;
   }
   const uniqueResults = [...new Map(allResults.map((result) => [result.url, result])).values()].slice(0, MAX_RESULTS);
@@ -314,7 +337,11 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
   const evidence = extractTechnicalEvidence(uniqueResults, pages);
-  const result = { provider: provider.name, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_strategy_version: RESEARCH_STRATEGY_VERSION, cache_hit: false, cache_miss: true, queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const failedQueries = queryDiagnostics.filter((item) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
+  const noResultQueries = queryDiagnostics.filter((item) => item.code === 'WEB_SEARCH_NO_RESULTS');
+  const successfulQueries = queryDiagnostics.length - failedQueries.length;
+  const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : uniqueResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
+  const result = { provider: provider.name, status, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_strategy_version: RESEARCH_STRATEGY_VERSION, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: queries.length, queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {
