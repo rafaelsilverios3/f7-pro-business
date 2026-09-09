@@ -87,8 +87,10 @@ export default function Atendimento() {
   const chatRef = useRef(null);
   const loadRef = useRef(null);
   const selectedRef = useRef(selected);
+  const conversationsRef = useRef(conversations);
   const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
   const load = async (silent = false) => {
     if (!company) return;
@@ -148,7 +150,12 @@ export default function Atendimento() {
       media_caption: row.media_caption || null,
       media_type: row.media_type || null,
     });
-    const isCurrentCompany = (payload) => payload?.new?.company_id === company.id || payload?.old?.company_id === company.id;
+    const isCurrentCompany = (table, payload) => {
+      const row = payload?.new || payload?.old || {};
+      if (row.company_id) return row.company_id === company.id;
+      if (table !== 'messages' || !row.conversation_id) return false;
+      return conversationsRef.current?.some((conversation) => conversation.id === row.conversation_id) || selectedRef.current?.id === row.conversation_id;
+    };
     const mergeMessage = (row) => {
       if (!row?.id || !row?.conversation_id) return false;
       const message = normalizeRealtimeMessage(row);
@@ -175,8 +182,9 @@ export default function Atendimento() {
     };
     const handleRealtimeEvent = (table, payload) => {
       const row = payload?.new || payload?.old || {};
-      const companyMatch = isCurrentCompany(payload);
+      const companyMatch = isCurrentCompany(table, payload);
       const conversationMatch = table === 'messages' ? row.conversation_id === selectedRef.current?.id : row.id === selectedRef.current?.id;
+      if (import.meta.env.DEV) console.info('[Realtime] event', { eventType: payload.eventType, table, row_has_company_id: Boolean(row.company_id), conversation_id_present: Boolean(row.conversation_id), company_match: companyMatch, conversation_match: conversationMatch, channel_status: realtimeStatus });
       if (!companyMatch) { if (import.meta.env.DEV) console.info('[Realtime] REALTIME_EVENT_IGNORED', { table, company_match: false, conversation_match: conversationMatch, timestamp: new Date().toISOString() }); return; }
       if (import.meta.env.DEV) console.info(`[Realtime] ${table === 'messages' ? `REALTIME_MESSAGE_${payload.eventType === 'UPDATE' ? 'UPDATE' : 'INSERT'}` : 'REALTIME_CONVERSATION_UPDATE'}`, { table, company_match: true, conversation_match: conversationMatch, timestamp: new Date().toISOString() });
       setRealtimeEventReceived(true);
@@ -200,10 +208,8 @@ export default function Atendimento() {
       }).data?.subscription;
       channel = supabase
         .channel(`smart-atendimento-${company.id}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
         .subscribe(async (status) => {
           if (cancelled) return;
           if (import.meta.env.DEV) console.info(`[Realtime] status: ${status}`);

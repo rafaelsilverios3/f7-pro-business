@@ -16,7 +16,7 @@ test('inbox subscribes to company-scoped realtime conversations and messages wit
   assert.match(inbox, /postgres_changes/);
   assert.match(inbox, /table: 'conversations'/);
   assert.match(inbox, /table: 'messages'/);
-  assert.match(inbox, /payload\?\.old\?\.company_id === company\.id/);
+  assert.match(inbox, /row\.company_id\) return row\.company_id === company\.id/);
   assert.match(inbox, /removeChannel\(channel\)/);
 });
 
