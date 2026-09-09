@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const provider = fs.readFileSync('supabase/functions/_shared/webResearch.ts', 'utf8');
+const sourceTrust = fs.readFileSync('supabase/functions/_shared/sourceTrust.ts', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0040_web_research_backend_permissions.sql', 'utf8');
 const braveFixture = { web: { results: [{ title: 'Correia OEM', url: 'https://deere.com/parts/123', description: 'Aplicação S540 PN RE123' }] } };
@@ -89,7 +90,7 @@ test('technical research plans discovery before serial confirmation and creates 
   assert.match(provider, /site:\$\{manufacturerDomains/);
   assert.match(provider, /confidence_level: 'DISCOVERED' \| 'LIKELY' \| 'VERIFIED'/);
   assert.match(provider, /supporting_sources/);
-  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 2/);
+  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 3/);
   assert.match(assistant, /pesquise e apresente PNs candidatos/);
   assert.match(assistant, /PART_CANDIDATES_READY/);
   assert.match(assistant, /productIntelligence\.candidates =/);
@@ -140,7 +141,9 @@ test('technical planner does not require a year and uses official plus general q
 test('autonomous research keeps provenance and discovers machine identity from evidence', () => {
   assert.match(provider, /export type ResearchState/);
   assert.match(provider, /export function resolveMachineIdentity/);
-  assert.match(provider, /provenance: 'web_research'/);
+  for (const provenance of ['customer', 'company_internal', 'official_source', 'public_web', 'human_agent', 'historical_verified', 'inference']) assert.match(provider, new RegExp(provenance));
+  assert.match(provider, /source: string \| null/);
+  assert.match(provider, /timestamp: string/);
   assert.match(provider, /equipment_type/);
   assert.match(provider, /discovered_machine/);
 });
@@ -151,4 +154,28 @@ test('autonomous research refines queries with bounded adaptive rounds', () => {
   assert.match(provider, /pendingQueries\.push/);
   assert.match(provider, /discoveredManufacturer/);
   assert.match(provider, /queriesDiagnosticsWithinBudget/);
+});
+
+test('research engine exposes bounded budgets and complete iterative state', () => {
+  for (const limit of ['MAX_RESEARCH_ROUNDS', 'MAX_WEB_QUERIES', 'MAX_TOTAL_RESULTS', 'MAX_PAGE_FETCHES', 'MAX_RESEARCH_DURATION_MS', 'MAX_RESEARCH_COST']) assert.match(provider, new RegExp(`export const ${limit}`));
+  for (const field of ['current_objective', 'known_facts', 'discovered_facts', 'unresolved_facts', 'queries_executed', 'sources', 'candidates', 'evidence', 'conflicts', 'confidence', 'next_research_step']) assert.match(provider, new RegExp(field));
+  assert.match(provider, /stop_reason/);
+  assert.match(provider, /official_source_confirmed/);
+  assert.match(provider, /queriesWithoutInformationGain/);
+});
+
+test('source trust is independent and evaluates available authority and risk signals', () => {
+  assert.match(provider, /evaluateSourceTrust/);
+  for (const level of ['HIGH_TRUST', 'MEDIUM_TRUST', 'LOW_TRUST', 'INSUFFICIENT_DATA']) assert.match(sourceTrust, new RegExp(level));
+  for (const factor of ['authority', 'domain', 'official_status', 'company_identity', 'reputation', 'review_volume', 'review_patterns', 'complaints', 'delivery_issues', 'counterfeit_claims', 'description_mismatch', 'price_anomaly', 'source_age_days', 'cross_source_agreement']) assert.match(sourceTrust, new RegExp(factor));
+  assert.match(provider, /trust_score/);
+  assert.match(provider, /trust_level/);
+  assert.doesNotMatch(sourceTrust, /fraud|safe supplier/i);
+});
+
+test('assistant context preserves candidate trust and research provenance', () => {
+  assert.match(assistant, /trust_score/);
+  assert.match(assistant, /trust_level/);
+  assert.match(assistant, /current_objective/);
+  assert.match(assistant, /next_research_step/);
 });
