@@ -7,7 +7,7 @@ revoke insert, update, delete on table public.product_research_sources from anon
 -- Keep external research behind the existing company feature override model.
 -- Premium is the default eligible plan; a beta company must be enabled explicitly
 -- through company_feature_overrides (feature = external_product_intelligence).
-create or replace function public.company_has_feature(target_company uuid, target_feature text)
+create or replace function public.company_has_feature(target_company uuid, feature text)
 returns boolean
 language plpgsql
 stable
@@ -19,14 +19,14 @@ declare
   override_enabled boolean;
 begin
   select enabled into override_enabled
-    from public.company_feature_overrides
-   where company_id = target_company and feature = lower(trim(target_feature));
+    from public.company_feature_overrides as o
+   where o.company_id = target_company and o.feature = lower(trim($2));
   if override_enabled is not null then return override_enabled; end if;
 
   select coalesce(plan, 'free') into plan_name
     from public.company_subscriptions
    where company_id = target_company;
-  return case lower(trim(target_feature))
+  return case lower(trim($2))
     when 'intelligence' then true
     when 'automations' then plan_name in ('pro', 'business', 'premium')
     when 'atendimento' then plan_name in ('business', 'premium')
