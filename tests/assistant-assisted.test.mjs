@@ -122,6 +122,17 @@ test('assistant diagnostics expose safe stages and a stable success/error contra
   assert.doesNotMatch(edge, /AI_API_KEY.*metadata|Authorization.*integration_logs|prompt.*integration_logs/i);
 });
 
+test('assistant isolates post-context stages and sanitizes product intelligence before serialization', () => {
+  for (const stage of ['CONTEXT_MESSAGES_READY', 'INTERNAL_PRODUCTS_RESOLVED', 'PRODUCT_INTELLIGENCE_INTERNAL_READY', 'WEB_RESEARCH_INPUT_READY', 'WEB_RESEARCH_READY', 'EXTERNAL_CANDIDATES_READY', 'PRODUCT_INTELLIGENCE_MERGED', 'SOURCE_METADATA_READY', 'AI_CONTEXT_READY']) assert.match(edge, new RegExp(stage));
+  assert.match(edge, /normalizeCandidateForContext/);
+  assert.match(edge, /Array\.isArray\(candidate\?\.supporting_sources\)/);
+  assert.match(edge, /Array\.isArray\(candidate\?\.evidence\)/);
+  assert.match(edge, /JSON\.stringify\(contextObject\)/);
+  assert.match(edge, /AI_CONTEXT_SERIALIZATION_ERROR/);
+  assert.match(edge, /error_name/);
+  assert.match(edge, /error_message/);
+});
+
 test('frontend preserves provider diagnostics instead of showing an empty generic result', () => {
   assert.match(page, /Código:/);
   assert.match(page, /result\?\.success !== false/);

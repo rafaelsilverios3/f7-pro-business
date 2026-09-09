@@ -36,6 +36,45 @@ function safeInternalCode(error: unknown) {
   const code = typeof (error as any)?.code === 'string' ? (error as any).code : '';
   return /^[A-Z0-9_]{1,80}$/.test(code) ? code : null;
 }
+function safeErrorDetails(error: unknown) {
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const name = safeText(value.name, 80) || 'Error';
+  const message = safeText(value.message, 200)
+    .replace(/bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/(token|secret|password|authorization|api[_ -]?key)\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    .replace(/https?:\/\/\S+/gi, '[redacted]');
+  return { error_name: name, error_message: message || 'Falha interna' };
+}
+function normalizeCandidateForContext(candidate: any) {
+  const supportingSources = Array.isArray(candidate?.supporting_sources) ? candidate.supporting_sources : [];
+  const evidence = Array.isArray(candidate?.evidence) ? candidate.evidence : [];
+  return {
+    part_number: safeText(candidate?.part_number, 80) || null,
+    description: safeText(candidate?.description, 240) || null,
+    application: safeText(candidate?.application, 300) || null,
+    manufacturer: safeText(candidate?.manufacturer, 120) || null,
+    source_domain: safeText(candidate?.source_domain, 160) || null,
+    source_type: safeText(candidate?.source_type, 80) || 'public_web',
+    confidence: Number.isFinite(Number(candidate?.confidence)) ? Number(candidate.confidence) : 0,
+    confidence_level: safeText(candidate?.confidence_level, 40) || 'LOW',
+    score: Number.isFinite(Number(candidate?.score)) ? Number(candidate.score) : 0,
+    is_official: candidate?.is_official === true,
+    evidence_count: Number.isFinite(Number(candidate?.evidence_count)) ? Number(candidate.evidence_count) : supportingSources.length || evidence.length,
+    evidence: evidence.slice(0, 5).map((item: unknown) => safeText(item, 700)).filter(Boolean),
+    supporting_sources: supportingSources.slice(0, 10).map((item: unknown) => typeof item === 'string' ? safeText(item, 300) : safeText((item as any)?.url || (item as any)?.source_domain || (item as any)?.source_name, 300)).filter(Boolean),
+  };
+}
+function sanitizeProductIntelligence(input: any) {
+  const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
+  const web = input?.web_research && typeof input.web_research === 'object' ? input.web_research : {};
+  return {
+    query: safeText(input?.query, 1000),
+    need_external_research: input?.need_external_research === true,
+    missing_information: Array.isArray(input?.missing_information) ? input.missing_information.slice(0, 20).map((item: unknown) => safeText(item, 120)) : [],
+    candidates: candidates.slice(0, 30).map(normalizeCandidateForContext),
+    web_research: { searched: web.searched === true, search_provider: safeText(web.search_provider, 100), cache_hit: web.cache_hit === true, code: safeText(web.code, 100) || null, candidate_count: Array.isArray(web.candidates) ? web.candidates.length : 0, evidence: { part_numbers: Array.isArray(web.evidence?.part_numbers) ? web.evidence.part_numbers.slice(0, 30).map((item: unknown) => safeText(item, 80)) : [], source_urls: Array.isArray(web.evidence?.source_urls) ? web.evidence.source_urls.slice(0, 20).map((item: unknown) => safeText(item, 300)) : [], confidence: Number(web.evidence?.confidence) || 0, conflicts: Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts.slice(0, 10).map((item: unknown) => safeText(item, 240)) : [] } },
+  };
+}
 function normalizeTerms(value: unknown) {
   const stop = new Set(['para', 'com', 'uma', 'que', 'das', 'dos', 'por', 'the', 'and', 'from', 'esse', 'essa', 'isso', 'mais', 'como']);
   return [...new Set(safeText(value, 8000).toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9][a-z0-9_-]{2,}/g) || [])].filter((term) => !stop.has(term)).slice(0, 50);
@@ -199,7 +238,8 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     else if (contextObject.COMPANY_CONTEXT.quick_replies.length) contextObject.COMPANY_CONTEXT.quick_replies.pop();
     else contextObject.COMPANY_RULES.handoff_rules.pop();
   }
-  const context = JSON.stringify(contextObject);
+  let context: string;
+  try { context = JSON.stringify(contextObject); } catch { return { ok: false, code: 'AI_CONTEXT_SERIALIZATION_ERROR' as const }; }
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
@@ -298,10 +338,16 @@ Deno.serve(async (req) => {
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
+    stage = 'CONTEXT_MESSAGES_READY';
+    await logStage(sb, conversation.company_id, stage);
     const latestText = bounded.map((item: any) => item.content || '').join(' ');
     const terms = normalizeTerms(latestText);
     const relevantProducts = selectRelevantProducts(products || [], terms);
+    stage = 'INTERNAL_PRODUCTS_RESOLVED';
+    await logStage(sb, conversation.company_id, stage);
     const productIntelligence = await resolveProductOrPart({ company_id: conversation.company_id, query: latestText, products: products || [], manufacturer: undefined });
+    stage = 'PRODUCT_INTELLIGENCE_INTERNAL_READY';
+    await logStage(sb, conversation.company_id, stage);
     const relevantQuickReplies = selectRelevantRows(quickReplies || [], terms, MAX_QUICK_REPLIES_CONTEXT, ['reply_key', 'title', 'body', 'category']);
     const relevantHandoffRules = selectRelevantRows(handoffRules || [], terms, MAX_HANDOFF_RULES_CONTEXT, ['trigger_key', 'label', 'priority']);
     const sourceMetadata: any[] = [{ type: 'internal_catalog', domain: 'F7 interno', retrieved_at: new Date().toISOString() }];
@@ -313,6 +359,8 @@ Deno.serve(async (req) => {
     };
     let webResearch: any = { searched: false, results: [], pages: [], candidates: [], evidence: { part_numbers: [], source_urls: [], confidence: 0, candidates: [] }, code: 'WEB_RESEARCH_NOT_REQUESTED' };
     const technicalInput = inferTechnicalResearchInput(latestText, products || [], settings || {});
+    stage = 'WEB_RESEARCH_INPUT_READY';
+    await logStage(sb, conversation.company_id, stage);
     const researchNeeded = isTechnicalResearchNeeded({ text: latestText, userAskedExternal: false, model: technicalInput.model, manufacturer: technicalInput.manufacturer, part_number: technicalInput.old_part_number }) && productIntelligence.need_external_research;
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_DECISION', { technical_research_needed: researchNeeded, feature_enabled: false, reason: researchNeeded ? 'technical_question_without_reliable_internal_candidate' : 'not_technical_or_internal_confidence_sufficient' });
     if (researchNeeded) {
@@ -321,6 +369,8 @@ Deno.serve(async (req) => {
       if (!researchFeatureError && researchAllowed) {
         const safeResearchQuery = [...new Set([...terms, safeText(settings?.segment, 80)].filter(Boolean))].join(' ').slice(0, 500);
         webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, manufacturer: technicalInput.manufacturer, model: technicalInput.model, year: technicalInput.year, application: technicalInput.part_description, part_number: technicalInput.old_part_number, domains: [], locale: 'pt-BR', max_results: 5 }, ttl_hours: 24, max_pages: 2, onQuery: (event, details) => logResearchEvent(sb, conversation.company_id, conversationId, event, { provider: 'BraveWebSearchProvider', ...details }) });
+        stage = 'WEB_RESEARCH_READY';
+        await logStage(sb, conversation.company_id, stage);
         for (const result of webResearch.results || []) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, retrieved_at: result.retrieved_at });
         productIntelligence.web_research = { searched: true, search_provider: webResearch.provider, evidence: webResearch.evidence, candidates: webResearch.candidates || webResearch.evidence?.candidates || [], conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
         productIntelligence.candidates = [...(productIntelligence.candidates || []), ...(webResearch.candidates || webResearch.evidence?.candidates || [])];
@@ -328,11 +378,20 @@ Deno.serve(async (req) => {
         const failedDiagnostic = webResearch.query_diagnostics?.find((item: any) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
         await logResearchEvent(sb, conversation.company_id, conversationId, researchEvent, { technical_research_needed: true, feature_enabled: true, provider: webResearch.provider, http_status: failedDiagnostic?.http_status ?? undefined, duration_ms: webResearch.duration_ms, queries_planned: webResearch.queries_planned, queries_executed: webResearch.queries_executed, successful_queries: webResearch.successful_queries, failed_queries: webResearch.failed_queries, no_result_queries: webResearch.no_result_queries, results_count: webResearch.results_count || webResearch.results?.length || 0, candidate_count: (webResearch.candidates || webResearch.evidence?.candidates || []).length, confidence_levels: (webResearch.candidates || webResearch.evidence?.candidates || []).map((candidate: any) => candidate.confidence_level), failure_codes: webResearch.failure_codes, cache_hit: Boolean(webResearch.cache_hit), cache_miss: Boolean(webResearch.cache_miss), reason: webResearch.status || webResearch.code || 'completed' });
         const externalCandidates = webResearch.candidates || webResearch.evidence?.candidates || [];
+        stage = 'EXTERNAL_CANDIDATES_READY';
+        await logStage(sb, conversation.company_id, stage, { candidate_count: Array.isArray(externalCandidates) ? externalCandidates.length : 0 });
         if (externalCandidates.length) await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_CANDIDATES_READY', { technical_research_needed: true, feature_enabled: true, provider: webResearch.provider, candidate_count: externalCandidates.length, confidence_levels: externalCandidates.map((candidate: any) => candidate.confidence_level), candidate_diagnostics: externalCandidates.map((candidate: any, index: number) => ({ candidate_index: index + 1, part_number: safeText(candidate.part_number, 80), description: safeText(candidate.description, 180), application: safeText(candidate.application, 240), source_domain: safeText(candidate.source_domain, 160), source_type: safeText(candidate.source_type, 80), confidence: candidate.confidence, score: candidate.score, is_official: candidate.is_official === true, evidence_count: candidate.evidence_count || candidate.supporting_sources?.length || 1 })) });
+        stage = 'PRODUCT_INTELLIGENCE_MERGED';
+        await logStage(sb, conversation.company_id, stage);
       } else {
         productIntelligence.web_research = { searched: false, code: researchFeatureError ? 'WEB_RESEARCH_FEATURE_UNAVAILABLE' : 'WEB_RESEARCH_FEATURE_DENIED' };
       }
     }
+    stage = 'SOURCE_METADATA_READY';
+    await logStage(sb, conversation.company_id, stage, { source_count: sourceMetadata.length });
+    const productIntelligenceContext = sanitizeProductIntelligence(productIntelligence);
+    stage = 'AI_CONTEXT_READY';
+    await logStage(sb, conversation.company_id, stage, { candidate_count: productIntelligenceContext.candidates.length });
     // The provider receives only sanitized context and source metadata, never
     // signed media URLs or credentials from the company data.
     const startedAt = Date.now();
@@ -340,7 +399,7 @@ Deno.serve(async (req) => {
     stage = 'AI_REQUEST_STARTED';
     stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
-    const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata, productIntelligence });
+    const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata, productIntelligence: productIntelligenceContext });
     await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
     const missingInformation = technicalMissingInformation(settings || {}, latestText, sourceMetadata);
     if (!providerSuggestion.ok) {
@@ -352,10 +411,11 @@ Deno.serve(async (req) => {
     await logStage(sb, conversation.company_id, 'AI_RESPONSE_PARSED', { duration_ms: Date.now() - requestStartedAt, model });
     await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'success', null, bounded.length, relevantProducts.length, sourceMetadata.length);
     await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
-    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, sources: sourceMetadata, product_intelligence: productIntelligence, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
+    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, sources: sourceMetadata, product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
   } catch (error) {
     const safeCode = safeInternalCode(error) || 'INTERNAL_PROVIDER_ERROR';
-    if (diagnosticCompanyId) await logStage(admin(), diagnosticCompanyId, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: safeCode, http_status: 500 });
-    return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao gerar a sugestão.', stage, internal_error_code: safeCode }, 500);
+    const safeDetails = safeErrorDetails(error);
+    if (diagnosticCompanyId) await logStage(admin(), diagnosticCompanyId, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: safeCode, error_name: safeDetails.error_name, error_message: safeDetails.error_message, stage, http_status: 500 });
+    return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao gerar a sugestão.', stage, internal_error_code: safeCode, error_name: safeDetails.error_name, error_message: safeDetails.error_message }, 500);
   }
 });
