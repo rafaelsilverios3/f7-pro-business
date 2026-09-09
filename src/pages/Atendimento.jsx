@@ -68,6 +68,7 @@ export default function Atendimento() {
   const [sendError, setSendError] = useState('');
   const [realtimeStatus, setRealtimeStatus] = useState('connecting');
   const [authenticatedRealtime, setAuthenticatedRealtime] = useState(false);
+  const [realtimeEventReceived, setRealtimeEventReceived] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState({ mode: 'manual' });
   const [assistantSuggestion, setAssistantSuggestion] = useState(null);
@@ -139,11 +140,12 @@ export default function Atendimento() {
       const conversationMatch = table === 'messages' ? row.conversation_id === selectedRef.current?.id : row.id === selectedRef.current?.id;
       if (!companyMatch) { console.info('[Realtime] REALTIME_EVENT_IGNORED', { table, company_match: false, conversation_match: conversationMatch, timestamp: new Date().toISOString() }); return; }
       console.info(`[Realtime] ${table === 'messages' ? `REALTIME_MESSAGE_${payload.eventType === 'UPDATE' ? 'UPDATE' : 'INSERT'}` : 'REALTIME_CONVERSATION_UPDATE'}`, { table, company_match: true, conversation_match: conversationMatch, timestamp: new Date().toISOString() });
+      setRealtimeEventReceived(true);
       loadRef.current(true);
     };
     const scheduleReconnect = () => { if (cancelled || reconnectTimer) return; setRealtimeStatus('reconnecting'); reconnectTimer = window.setTimeout(() => { reconnectTimer = undefined; if (!cancelled) setRealtimeStatus('connecting'); }, 3000); };
     const connectRealtime = async () => {
-      setRealtimeStatus('connecting'); setAuthenticatedRealtime(false);
+      setRealtimeStatus('connecting'); setAuthenticatedRealtime(false); setRealtimeEventReceived(false);
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
       if (cancelled || !token) { setRealtimeStatus('compatibility'); return; }
@@ -168,14 +170,14 @@ export default function Atendimento() {
         });
     };
     connectRealtime().catch(() => { if (!cancelled) { setAuthenticatedRealtime(false); setRealtimeStatus('compatibility'); } });
-    return () => { cancelled = true; if (reconnectTimer) window.clearTimeout(reconnectTimer); authSubscription?.unsubscribe(); if (channel) supabase.removeChannel(channel); setAuthenticatedRealtime(false); setRealtimeStatus('closed'); };
+    return () => { cancelled = true; if (reconnectTimer) window.clearTimeout(reconnectTimer); authSubscription?.unsubscribe(); if (channel) supabase.removeChannel(channel); setAuthenticatedRealtime(false); setRealtimeEventReceived(false); setRealtimeStatus('closed'); };
   }, [company?.id]);
 
   useEffect(() => {
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || (realtimeStatus === 'subscribed' && authenticatedRealtime)) return undefined;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || (realtimeStatus === 'subscribed' && authenticatedRealtime && realtimeEventReceived)) return undefined;
     const timer = window.setInterval(() => loadRef.current(true), 5000);
     return () => window.clearInterval(timer);
-  }, [company?.id, realtimeStatus, authenticatedRealtime]);
+  }, [company?.id, realtimeStatus, authenticatedRealtime, realtimeEventReceived]);
 
   const searchProducts = async (event) => {
     event?.preventDefault();
@@ -332,7 +334,7 @@ export default function Atendimento() {
         subtitle="Central omnichannel com IA integrada ao seu CRM e catálogo."
         action={<Button onClick={() => setNewDialog(true)}><Plus className="mr-1.5 h-4 w-4" /> Nova conversa</Button>}
       />
-      {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && <div className="mb-3 flex justify-end text-[11px] text-slate-400"><span className={`mr-1.5 mt-1 h-2 w-2 rounded-full ${realtimeStatus === 'subscribed' && authenticatedRealtime ? 'bg-emerald-400' : realtimeStatus === 'connecting' || realtimeStatus === 'reconnecting' || realtimeStatus === 'subscribed' ? 'bg-amber-400' : 'bg-rose-400'}`} />{realtimeStatus === 'subscribed' && authenticatedRealtime ? 'Tempo real conectado' : 'Atualização automática em modo compatibilidade'}</div>}
+      {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && <div className="mb-3 flex justify-end text-[11px] text-slate-400"><span className={`mr-1.5 mt-1 h-2 w-2 rounded-full ${realtimeStatus === 'subscribed' && authenticatedRealtime && realtimeEventReceived ? 'bg-emerald-400' : realtimeStatus === 'connecting' || realtimeStatus === 'reconnecting' || realtimeStatus === 'subscribed' ? 'bg-amber-400' : 'bg-rose-400'}`} />{realtimeStatus === 'subscribed' && authenticatedRealtime && realtimeEventReceived ? 'Tempo real conectado' : 'Atualização automática em modo compatibilidade'}</div>}
 
       <div className="mb-4 flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-700">
         <AlertCircle className="h-4 w-4 shrink-0" />

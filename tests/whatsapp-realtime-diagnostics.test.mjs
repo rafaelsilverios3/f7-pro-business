@@ -24,8 +24,14 @@ test('Realtime callback filters company events and cleans up channels', () => {
 
 test('Polling fallback runs only while authenticated Realtime is not subscribed', () => {
   assert.match(source, /setInterval\(\(\) => loadRef\.current\(true\), 5000\)/);
-  assert.match(source, /realtimeStatus === 'subscribed' && authenticatedRealtime/);
+  assert.match(source, /realtimeStatus === 'subscribed' && authenticatedRealtime && realtimeEventReceived/);
   assert.match(source, /Atualização automática em modo compatibilidade/);
+});
+
+test('Realtime is not considered confirmed before a valid company event arrives', () => {
+  assert.match(source, /const \[realtimeEventReceived, setRealtimeEventReceived\] = useState\(false\)/);
+  assert.match(source, /setRealtimeEventReceived\(true\)/);
+  assert.match(source, /authenticatedRealtime && realtimeEventReceived \? 'Tempo real conectado'/);
 });
 
 test('Realtime authenticates before creating and subscribing the channel', () => {
