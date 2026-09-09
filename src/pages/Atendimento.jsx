@@ -84,6 +84,7 @@ export default function Atendimento() {
   const [orderLoading, setOrderLoading] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [clearingHistory, setClearingHistory] = useState(false);
   const chatRef = useRef(null);
   const loadRef = useRef(null);
   const selectedRef = useRef(selected);
@@ -254,6 +255,18 @@ export default function Atendimento() {
     finally { setOrderLoading(false); }
   };
 
+  const clearHistory = async () => {
+    if (!company || clearingHistory || !window.confirm('Limpar todas as mensagens antigas desta empresa? As conversas e oportunidades serão preservadas.')) return;
+    setClearingHistory(true); setConversationError('');
+    try {
+      await conversationsService.clearHistory(company.id);
+      setSelected((current) => current ? { ...current, messages: [] } : current);
+      setConversations((current) => (current || []).map((conversation) => ({ ...conversation, messages: [] })));
+      await load(true);
+    } catch (error) { setConversationError('Não foi possível limpar o histórico. Verifique sua permissão.'); }
+    finally { setClearingHistory(false); }
+  };
+
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [selected?.messages, aiThinking]);
@@ -406,6 +419,7 @@ export default function Atendimento() {
           <div className="sticky top-0 z-10 space-y-2 border-b border-slate-100 bg-white p-3">
             <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><Input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Buscar conversas..." className="pl-8 text-xs" /></div>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-600"><option value="all">Todos os status</option><option value="open">Abertas</option><option value="waiting_human">Aguardando humano</option><option value="in_progress">Em atendimento</option><option value="finished">Finalizadas</option></select>
+            {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && <Button type="button" variant="outline" size="sm" className="w-full text-xs text-rose-600" onClick={clearHistory} disabled={clearingHistory}>{clearingHistory ? 'Limpando histórico...' : 'Limpar histórico'}</Button>}
           </div>
           {conversationLoading ? (
             <div className="p-8 text-center text-sm text-slate-400">Carregando...</div>

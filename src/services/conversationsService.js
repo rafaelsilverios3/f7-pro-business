@@ -67,6 +67,12 @@ export const conversationsService = {
     return messages.list(companyId).then((items) => items.filter((item) => item.conversation_id === conversationId));
   },
   addMessage: (companyId, data) => messages.create(data, companyId),
+  clearHistory: async (companyId) => {
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return false;
+    const { error } = await getSupabaseClient().from('messages').delete().eq('company_id', companyId);
+    if (error) throw error;
+    return true;
+  },
   sendWhatsApp: (companyId, conversationId, message, clientRequestId) => invokeEdgeFunction('whatsapp-send', { company_id: companyId, conversation_id: conversationId, message, client_request_id: clientRequestId }),
   remove: (companyId, id) => conversations.remove(id, companyId),
 };

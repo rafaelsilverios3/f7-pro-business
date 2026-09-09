@@ -14,6 +14,13 @@ test('inbox loads conversations and messages scoped to company_id', () => {
   assert.match(page, /statusFilter/);
 });
 
+test('inbox can clear old message history without deleting CRM conversations', () => {
+  assert.match(service, /clearHistory: async \(companyId\)/);
+  assert.match(service, /from\('messages'\)\.delete\(\)\.eq\('company_id', companyId\)/);
+  assert.match(page, /Limpar hist[oó]rico/);
+  assert.match(page, /As conversas e oportunidades ser[aã]o preservadas/);
+});
+
 test('WhatsApp replies use the backend function and never call Meta from the browser', () => {
   assert.match(service, /invokeEdgeFunction\('whatsapp-send'/);
   assert.doesNotMatch(`${page}\n${service}`, /graph\.facebook\.com|WHATSAPP_ACCESS_TOKEN|WHATSAPP_APP_SECRET/);
