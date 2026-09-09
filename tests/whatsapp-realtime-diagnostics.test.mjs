@@ -52,6 +52,11 @@ test('Realtime authenticates before creating and subscribing the channel', () =>
 test('Realtime events use explicit company filters and refresh the latest selected state', () => {
   assert.match(source, /filter: `company_id=eq\.\$\{company\.id\}`/);
   assert.match(source, /loadRef\.current\(true\)/);
+  assert.match(source, /event: 'INSERT'.*table: 'messages'/s);
+  assert.match(source, /event: 'UPDATE'.*table: 'messages'/s);
+  assert.match(source, /mergeMessage\(row\)/);
+  assert.match(source, /messages\.some\(\(item\) => item\.id === message\.id\)/);
+  assert.match(source, /sort\(\(a, b\) => new Date\(a\.timestamp\)/);
   assert.match(source, /REALTIME_MESSAGE_\$\{/);
   assert.match(source, /payload\.eventType === 'UPDATE'/);
   assert.match(source, /REALTIME_EVENT_IGNORED/);

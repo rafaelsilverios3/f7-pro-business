@@ -134,14 +134,53 @@ export default function Atendimento() {
     let authSubscription;
     let authenticated = false;
     const supabase = getSupabaseClient();
+    const normalizeRealtimeMessage = (row) => ({
+      ...row,
+      sender: row.sender_type === 'user' ? 'agent' : row.sender_type,
+      text: row.content,
+      timestamp: row.created_at,
+      status: row.external_status || null,
+      external_message_id: row.external_message_id || null,
+      media_path: row.media_path || null,
+      media_mime_type: row.media_mime_type || null,
+      media_filename: row.media_filename || null,
+      media_size: row.media_size || null,
+      media_caption: row.media_caption || null,
+      media_type: row.media_type || null,
+    });
     const isCurrentCompany = (payload) => payload?.new?.company_id === company.id || payload?.old?.company_id === company.id;
+    const mergeMessage = (row) => {
+      if (!row?.id || !row?.conversation_id) return false;
+      const message = normalizeRealtimeMessage(row);
+      let changed = false;
+      setConversations((current) => (current || []).map((conversation) => {
+        if (conversation.id !== row.conversation_id) return conversation;
+        const messages = conversation.messages || [];
+        if (messages.some((item) => item.id === message.id)) return conversation;
+        changed = true;
+        return {
+          ...conversation,
+          messages: [...messages, message].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+          last_message_at: row.created_at || conversation.last_message_at,
+        };
+      }).sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
+      setSelected((current) => {
+        if (!current || current.id !== row.conversation_id) return current;
+        const messages = current.messages || [];
+        if (messages.some((item) => item.id === message.id)) return current;
+        changed = true;
+        return { ...current, messages: [...messages, message].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), last_message_at: row.created_at || current.last_message_at };
+      });
+      return changed;
+    };
     const handleRealtimeEvent = (table, payload) => {
       const row = payload?.new || payload?.old || {};
       const companyMatch = isCurrentCompany(payload);
       const conversationMatch = table === 'messages' ? row.conversation_id === selectedRef.current?.id : row.id === selectedRef.current?.id;
-      if (!companyMatch) { console.info('[Realtime] REALTIME_EVENT_IGNORED', { table, company_match: false, conversation_match: conversationMatch, timestamp: new Date().toISOString() }); return; }
-      console.info(`[Realtime] ${table === 'messages' ? `REALTIME_MESSAGE_${payload.eventType === 'UPDATE' ? 'UPDATE' : 'INSERT'}` : 'REALTIME_CONVERSATION_UPDATE'}`, { table, company_match: true, conversation_match: conversationMatch, timestamp: new Date().toISOString() });
+      if (!companyMatch) { if (import.meta.env.DEV) console.info('[Realtime] REALTIME_EVENT_IGNORED', { table, company_match: false, conversation_match: conversationMatch, timestamp: new Date().toISOString() }); return; }
+      if (import.meta.env.DEV) console.info(`[Realtime] ${table === 'messages' ? `REALTIME_MESSAGE_${payload.eventType === 'UPDATE' ? 'UPDATE' : 'INSERT'}` : 'REALTIME_CONVERSATION_UPDATE'}`, { table, company_match: true, conversation_match: conversationMatch, timestamp: new Date().toISOString() });
       setRealtimeEventReceived(true);
+      if (table === 'messages' && payload.eventType === 'INSERT') mergeMessage(row);
       loadRef.current(true);
     };
     const scheduleReconnect = () => { if (cancelled || reconnectTimer) return; setRealtimeStatus('reconnecting'); reconnectTimer = window.setTimeout(() => { reconnectTimer = undefined; if (!cancelled) setRealtimeStatus('connecting'); }, 3000); };
@@ -154,18 +193,20 @@ export default function Atendimento() {
       if (cancelled) return;
       authenticated = true;
       setAuthenticatedRealtime(true);
-      console.info('[Realtime] authenticated');
+      if (import.meta.env.DEV) console.info('[Realtime] authenticated');
       authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.access_token) supabase.realtime.setAuth(session.access_token);
         else { setAuthenticatedRealtime(false); setRealtimeStatus('compatibility'); }
       }).data?.subscription;
       channel = supabase
         .channel(`smart-atendimento-${company.id}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('conversations', payload))
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `company_id=eq.${company.id}` }, (payload) => handleRealtimeEvent('messages', payload))
         .subscribe(async (status) => {
           if (cancelled) return;
-          console.info(`[Realtime] status: ${status}`);
+          if (import.meta.env.DEV) console.info(`[Realtime] status: ${status}`);
           if (status === 'SUBSCRIBED' && authenticated) { setRealtimeStatus('subscribed'); if (reconnectTimer) { window.clearTimeout(reconnectTimer); reconnectTimer = undefined; } }
           else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') { setRealtimeStatus(status === 'TIMED_OUT' ? 'timed_out' : 'error'); scheduleReconnect(); }
         });
