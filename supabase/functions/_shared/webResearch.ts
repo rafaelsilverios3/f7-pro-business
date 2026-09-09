@@ -218,6 +218,10 @@ export type TechnicalPartCandidate = {
   confidence: number;
   confidence_level: 'DISCOVERED' | 'LIKELY' | 'VERIFIED';
   supporting_sources: string[];
+  evidence?: string[];
+  evidence_count?: number;
+  score?: number;
+  is_official?: boolean;
 };
 
 export type TechnicalResearchQueryInput = {
@@ -273,12 +277,16 @@ function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageRes
   const evidenceText = safeText(`${result.title} ${result.snippet} ${page?.text || ''}`, 1800);
   const labelled = [...evidenceText.matchAll(/(?:part\s*(?:number|no)?|p\/?n|oem|c[oó]digo|refer[eê]ncia|reference)\s*[:#-]?\s*([A-Z0-9][A-Z0-9./ -]{3,})/gi)].map((match) => match[1].trim().split(/\s+(?:for|fits|compatible|replaces|replacement)\b/i)[0]);
   const alphanumeric = evidenceText.match(/\b[A-Z]{1,6}[- ]?\d{3,}[A-Z0-9-]*\b/gi) || [];
-  const numbers = [...new Set([...labelled, ...alphanumeric].map((value) => value.toUpperCase().replace(/[.,;:]$/, '')).filter((value) => /[A-Z]/.test(value) && /\d/.test(value) && value.length >= 4 && value.length <= 40 && !/^\d{3,5}[A-Z]?$/.test(value)))];
+  const normalizedLabelled = new Set(labelled.map((value) => value.toUpperCase().replace(/[.,;:]$/, '')));
+  const hasPartContext = /\b(?:part\s*(?:number|no)?|p\/?n|oem|filtro|filter|conjunto|elemento|pe[cç]a|c[oó]digo)\b/i.test(evidenceText);
+  const numbers = [...new Set([...labelled, ...alphanumeric].map((value) => value.toUpperCase().replace(/[.,;:]$/, '')).filter((value) => /[A-Z]/.test(value) && /\d/.test(value) && value.length >= 4 && value.length <= 40 && !/^\d{3,5}[A-Z]?$/.test(value) && (normalizedLabelled.has(value) || hasPartContext)))];
   const contextText = `${context.manufacturer || ''} ${context.model || ''} ${context.part_description || ''}`.toLocaleLowerCase('pt-BR');
   const haystack = evidenceText.toLocaleLowerCase('pt-BR');
   const contextualMatch = Boolean(context.model && haystack.includes(String(context.model).toLocaleLowerCase('pt-BR'))) || Boolean(context.part_description && haystack.includes(String(context.part_description).toLocaleLowerCase('pt-BR')));
-  const confidence = Math.min(0.95, (result.source_type === 'manufacturer_official' ? 0.7 : result.source_type === 'distributor' || result.source_type === 'approved_catalog' ? 0.5 : 0.3) + (contextualMatch ? 0.15 : 0));
-  return numbers.map((partNumber) => ({ part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(`${result.snippet} ${contextText}`, 600), confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate));
+  const isOfficial = result.source_type === 'manufacturer_official';
+  const confidence = Math.min(0.98, (isOfficial ? 0.78 : result.source_type === 'distributor' || result.source_type === 'approved_catalog' ? 0.5 : 0.3) + (contextualMatch ? 0.17 : 0));
+  const score = (isOfficial ? 100 : 40) + (contextualMatch ? 35 : 0) + (hasPartContext ? 20 : 0);
+  return numbers.map((partNumber) => ({ part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score, is_official, confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate));
 }
 
 export function extractTechnicalEvidence(results: WebSearchResult[], pages: PageResponse[] = [], context: { manufacturer?: string; model?: string; part_description?: string } = {}): TechnicalEvidence {
@@ -291,10 +299,11 @@ export function extractTechnicalEvidence(results: WebSearchResult[], pages: Page
     else {
       const sources = [...new Set([...current.supporting_sources, ...candidate.supporting_sources])];
       const confidence = Math.min(0.98, current.confidence + (candidate.source_type === 'manufacturer_official' ? 0.2 : 0.1));
-      candidatesByPart.set(key, { ...current, confidence, confidence_level: candidateLevel(confidence), supporting_sources: sources, evidence_text: safeText(`${current.evidence_text} ${candidate.evidence_text}`, 1000) });
+      const preferred = (candidate.score || 0) > (current.score || 0) ? candidate : current;
+      candidatesByPart.set(key, { ...current, ...preferred, confidence, confidence_level: candidateLevel(confidence), score: Math.max(current.score || 0, candidate.score || 0) + Math.min(20, sources.length * 5), is_official: Boolean(current.is_official || candidate.is_official), evidence_count: sources.length, supporting_sources: sources, evidence: [...new Set([...(current.evidence || []), ...(candidate.evidence || [])])].slice(0, 10), evidence_text: safeText(`${current.evidence_text} ${candidate.evidence_text}`, 1000) });
     }
   }
-  const candidates = [...candidatesByPart.values()];
+  const candidates = [...candidatesByPart.values()].sort((a, b) => (b.score || 0) - (a.score || 0) || b.confidence - a.confidence);
   const partNumbers = candidates.map((candidate) => candidate.part_number).slice(0, 30);
   const manufacturers = [...new Set(results.filter((item) => item.source_type === 'manufacturer_official').map((item) => item.domain).slice(0, 10))];
   const urls = [...new Set([...results.map((item) => item.url), ...pages.map((item) => item.url)])].slice(0, 20);

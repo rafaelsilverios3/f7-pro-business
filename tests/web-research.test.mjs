@@ -117,6 +117,16 @@ test('technical extraction keeps an official John Deere PN candidate', () => {
   assert.match(provider, /context\.model/);
   assert.match(provider, /shop\.deere\.com/);
   assert.match(provider, /fuel filter/);
+  assert.match(provider, /evidence_count/);
+  assert.match(provider, /is_official/);
+  assert.match(provider, /sort\(\(a, b\) => \(b\.score/);
+});
+
+test('external candidates and sources remain explicit for the assistant and UI', () => {
+  assert.match(assistant, /candidate_diagnostics/);
+  assert.match(assistant, /productIntelligence\.candidates = \[/);
+  assert.match(assistant, /source_domain/);
+  assert.match(assistant, /source_type/);
 });
 
 test('technical planner does not require a year and uses official plus general queries', () => {
