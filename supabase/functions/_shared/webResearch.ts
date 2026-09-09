@@ -36,6 +36,7 @@ const MAX_RESULTS = 10;
 const DEFAULT_SEARCH_TIMEOUT = 8000;
 const DEFAULT_PAGE_TIMEOUT = 8000;
 const MAX_PAGE_BYTES = 1_000_000;
+export const RESEARCH_STRATEGY_VERSION = 2;
 const BLOCKED_HOSTS = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|::1|metadata(?:\.|$)|169\.254\.169\.254)$/i;
 
 function safeText(value: unknown, max: number) {
@@ -176,15 +177,95 @@ export async function fetchPublicPage(url: string, signal?: AbortSignal): Promis
   finally { clearTimeout(timeout); }
 }
 
-export type TechnicalEvidence = { part_numbers: string[]; manufacturers: string[]; applications: string[]; models: string[]; specifications: string[]; source_urls: string[]; confidence: number; conflicts: string[] };
+export type TechnicalEvidence = { part_numbers: string[]; manufacturers: string[]; applications: string[]; models: string[]; specifications: string[]; source_urls: string[]; confidence: number; conflicts: string[]; candidates: TechnicalPartCandidate[] };
+
+export type TechnicalPartCandidate = {
+  part_number: string;
+  description: string | null;
+  manufacturer: string | null;
+  application: string | null;
+  source_url: string;
+  source_domain: string;
+  source_type: WebSearchResult['source_type'];
+  evidence_text: string;
+  confidence: number;
+  confidence_level: 'DISCOVERED' | 'LIKELY' | 'VERIFIED';
+  supporting_sources: string[];
+};
+
+export type TechnicalResearchQueryInput = {
+  manufacturer?: string;
+  model?: string;
+  year?: string | number;
+  part_description?: string;
+  system?: string;
+  application?: string;
+  old_part_number?: string;
+  serial?: string;
+  user_text?: string;
+};
+
+export function inferTechnicalResearchInput(text: string, products: any[] = [], settings: Record<string, unknown> = {}): TechnicalResearchQueryInput {
+  const value = safeText(text, 1000);
+  const model = value.match(/\b(?:[A-Z]{1,3}\s*)?\d{3,5}[A-Z]?\b/i)?.[0] || undefined;
+  const catalogManufacturer = products.find((product) => product?.brand)?.brand;
+  const contextualManufacturer = value.match(/\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})\s+\d{3,5}\b/)?.[1];
+  const manufacturer = safeText(catalogManufacturer || contextualManufacturer, 120) || undefined;
+  const partDescription = value.match(/(?:c[oó]digo|pn|p\/?n|part.?number|filtro|correia|rolamento|bomba|pe[cç]a)\s+(?:de\s+)?([\wÀ-ÿ -]{3,80})/i)?.[1] || safeText(settings.segment, 80) || value;
+  const year = value.match(/\b(?:19|20)\d{2}\b/)?.[0];
+  return { manufacturer, model, year, part_description: safeText(partDescription, 180), user_text: value };
+}
+
+export function planTechnicalResearchQueries(input: TechnicalResearchQueryInput) {
+  const manufacturer = safeText(input.manufacturer, 120);
+  const model = safeText(input.model, 120);
+  const year = safeText(input.year, 20);
+  const part = safeText(input.part_description || input.system || input.application, 180);
+  const oldPart = safeText(input.old_part_number, 100);
+  const base = [manufacturer, model, year, part].filter(Boolean).join(' ');
+  const queries = [
+    base ? `${base} part number` : safeText(input.user_text, MAX_QUERY),
+    base ? `${base} PN OEM` : '',
+    oldPart ? `${oldPart} replacement equivalent ${manufacturer}` : '',
+    manufacturer && model && part ? `site:${manufacturerDomains(manufacturer)[0] || manufacturer} ${model} ${part}` : '',
+    manufacturer && model && part ? `${manufacturer} ${model} ${part} catalog` : '',
+  ];
+  return [...new Set(queries.map((query) => safeText(query, MAX_QUERY)).filter(Boolean))].slice(0, 3);
+}
+
+function candidateLevel(confidence: number): TechnicalPartCandidate['confidence_level'] {
+  return confidence >= 0.9 ? 'VERIFIED' : confidence >= 0.55 ? 'LIKELY' : 'DISCOVERED';
+}
+
+function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageResponse[]) {
+  const page = pages.find((item) => item.url === result.url);
+  const evidenceText = safeText(`${result.title} ${result.snippet} ${page?.text || ''}`, 1800);
+  const labelled = [...evidenceText.matchAll(/(?:part\s*(?:number|no)?|p\/?n|oem|c[oó]digo|refer[eê]ncia|reference)\s*[:#-]?\s*([A-Z0-9][A-Z0-9./ -]{3,})/gi)].map((match) => match[1].trim().split(/\s+(?:for|fits|compatible|replaces|replacement)\b/i)[0]);
+  const alphanumeric = evidenceText.match(/\b[A-Z]{1,6}[- ]?\d{3,}[A-Z0-9-]*\b/gi) || [];
+  const numbers = [...new Set([...labelled, ...alphanumeric].map((value) => value.toUpperCase().replace(/[.,;:]$/, '')).filter((value) => /[A-Z]/.test(value) && /\d/.test(value) && value.length >= 4 && value.length <= 40))];
+  const confidence = result.source_type === 'manufacturer_official' ? 0.7 : result.source_type === 'distributor' || result.source_type === 'approved_catalog' ? 0.5 : 0.3;
+  return numbers.map((partNumber) => ({ part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: null, application: safeText(`${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate));
+}
 
 export function extractTechnicalEvidence(results: WebSearchResult[], pages: PageResponse[] = []): TechnicalEvidence {
   const all = [...results.map((item) => `${item.title} ${item.snippet}`), ...pages.map((item) => item.text)].join(' ');
-  const partNumbers = [...new Set((all.match(/\b(?:[A-Z]{1,5}[- ]?\d{2,}[A-Z0-9-]*|\d{2,}[A-Z]{1,4}[- ]?\d{1,})\b/gi) || []).map((item) => item.toUpperCase()).slice(0, 30))];
+  const candidatesByPart = new Map<string, TechnicalPartCandidate>();
+  for (const result of results) for (const candidate of extractPartCandidatesFromResult(result, pages)) {
+    const key = candidate.part_number.replace(/[\s./-]/g, '').toUpperCase();
+    const current = candidatesByPart.get(key);
+    if (!current) candidatesByPart.set(key, candidate);
+    else {
+      const sources = [...new Set([...current.supporting_sources, ...candidate.supporting_sources])];
+      const confidence = Math.min(0.98, current.confidence + (candidate.source_type === 'manufacturer_official' ? 0.2 : 0.1));
+      candidatesByPart.set(key, { ...current, confidence, confidence_level: candidateLevel(confidence), supporting_sources: sources, evidence_text: safeText(`${current.evidence_text} ${candidate.evidence_text}`, 1000) });
+    }
+  }
+  const candidates = [...candidatesByPart.values()];
+  const partNumbers = candidates.map((candidate) => candidate.part_number).slice(0, 30);
   const manufacturers = [...new Set(results.filter((item) => item.source_type === 'manufacturer_official').map((item) => item.domain).slice(0, 10))];
   const urls = [...new Set([...results.map((item) => item.url), ...pages.map((item) => item.url)])].slice(0, 20);
   const unique = new Set(results.map((item) => item.snippet.toLocaleLowerCase('pt-BR')).filter(Boolean));
-  return { part_numbers: partNumbers, manufacturers, applications: [], models: [], specifications: [], source_urls: urls, confidence: results.length >= 2 && unique.size >= 2 ? 0.65 : results.length ? 0.35 : 0, conflicts: [] };
+  return { part_numbers: partNumbers, manufacturers, applications: [], models: [], specifications: [], source_urls: urls, confidence: candidates.length > 1 ? 0.65 : candidates.length ? candidates[0].confidence : results.length >= 2 && unique.size >= 2 ? 0.35 : 0, conflicts: candidates.length > 1 ? ['Mais de um PN candidato foi encontrado; confirmar aplicação.'] : [], candidates };
 }
 
 export function isTechnicalResearchNeeded(input: { text: string; manufacturer?: string; model?: string; part_number?: string; userAskedExternal?: boolean }) {
@@ -202,7 +283,7 @@ export function manufacturerDomains(manufacturer?: string) {
 export { safeText };
 
 function queryHash(input: WebSearchInput) {
-  const normalized = JSON.stringify({ query: safeText(input.query, MAX_QUERY).toLocaleLowerCase('pt-BR'), manufacturer: safeText(input.manufacturer, 160).toLocaleLowerCase('pt-BR'), part_number: safeText(input.part_number, 120).toLocaleUpperCase('pt-BR'), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), domains: (input.domains || []).slice().sort() });
+  const normalized = JSON.stringify({ strategy: RESEARCH_STRATEGY_VERSION, query: safeText(input.query, MAX_QUERY).toLocaleLowerCase('pt-BR'), manufacturer: safeText(input.manufacturer, 160).toLocaleLowerCase('pt-BR'), part_number: safeText(input.part_number, 120).toLocaleUpperCase('pt-BR'), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), domains: (input.domains || []).slice().sort() });
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized)).then((buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join(''));
 }
 
@@ -216,7 +297,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   } catch { /* cache is an optimization; research can continue */ }
   const provider = WebSearchProviderRegistry.create();
   const queryParts = [input.query.query, input.query.manufacturer, input.query.model, input.query.part_number, input.query.application].filter(Boolean).map((part) => safeText(part, 240));
-  const queries = [...new Set([queryParts.join(' '), input.query.part_number ? `${input.query.part_number} ${input.query.manufacturer || ''}` : '', input.query.manufacturer && input.query.model ? `${input.query.manufacturer} ${input.query.model} ${input.query.application || ''}` : ''].filter(Boolean))].slice(0, 3);
+  const queries = planTechnicalResearchQueries({ manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, user_text: queryParts.join(' ') });
   const allResults: WebSearchResult[] = [];
   const startedAt = Date.now();
   let queriesExecuted = 0;
@@ -233,7 +314,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
   const evidence = extractTechnicalEvidence(uniqueResults, pages);
-  const result = { provider: provider.name, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, cache_hit: false, cache_miss: true, queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const result = { provider: provider.name, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_strategy_version: RESEARCH_STRATEGY_VERSION, cache_hit: false, cache_miss: true, queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {

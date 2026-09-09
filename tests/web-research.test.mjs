@@ -61,3 +61,15 @@ test('Brave requests are bounded and record safe cost metrics', () => {
   assert.match(assistant, /cache_miss/);
   assert.doesNotMatch(assistant, /WEB_SEARCH_API_KEY/);
 });
+
+test('technical research plans discovery before serial confirmation and creates evidence candidates', () => {
+  assert.match(provider, /TechnicalResearchQueryPlanner|planTechnicalResearchQueries/);
+  assert.match(provider, /part number/);
+  assert.match(provider, /site:\$\{manufacturerDomains/);
+  assert.match(provider, /confidence_level: 'DISCOVERED' \| 'LIKELY' \| 'VERIFIED'/);
+  assert.match(provider, /supporting_sources/);
+  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 2/);
+  assert.match(assistant, /pesquise e apresente PNs candidatos/);
+  assert.match(assistant, /PART_CANDIDATES_READY/);
+  assert.match(assistant, /productIntelligence\.candidates =/);
+});
