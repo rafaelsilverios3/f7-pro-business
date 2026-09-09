@@ -91,6 +91,11 @@ async function logStage(sb: any, companyId: string, stage: string, details: Reco
         provider_param: typeof details.provider_param === 'string' ? safeText(details.provider_param, 120) : undefined,
         provider_request_id: typeof details.provider_request_id === 'string' ? safeText(details.provider_request_id, 120) : undefined,
         resource: typeof details.resource === 'string' ? safeText(details.resource, 80) : undefined,
+        provider: typeof details.provider === 'string' ? safeText(details.provider, 80) : undefined,
+        queries_executed: typeof details.queries_executed === 'number' ? details.queries_executed : undefined,
+        results_count: typeof details.results_count === 'number' ? details.results_count : undefined,
+        cache_hit: typeof details.cache_hit === 'boolean' ? details.cache_hit : undefined,
+        cache_miss: typeof details.cache_miss === 'boolean' ? details.cache_miss : undefined,
         provider_config: details.provider_config,
         model: typeof details.model === 'string' ? safeText(details.model, 120) : undefined,
       },
@@ -299,7 +304,7 @@ Deno.serve(async (req) => {
         webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, domains: manufacturerDomains((products || [])[0]?.brand), locale: 'pt-BR', max_results: 5 }, ttl_hours: 24, max_pages: 2 });
         for (const result of webResearch.results || []) sourceMetadata.push({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, snippet: result.snippet, retrieved_at: result.retrieved_at, confidence: result.source_type === 'manufacturer_official' ? 'high' : 'low' });
         productIntelligence.web_research = { searched: true, provider: webResearch.provider, evidence: webResearch.evidence, conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
-        await logStage(sb, conversation.company_id, webResearch.results?.length ? 'WEB_SEARCH_OK' : 'WEB_SEARCH_FAILED', { resource: webResearch.provider, duration_ms: webResearch.duration_ms });
+        await logStage(sb, conversation.company_id, webResearch.results?.length ? 'WEB_SEARCH_OK' : 'WEB_SEARCH_FAILED', { resource: webResearch.provider, provider: webResearch.provider, duration_ms: webResearch.duration_ms, queries_executed: webResearch.queries_executed, results_count: webResearch.results_count || webResearch.results?.length || 0, cache_hit: Boolean(webResearch.cache_hit), cache_miss: Boolean(webResearch.cache_miss) });
         await logStage(sb, conversation.company_id, 'EVIDENCE_EXTRACTED', { resource: `${webResearch.evidence?.source_urls?.length || 0}_sources` });
         await logStage(sb, conversation.company_id, 'WEB_RESEARCH_COMPLETED', { duration_ms: webResearch.duration_ms });
       } else {

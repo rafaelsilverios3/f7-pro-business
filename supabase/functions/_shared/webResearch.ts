@@ -25,6 +25,7 @@ export type WebSearchResponse = {
   searched: boolean;
   code?: string;
   duration_ms: number;
+  queries_executed?: number;
 };
 
 export type PageResponse = { url: string; title: string | null; text: string; retrieved_at: string; code?: string };
@@ -61,6 +62,24 @@ function providerConfig() {
   return { endpoint, key, provider };
 }
 
+const BRAVE_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';
+
+export function normalizeBraveResponse(payload: any, domains: string[] = [], retrievedAt = new Date().toISOString()): WebSearchResult[] {
+  const rows = Array.isArray(payload?.web?.results) ? payload.web.results : [];
+  return rows.map((row: any) => {
+    const parsed = safeUrl(row?.url);
+    if (!parsed) return null;
+    return {
+      title: safeText(row?.title, 240),
+      url: parsed.toString(),
+      domain: parsed.hostname,
+      snippet: safeText(row?.description || row?.snippet, MAX_SNIPPET),
+      retrieved_at: retrievedAt,
+      source_type: sourceType(parsed, domains),
+    } satisfies WebSearchResult;
+  }).filter((row: WebSearchResult | null): row is WebSearchResult => Boolean(row)).slice(0, MAX_RESULTS);
+}
+
 export interface WebSearchProvider { name: string; search(input: WebSearchInput, signal?: AbortSignal): Promise<WebSearchResponse>; }
 
 export class PublicWebSearchProvider implements WebSearchProvider {
@@ -91,6 +110,40 @@ export class PublicWebSearchProvider implements WebSearchProvider {
   }
 }
 
+export class BraveWebSearchProvider implements WebSearchProvider {
+  name = 'BraveWebSearchProvider';
+  async search(input: WebSearchInput, signal?: AbortSignal): Promise<WebSearchResponse> {
+    const started = Date.now();
+    const config = providerConfig();
+    if (!config.key) return { results: [], provider: this.name, searched: false, code: 'WEB_SEARCH_NOT_CONFIGURED', duration_ms: Date.now() - started, queries_executed: 0 };
+    const configuredEndpoint = config.endpoint || BRAVE_ENDPOINT;
+    const endpoint = safeUrl(configuredEndpoint);
+    if (!endpoint || endpoint.origin !== 'https://api.search.brave.com' || endpoint.pathname !== '/res/v1/web/search') return { results: [], provider: this.name, searched: false, code: 'WEB_SEARCH_ENDPOINT_INVALID', duration_ms: Date.now() - started, queries_executed: 0 };
+    const params = new URLSearchParams({ q: safeText(input.query, 600), count: String(Math.min(Math.max(Number(input.max_results || 5), 1), 20)) });
+    const locale = safeText(input.locale || 'pt-BR', 20).split('-');
+    if (locale[0]) params.set('search_lang', locale[0].toLowerCase());
+    if (locale[1]) params.set('country', locale[1].toUpperCase());
+    const safesearch = safeText(Deno.env.get('WEB_SEARCH_SAFESEARCH') || 'moderate', 20).toLowerCase();
+    if (['off', 'moderate', 'strict'].includes(safesearch)) params.set('safesearch', safesearch);
+    endpoint.search = params.toString();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(Deno.env.get('WEB_SEARCH_TIMEOUT_MS') || DEFAULT_SEARCH_TIMEOUT));
+    if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+    try {
+      const response = await fetch(endpoint.toString(), { method: 'GET', headers: { Accept: 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': config.key }, signal: controller.signal });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const braveCode = safeText(payload?.error?.code, 80).toUpperCase();
+        const code = response.status === 401 || response.status === 403 ? 'WEB_SEARCH_AUTH_ERROR' : response.status === 429 || braveCode === 'RATE_LIMITED' || braveCode === 'QUOTA_LIMITED' ? 'WEB_SEARCH_RATE_LIMITED' : response.status >= 500 ? 'WEB_SEARCH_UNAVAILABLE' : 'WEB_SEARCH_PROVIDER_ERROR';
+        return { results: [], provider: this.name, searched: true, code, duration_ms: Date.now() - started, queries_executed: 1 };
+      }
+      const results = normalizeBraveResponse(payload, input.domains, new Date().toISOString());
+      return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', duration_ms: Date.now() - started, queries_executed: 1 };
+    } catch (error) { return { results: [], provider: this.name, searched: true, code: error?.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started, queries_executed: 1 }; }
+    finally { clearTimeout(timeout); }
+  }
+}
+
 export class UnavailableWebSearchProvider implements WebSearchProvider {
   name = 'UnavailableWebSearchProvider';
   async search(_input: WebSearchInput): Promise<WebSearchResponse> { return { results: [], provider: this.name, searched: false, code: 'WEB_SEARCH_NOT_CONFIGURED', duration_ms: 0 }; }
@@ -98,7 +151,9 @@ export class UnavailableWebSearchProvider implements WebSearchProvider {
 
 export const WebSearchProviderRegistry = Object.freeze({
   create(): WebSearchProvider {
-    return providerConfig().provider === 'disabled' ? new UnavailableWebSearchProvider() : new PublicWebSearchProvider();
+    const provider = providerConfig().provider;
+    if (provider === 'brave') return new BraveWebSearchProvider();
+    return provider === 'disabled' ? new UnavailableWebSearchProvider() : new PublicWebSearchProvider();
   },
 });
 
@@ -157,16 +212,18 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   const now = new Date().toISOString();
   try {
     const cached = await input.sb.from('product_research_runs').select('id,status,result,expires_at').eq('company_id', input.company_id).eq('query_hash', hash).eq('status', 'completed').gt('expires_at', now).order('completed_at', { ascending: false }).limit(1).maybeSingle();
-    if (!cached.error && cached.data?.result) return { ...cached.data.result, cache_hit: true, query_hash: hash, duration_ms: Date.now() - started };
+    if (!cached.error && cached.data?.result) return { ...cached.data.result, cache_hit: true, cache_miss: false, query_hash: hash, duration_ms: Date.now() - started };
   } catch { /* cache is an optimization; research can continue */ }
   const provider = WebSearchProviderRegistry.create();
   const queryParts = [input.query.query, input.query.manufacturer, input.query.model, input.query.part_number, input.query.application].filter(Boolean).map((part) => safeText(part, 240));
-  const queries = [...new Set([queryParts.join(' '), input.query.part_number ? `${input.query.part_number} ${input.query.manufacturer || ''}` : '', input.query.manufacturer && input.query.model ? `${input.query.manufacturer} ${input.query.model} ${input.query.application || ''}` : ''].filter(Boolean))].slice(0, 4);
+  const queries = [...new Set([queryParts.join(' '), input.query.part_number ? `${input.query.part_number} ${input.query.manufacturer || ''}` : '', input.query.manufacturer && input.query.model ? `${input.query.manufacturer} ${input.query.model} ${input.query.application || ''}` : ''].filter(Boolean))].slice(0, 3);
   const allResults: WebSearchResult[] = [];
   const startedAt = Date.now();
+  let queriesExecuted = 0;
   for (const query of queries) {
     if (Date.now() - startedAt > 15_000) break;
     const response = await provider.search({ ...input.query, query, domains: input.query.domains?.length ? input.query.domains : manufacturerDomains(input.query.manufacturer), max_results: input.query.max_results || 5 });
+    queriesExecuted += response.queries_executed || 1;
     allResults.push(...response.results);
     if (response.code === 'WEB_SEARCH_NOT_CONFIGURED') break;
   }
@@ -176,7 +233,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
   const evidence = extractTechnicalEvidence(uniqueResults, pages);
-  const result = { provider: provider.name, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, cache_hit: false, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const result = { provider: provider.name, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, cache_hit: false, cache_miss: true, queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {

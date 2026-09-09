@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const provider = fs.readFileSync('supabase/functions/_shared/webResearch.ts', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0040_web_research_backend_permissions.sql', 'utf8');
+const braveFixture = { web: { results: [{ title: 'Correia OEM', url: 'https://deere.com/parts/123', description: 'Aplicação S540 PN RE123' }] } };
 
 test('web research provider is server-side and disabled without backend configuration', () => {
   assert.match(provider, /WEB_SEARCH_API_KEY/);
@@ -37,4 +38,26 @@ test('web research grants are server-side only and write scope is minimal', () =
   assert.doesNotMatch(migration, /grant all/i);
   assert.match(migration, /external_product_intelligence.*plan_name = 'premium'/s);
   assert.match(migration, /company_feature_overrides/);
+});
+
+test('Brave adapter follows the real endpoint contract and parses the web fixture', () => {
+  assert.equal(braveFixture.web.results[0].title, 'Correia OEM');
+  assert.equal(braveFixture.web.results[0].url, 'https://deere.com/parts/123');
+  assert.match(provider, /BraveWebSearchProvider/);
+  assert.match(provider, /https:\/\/api\.search\.brave\.com\/res\/v1\/web\/search/);
+  assert.match(provider, /X-Subscription-Token/);
+  assert.match(provider, /payload\?\.web\?\.results/);
+  assert.match(provider, /row\?\.description \|\| row\?\.snippet/);
+  assert.match(provider, /WEB_SEARCH_AUTH_ERROR/);
+  assert.match(provider, /WEB_SEARCH_RATE_LIMITED/);
+  assert.match(provider, /WEB_SEARCH_TIMEOUT/);
+});
+
+test('Brave requests are bounded and record safe cost metrics', () => {
+  assert.match(provider, /slice\(0, 3\)/);
+  assert.match(provider, /queries_executed/);
+  assert.match(provider, /results_count/);
+  assert.match(assistant, /cache_hit/);
+  assert.match(assistant, /cache_miss/);
+  assert.doesNotMatch(assistant, /WEB_SEARCH_API_KEY/);
 });
