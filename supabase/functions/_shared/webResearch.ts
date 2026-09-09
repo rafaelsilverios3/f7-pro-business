@@ -36,16 +36,16 @@ const MAX_RESULTS = 10;
 const DEFAULT_SEARCH_TIMEOUT = 8000;
 const DEFAULT_PAGE_TIMEOUT = 8000;
 const MAX_PAGE_BYTES = 1_000_000;
-const BLOCKED_HOSTS = /^(localhost|127(?:\\.\\d{1,3}){3}|0\\.0\\.0\\.0|::1|metadata(?:\\.|$)|169\\.254\\.169\\.254)$/i;
+const BLOCKED_HOSTS = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|::1|metadata(?:\.|$)|169\.254\.169\.254)$/i;
 
 function safeText(value: unknown, max: number) {
-  return String(value || '').replace(/[\\u0000-\\u001f]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, max);
+  return String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 function safeUrl(value: unknown) {
   try {
     const parsed = new URL(String(value || ''));
     if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.port && !['80', '443'].includes(parsed.port)) return null;
-    if (BLOCKED_HOSTS.test(parsed.hostname) || /^10\\.|^192\\.168\\.|^172\\.(?:1[6-9]|2\\d|3[01])\\.|^fc|^fd|^fe80:/i.test(parsed.hostname)) return null;
+    if (BLOCKED_HOSTS.test(parsed.hostname) || /^10\.|^192\.168\.|^172\.(?:1[6-9]|2\d|3[01])\.|^fc|^fd|^fe80:/i.test(parsed.hostname)) return null;
     return parsed;
   } catch { return null; }
 }
@@ -168,10 +168,10 @@ export async function fetchPublicPage(url: string, signal?: AbortSignal): Promis
     if (response.status >= 300 && response.status < 400) return { url: parsed.toString(), title: null, text: '', retrieved_at: new Date().toISOString(), code: 'WEB_PAGE_REDIRECT_NOT_FOLLOWED' };
     const contentType = response.headers.get('content-type') || '';
     const length = Number(response.headers.get('content-length') || 0);
-    if (!response.ok || length > MAX_PAGE_BYTES || !/text\\/(html|plain)|application\\/xhtml\\+xml/i.test(contentType)) return { url: parsed.toString(), title: null, text: '', retrieved_at: new Date().toISOString(), code: 'WEB_PAGE_UNSUPPORTED' };
+    if (!response.ok || length > MAX_PAGE_BYTES || !/text\/(html|plain)|application\/xhtml\+xml/i.test(contentType)) return { url: parsed.toString(), title: null, text: '', retrieved_at: new Date().toISOString(), code: 'WEB_PAGE_UNSUPPORTED' };
     const text = safeText(await response.text(), MAX_PAGE_BYTES);
-    const title = safeText(text.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1], 240) || null;
-    return { url: parsed.toString(), title, text: text.replace(/<script[\\s\\S]*?<\\/script>|<style[\\s\\S]*?<\\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').slice(0, MAX_PAGE_BYTES), retrieved_at: new Date().toISOString() };
+    const title = safeText(text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1], 240) || null;
+    return { url: parsed.toString(), title, text: text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, MAX_PAGE_BYTES), retrieved_at: new Date().toISOString() };
   } catch (error) { return { url: parsed.toString(), title: null, text: '', retrieved_at: new Date().toISOString(), code: error?.name === 'AbortError' ? 'WEB_PAGE_TIMEOUT' : 'WEB_PAGE_FETCH_FAILED' }; }
   finally { clearTimeout(timeout); }
 }
@@ -180,7 +180,7 @@ export type TechnicalEvidence = { part_numbers: string[]; manufacturers: string[
 
 export function extractTechnicalEvidence(results: WebSearchResult[], pages: PageResponse[] = []): TechnicalEvidence {
   const all = [...results.map((item) => `${item.title} ${item.snippet}`), ...pages.map((item) => item.text)].join(' ');
-  const partNumbers = [...new Set((all.match(/\\b(?:[A-Z]{1,5}[- ]?\\d{2,}[A-Z0-9-]*|\\d{2,}[A-Z]{1,4}[- ]?\\d{1,})\\b/gi) || []).map((item) => item.toUpperCase()).slice(0, 30))];
+  const partNumbers = [...new Set((all.match(/\b(?:[A-Z]{1,5}[- ]?\d{2,}[A-Z0-9-]*|\d{2,}[A-Z]{1,4}[- ]?\d{1,})\b/gi) || []).map((item) => item.toUpperCase()).slice(0, 30))];
   const manufacturers = [...new Set(results.filter((item) => item.source_type === 'manufacturer_official').map((item) => item.domain).slice(0, 10))];
   const urls = [...new Set([...results.map((item) => item.url), ...pages.map((item) => item.url)])].slice(0, 20);
   const unique = new Set(results.map((item) => item.snippet.toLocaleLowerCase('pt-BR')).filter(Boolean));
@@ -190,7 +190,7 @@ export function extractTechnicalEvidence(results: WebSearchResult[], pages: Page
 export function isTechnicalResearchNeeded(input: { text: string; manufacturer?: string; model?: string; part_number?: string; userAskedExternal?: boolean }) {
   if (input.userAskedExternal) return true;
   const value = `${input.text} ${input.manufacturer || ''} ${input.model || ''} ${input.part_number || ''}`.toLocaleLowerCase('pt-BR');
-  return Boolean(input.manufacturer || input.model || input.part_number || /\\b(pn|p\\/?n|part.?number|c[oó]digo|compatibilidade|aplica[cç][aã]o|modelo|serial|chassi|pin|equivalente|fabricante)\\b/i.test(value));
+  return Boolean(input.manufacturer || input.model || input.part_number || /\b(pn|p\/?n|part.?number|c[oó]digo|compatibilidade|aplica[cç][aã]o|modelo|serial|chassi|pin|equivalente|fabricante)\b/i.test(value));
 }
 
 export function manufacturerDomains(manufacturer?: string) {
