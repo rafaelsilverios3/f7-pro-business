@@ -2,6 +2,7 @@ import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
 import { CompanyInternalSource } from '../_shared/officialSources.ts';
 import { resolveProductOrPart } from '../_shared/productIntelligence.ts';
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains } from '../_shared/webResearch.ts';
+import { createAssistantDecision } from '../_shared/assistantDecision.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -420,6 +421,15 @@ Deno.serve(async (req) => {
     stage = 'SOURCE_METADATA_READY';
     await logStage(sb, conversation.company_id, stage, { source_count: sourceMetadata.length });
     const productIntelligenceContext = sanitizeProductIntelligence(productIntelligence);
+    const assistantDecision = createAssistantDecision({
+      text: latestText,
+      candidates: productIntelligenceContext.candidates,
+      researchPending: productIntelligenceContext.web_research?.code === 'WEB_RESEARCH_NOT_REQUESTED',
+      unresolvedQuestions: productIntelligenceContext.missing_information,
+      // Automatic replies remain opt-in and are intentionally not enabled by
+      // the assisted suggestion endpoint.
+      automaticReplyEnabled: false,
+    });
     stage = 'AI_CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage, { candidate_count: productIntelligenceContext.candidates.length });
     // The provider receives only sanitized context and source metadata, never
@@ -436,12 +446,12 @@ Deno.serve(async (req) => {
       await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'failure', providerSuggestion.code, bounded.length, relevantProducts.length, sourceMetadata.length);
       const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_EXCEEDED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_PROVIDER_MODEL_NOT_FOUND' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_STRUCTURED_OUTPUT_UNSUPPORTED' || providerSuggestion.code === 'AI_PROVIDER_CONFIG_INVALID' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
       await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: providerSuggestion.code, provider_code: providerSuggestion.provider_code, provider_type: providerSuggestion.provider_type, provider_param: providerSuggestion.provider_param, provider_request_id: providerSuggestion.request_id, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model }, http_status: status, model });
-      return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: sourceMetadata, missing_information: missingInformation }, status);
+      return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: sourceMetadata, missing_information: missingInformation, decision: assistantDecision }, status);
     }
     await logStage(sb, conversation.company_id, 'AI_RESPONSE_PARSED', { duration_ms: Date.now() - requestStartedAt, model });
     await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'success', null, bounded.length, relevantProducts.length, sourceMetadata.length);
     await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
-    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, sources: sourceMetadata, product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
+    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, decision: assistantDecision, sources: sourceMetadata, product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
   } catch (error) {
     const safeCode = safeInternalCode(error) || 'INTERNAL_PROVIDER_ERROR';
     const safeDetails = safeErrorDetails(error);
