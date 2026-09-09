@@ -374,17 +374,17 @@ export default function Atendimento() {
             <button
               key={c.id}
               onClick={() => handleSelect(c)}
-              className={`flex w-full flex-col gap-1 border-b border-slate-50 p-3 text-left hover:bg-slate-50 ${selected?.id === c.id ? 'bg-indigo-50' : ''}`}
+              className={`flex w-full flex-col gap-1 border-b border-slate-50 p-3 text-left transition-colors hover:bg-slate-50 ${selected?.id === c.id ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-inner' : ''}`}
             >
               <div className="flex items-center justify-between">
-                <span className="truncate text-sm font-medium text-slate-800">{c.customer_name}</span>
+                <span className={`truncate text-sm font-medium ${selected?.id === c.id ? 'text-white' : 'text-slate-800'}`}>{c.customer_name}</span>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[c.status]}`}>{STATUS_LABEL[c.status]}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <span className="rounded bg-slate-100 px-1.5 py-0.5">{CHANNEL_LABELS[c.channel]}</span>
-                {c.channel === 'whatsapp' && <span className="text-emerald-600">conectado</span>}
+              <div className={`flex items-center gap-1.5 text-[10px] ${selected?.id === c.id ? 'text-blue-100' : 'text-slate-400'}`}>
+                <span className={`rounded px-1.5 py-0.5 ${selected?.id === c.id ? 'bg-white/15 text-blue-50' : 'bg-slate-100'}`}>{CHANNEL_LABELS[c.channel]}</span>
+                {c.channel === 'whatsapp' && <span className={selected?.id === c.id ? 'text-emerald-200' : 'text-emerald-600'}>conectado</span>}
               </div>
-              <p className="truncate text-xs text-slate-400">{(c.messages || []).slice(-1)[0]?.text || c.subject || 'Sem mensagens'}</p>
+              <p className={`truncate text-xs ${selected?.id === c.id ? 'text-blue-100' : 'text-slate-400'}`}>{(c.messages || []).slice(-1)[0]?.text || c.subject || 'Sem mensagens'}</p>
             </button>
           ))}
         </div>

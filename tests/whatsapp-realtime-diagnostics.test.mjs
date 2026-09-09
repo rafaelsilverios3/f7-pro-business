@@ -34,6 +34,11 @@ test('Realtime is not considered confirmed before a valid company event arrives'
   assert.match(source, /authenticatedRealtime && realtimeEventReceived \? 'Tempo real conectado'/);
 });
 
+test('selected conversation uses the same blue-indigo gradient as the main menu', () => {
+  assert.match(source, /selected\?\.id === c\.id \? 'bg-gradient-to-r from-blue-600 to-indigo-600/);
+  assert.match(source, /selected\?\.id === c\.id \? 'text-white'/);
+});
+
 test('Realtime authenticates before creating and subscribing the channel', () => {
   const authIndex = source.indexOf('await supabase.auth.getSession()');
   const setAuthIndex = source.indexOf('await supabase.realtime.setAuth(token)');
