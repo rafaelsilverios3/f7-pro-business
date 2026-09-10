@@ -18,6 +18,7 @@ import { can } from '@/lib/permissions';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { getAssistantSettings } from '@/services/assistantSettingsService';
 import { suggestConversationReply } from '@/services/assistantSuggestService';
+import { assistantHandoffService } from '@/services/assistantHandoffService';
 import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 const STATUS_STYLE = {
@@ -96,6 +97,9 @@ export default function Atendimento() {
   const [assistantSuggestion, setAssistantSuggestion] = useState(null);
   const [showAssistantInvestigation, setShowAssistantInvestigation] = useState(false);
   const [assistantError, setAssistantError] = useState('');
+  const [activeHandoff, setActiveHandoff] = useState(null);
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const [handoffError, setHandoffError] = useState('');
   const [products, setProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogOptions, setCatalogOptions] = useState([]);
@@ -113,8 +117,19 @@ export default function Atendimento() {
   const selectedRef = useRef(selected);
   const conversationsRef = useRef(conversations);
   const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
+  const handoffCanManage = Boolean(!membership.loading && membership.active && can({ role: membership.role }, 'assistant_handoff.manage'));
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { setAssistantSuggestion(null); setAssistantError(''); setShowAssistantInvestigation(false); }, [selected?.id]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!company?.id || !selected?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setActiveHandoff(null); return undefined; }
+    setHandoffLoading(true); setHandoffError('');
+    assistantHandoffService.active(company.id, selected.id)
+      .then((handoff) => { if (!cancelled) setActiveHandoff(handoff); })
+      .catch(() => { if (!cancelled) { setActiveHandoff(null); setHandoffError('Não foi possível consultar a transferência.'); } })
+      .finally(() => { if (!cancelled) setHandoffLoading(false); });
+    return () => { cancelled = true; };
+  }, [company?.id, selected?.id]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
   const load = async (silent = false) => {
@@ -297,7 +312,7 @@ export default function Atendimento() {
 
   const handleSelect = (c) => {
     setSelected(c);
-    if (c.status === 'waiting_human' || c.status === 'ai_assisting') {
+    if (c.status === 'ai_assisting') {
       (import.meta.env.VITE_DATA_PROVIDER === 'supabase'
         ? conversationsService.update(company.id, c.id, { status: 'in_progress', assignee: c.assignee || 'Você' })
         : base44.entities.Conversation.update(c.id, { status: 'in_progress', assignee: c.assignee || 'Você' })).then(() => load());
@@ -340,9 +355,32 @@ export default function Atendimento() {
 
   const transferToHuman = async () => {
     if (!selected) return;
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await conversationsService.update(company.id, selected.id, { status: 'waiting_human', ai_enabled: false });
-    else await base44.entities.Conversation.update(selected.id, { status: 'waiting_human', ai_enabled: false });
-    load();
+    setHandoffLoading(true); setHandoffError('');
+    try {
+      if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+        const decision = assistantSuggestion?.decision || {};
+        const handoff = await assistantHandoffService.create(company.id, selected.id, { trace_id: decision.trace_id, reason: 'manual_transfer', summary: decision.explanation || 'Transferência manual solicitada no Smart Atendimento.', known_facts: [...(Array.isArray(decision.known_facts) ? decision.known_facts : []), ...(Array.isArray(decision.discovered_facts) ? decision.discovered_facts : [])], unresolved_facts: Array.isArray(decision.unresolved_facts) ? decision.unresolved_facts : [], candidates: Array.isArray(decision.candidates) ? decision.candidates : [], sources: Array.isArray(assistantSuggestion?.sources) ? assistantSuggestion.sources : [] });
+        setActiveHandoff(handoff);
+      } else await base44.entities.Conversation.update(selected.id, { status: 'waiting_human', ai_enabled: false });
+      await load();
+    } catch { setHandoffError('Não foi possível criar a transferência.'); }
+    finally { setHandoffLoading(false); }
+  };
+
+  const claimHandoff = async () => {
+    if (!activeHandoff || !handoffCanManage) return;
+    setHandoffLoading(true); setHandoffError('');
+    try { setActiveHandoff(await assistantHandoffService.claim(company.id, activeHandoff.id)); await load(true); }
+    catch { setHandoffError('Esta transferência já foi assumida ou não está disponível.'); }
+    finally { setHandoffLoading(false); }
+  };
+
+  const resolveHandoff = async () => {
+    if (!activeHandoff || !handoffCanManage) return;
+    setHandoffLoading(true); setHandoffError('');
+    try { await assistantHandoffService.resolve(company.id, activeHandoff.id); setActiveHandoff(null); await load(true); }
+    catch { setHandoffError('Não foi possível concluir a transferência.'); }
+    finally { setHandoffLoading(false); }
   };
 
   const finishConversation = async () => {
@@ -460,10 +498,16 @@ export default function Atendimento() {
                 <div className="flex gap-2">
                   {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && assistantCanSuggest && <Button size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Gerando sugestão...' : 'Sugerir resposta'}</Button>}
                   <Button size="sm" variant="outline" onClick={createOpportunity}><UserPlus className="mr-1 h-3.5 w-3.5" /> Oportunidade</Button>
-                  <Button size="sm" variant="outline" onClick={transferToHuman} disabled={selected.status === 'waiting_human'}>Transferir</Button>
+                  <Button size="sm" variant="outline" onClick={transferToHuman} disabled={handoffLoading || Boolean(activeHandoff)}>Transferir</Button>
                   <Button size="sm" variant="outline" onClick={finishConversation} disabled={selected.status === 'finished'}>Finalizar</Button>
                 </div>
               </div>
+
+              {(activeHandoff || handoffError) && <div className="flex flex-wrap items-center gap-2 border-b border-amber-300/30 bg-amber-950/30 px-5 py-2 text-xs text-amber-100">
+                {activeHandoff && <><span className="font-semibold">Handoff: {activeHandoff.status === 'assigned' ? 'em atendimento humano' : 'aguardando responsável'}</span><span>Motivo: {activeHandoff.reason_code}</span>{activeHandoff.trace_id && <span>Trace: {activeHandoff.trace_id}</span>}</>}
+                {handoffError && <span>{handoffError}</span>}
+                <span className="ml-auto flex gap-2">{activeHandoff?.status === 'pending' && handoffCanManage && <Button size="sm" variant="outline" onClick={claimHandoff} disabled={handoffLoading}>Assumir atendimento</Button>}{activeHandoff?.status === 'assigned' && handoffCanManage && <Button size="sm" variant="outline" onClick={resolveHandoff} disabled={handoffLoading}>Concluir handoff</Button>}</span>
+              </div>}
 
               {/* Messages */}
               <div ref={chatRef} className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-5">

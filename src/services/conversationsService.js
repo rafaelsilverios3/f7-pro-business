@@ -7,7 +7,7 @@ const messages = createRepository('Message');
 
 const normalizeMessage = (row) => ({
   ...row,
-  sender: row.sender_type === 'user' ? 'agent' : row.sender_type,
+  sender: row.sender_type === 'user' ? 'agent' : row.sender_type === 'assistant' ? 'ai' : row.sender_type,
   text: row.content,
   timestamp: row.created_at,
   status: row.external_status || null,

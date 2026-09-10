@@ -1,5 +1,6 @@
 import { corsHeaders, json, admin } from '../_shared/core.ts';
 import { authorizeAutomaticAssistantDelivery } from '../_shared/assistantJobPolicy.ts';
+import { createAssistantHandoff } from '../_shared/assistantHandoff.ts';
 import { sendWhatsAppText } from '../_shared/whatsappOutbound.ts';
 
 const MAX_ATTEMPTS = 3;
@@ -66,6 +67,13 @@ Deno.serve(async (req) => {
 
   const policy = authorizeAutomaticAssistantDelivery({ settings: settingsResult.data, decision: suggestion.decision, provider_requires_human: suggestion.requires_human, provider_confidence: suggestion.confidence, suggestion: suggestion.suggestion });
   if (!policy.allowed) {
+    if (policy.status === 'handed_off') {
+      const handoff = await createAssistantHandoff({ sb, company_id: job.company_id, conversation_id: job.conversation_id, job_id: job.id, trace_id: suggestion.decision?.trace_id, reason: policy.reason, summary: suggestion.suggestion, decision: suggestion.decision, sources: suggestion.sources });
+      if (handoff.error) {
+        await finish(sb, job.id, 'failed', null, safeCode(handoff.error.code), 'handoff_create');
+        return json({ code: 'HANDOFF_CREATE_FAILED', stage: 'handoff_create' }, 500);
+      }
+    }
     await finish(sb, job.id, policy.status, null, policy.reason, 'policy');
     await logJob(sb, job.company_id, policy.status === 'handed_off' ? 'ASSISTANT_HANDOFF_REQUIRED' : 'ASSISTANT_JOB_WAITING_INPUT', 'success', { job_id: job.id, trace_id: suggestion.decision?.trace_id || null, reason: policy.reason, selected_action: suggestion.decision?.selected_action || null });
     return json({ status: policy.status, reason: policy.reason }, 200);

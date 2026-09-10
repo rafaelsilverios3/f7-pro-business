@@ -12,7 +12,7 @@ The implementation follows the master directive in isolated phases. Automatic re
 | 5 | Smart Atendimento on the orchestrator | Assisted UI consumes decision/trace and preserves human review |
 | 6 | Golden and controlled real-provider tests | Runtime fixtures plus documented Brave/OpenAI controlled run |
 | 7 | Jobs and auto reply | Implemented locally: atomic claim, bounded retry state, idempotent response, independent policy authorization; migration 0042 awaits manual application |
-| 8 | Structured handoff | Persisted dossier and resumable human workflow |
+| 8 | Structured handoff | Implemented locally: persisted dossier, atomic assignment and resumable human workflow; migration 0043 awaits manual application |
 | 9–15 | Knowledge, unified intelligence, automation, observability, budgets, hardening | Individual commits, migrations, tests, and deployment records |
 
 Every phase runs tests, both typechecks, lint, build, and Edge bundle validation when Edge code changes.
