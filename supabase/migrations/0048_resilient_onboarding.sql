@@ -17,6 +17,11 @@ begin
     raise exception 'Informe um nome de empresa válido';
   end if;
 
+  -- Serialize the first-company decision per authenticated user for the
+  -- duration of this transaction. Without this lock, two concurrent retries
+  -- could both miss membership and create two companies.
+  perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text, 0));
+
   -- Idempotent onboarding: a retry after a committed RPC returns the same
   -- company and membership instead of inserting another company.
   select c.* into created

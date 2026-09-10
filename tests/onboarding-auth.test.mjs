@@ -21,6 +21,8 @@ test('onboarding retries are idempotent at the database boundary', () => {
   const migration = fs.readFileSync('supabase/migrations/0048_resilient_onboarding.sql', 'utf8');
   assert.match(migration, /create or replace function public\.create_company_with_owner/);
   assert.match(migration, /member\.user_id = auth\.uid\(\)/);
+  assert.match(migration, /pg_advisory_xact_lock\(hashtextextended\(auth\.uid\(\)::text, 0\)\)/);
+  assert.ok(migration.indexOf('pg_advisory_xact_lock') < migration.indexOf('select c.* into created'));
   assert.match(migration, /if found then/);
   assert.match(migration, /grant execute .* authenticated/);
   assert.doesNotMatch(migration, /grant all/i);
