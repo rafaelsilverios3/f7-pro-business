@@ -43,6 +43,9 @@ export const F7ToolRegistry = Object.freeze({
     const names = new Set(['ConversationTool', 'CompanyKnowledgeTool']);
     if (input.intent === 'part_research' || input.intent === 'catalog_lookup') ['InternalCatalogTool', 'ProductTool', 'PartResearchTool'].forEach((name) => names.add(name));
     if (input.intent === 'part_research' && input.allow_web_research !== false) ['WebSearchTool', 'OfficialSourceTool'].forEach((name) => names.add(name));
+    if (input.intent === 'supplier_research') ['SupplierTool', 'SupplierResearchTool', 'MarketResearchTool'].forEach((name) => names.add(name));
+    if (input.intent === 'market_research') ['MarketResearchTool', 'OpportunityTool'].forEach((name) => names.add(name));
+    if (input.intent === 'opportunity_analysis') ['OpportunityTool', 'MarketResearchTool', 'SupplierResearchTool'].forEach((name) => names.add(name));
     return tools.filter((tool) => names.has(tool.name) && tool.enabled);
   },
 });

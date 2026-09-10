@@ -27,6 +27,14 @@ function selectDomain(input: F7AIOrchestratorInput) {
   return 'general_business';
 }
 
+function selectIntent(message: string) {
+  if (/\b(fornecedor|prazo de entrega|reputa[cç][aã]o|risco do fornecedor)\b/i.test(message)) return 'supplier_research';
+  if (/\b(mercado|demanda|tend[eê]ncia|concorr[eê]ncia|pre[cç]o m[eé]dio)\b/i.test(message)) return 'market_research';
+  if (/\b(oportunidade|potencial de venda|novo produto|viabilidade)\b/i.test(message)) return 'opportunity_analysis';
+  if (/\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(message)) return 'part_research';
+  return 'general_support';
+}
+
 export const F7AIOrchestrator = Object.freeze({
   orchestrate(input: F7AIOrchestratorInput): AssistantDecision {
     const intelligence = input.product_intelligence && typeof input.product_intelligence === 'object' ? input.product_intelligence : {};
@@ -36,7 +44,8 @@ export const F7AIOrchestrator = Object.freeze({
     const conflicts = Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts : [];
     const domain = selectDomain(input);
     const specialist = DomainSpecialistRegistry.select({ ...input.company, message: input.message, domain });
-    const tools = F7ToolRegistry.select({ intent: /\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(input.message) ? 'part_research' : 'general_support', domain, allow_web_research: input.company.allow_web_research !== false });
+    const intent = selectIntent(input.message);
+    const tools = F7ToolRegistry.select({ intent, domain, allow_web_research: input.company.allow_web_research !== false });
     return createAssistantDecision({
       traceId: input.trace_id,
       text: input.message,
