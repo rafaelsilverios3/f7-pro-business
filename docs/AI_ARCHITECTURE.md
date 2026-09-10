@@ -10,7 +10,7 @@
 
 Every run produces a trace-scoped decision containing intent, domain, objective, known/discovered/inferred facts, unresolved facts, evidence, candidates, conflicts, confidence, risks, possible and selected actions, human requirement, policy result, and explanation.
 
-In assisted mode, the decision is included in the sanitized model context and returned to the caller. The human still reviews and sends. In automatic mode, a future job worker must apply an independent policy check; model output never authorizes its own execution.
+In assisted mode, the decision is included in the sanitized model context and returned to the caller. The human still reviews and sends. In automatic mode, `assistant-worker` claims a persisted job atomically and applies an independent policy check; model output never authorizes its own execution.
 
 Smart Atendimento renders the same decision returned by the orchestrator. The editable suggestion shows confidence and the selected next action; “Ver investigação” exposes the trace, structured facts, searches, sources, candidates, scores, policy reason, and execution state. Choosing “Usar resposta” only copies text into the composer. Sending remains an explicit human action.
 
@@ -18,4 +18,4 @@ Legacy direct LLM execution in the inbox was removed so assisted suggestions hav
 
 ## Current phase boundary
 
-Phases 1–5 centralize orchestration, tool and specialist selection, research provenance, source trust, the agricultural benchmark adapter, and the assisted inbox flow. Persisted automatic jobs, structured handoff, feedback learning, and transactional action execution belong to later gated phases. Automatic replies remain disabled.
+Phases 1–15 centralize orchestration, tools, specialists, research, assisted review, jobs, handoff, verified knowledge, commercial intelligence, automation policy, observability and cost controls. Automatic replies are implemented behind server-side policy and remain disabled by default. Sensitive transactional actions remain blocked until dedicated authorization and atomic RPCs exist.

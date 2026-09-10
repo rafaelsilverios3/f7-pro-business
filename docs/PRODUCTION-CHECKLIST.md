@@ -1,19 +1,28 @@
-# Checklist de produção
+# Production checklist
 
-- Aplicar migrations 0001 a 0011 no projeto Supabase e confirmar RLS/grants.
-- Configurar apenas `VITE_DATA_PROVIDER`, `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`; nunca publicar service role.
-- Configurar URLs de redirect do Supabase Auth, confirmação de e-mail e recuperação de senha.
-- Configurar domínio, HTTPS, backups e retenção do banco.
-- Publicar Edge Functions de convite com secrets no Supabase.
-- Verificar GitHub Actions, Node 22, logs de erro e health check.
-- Testar isolamento entre empresas, usuários desativados, limites de plano e convites expirados.
-- Monitorar RLS, falhas de automação e erros de rede antes dos primeiros clientes.
-- Gateway de cobrança, WhatsApp e IA permanecem fora desta etapa.
+The authoritative readiness assessment is `PRODUCTION_READINESS.md`.
 
-## Hardening obrigatório
+## Before deploying
 
-Antes do go-live, aplicar a 0012, validar as RPCs com usuários de cada role e configurar a Edge Function de convites. Não usar service role, tokens puros ou alteração de plano pelo navegador.
+- Treat the remote migration ledger as unreconciled: the 2026-09-10 read-only audit returned no recorded versions although the 0041 schema exists.
+- Do not use `supabase db push` until a controlled schema-to-ledger reconciliation has been completed.
+- Apply 0042, 0043, 0044, 0045 and 0046 manually, in order.
+- Keep `automatic_reply_enabled = false` during deployment.
+- Configure secrets only in Supabase Edge Functions; never use privileged values in `VITE_*`.
+- Run tests, strict/typecheck, lint, build, Edge bundle, migration and frontend-secret validation.
+- Confirm the deployed Vercel revision equals the intended `main` SHA.
 
-## Integrações externas
+## After migrations
 
-Antes de produção, aplicar a 0013, publicar as Edge Functions, configurar secrets no Supabase e validar o webhook Meta. O modo local sem credenciais retorna integração não configurada e não interrompe o ERP.
+- Deploy `assistant-suggest`, `assistant-worker`, `whatsapp-webhook`, `whatsapp-send`, `automation-worker`, `ai-run-inspector` and `platform-health`.
+- Validate two-company isolation with admin, gestor and restricted users.
+- Run the assisted 7230J benchmark through Brave, ranking, OpenAI and human review.
+- Verify Realtime and its five-second polling fallback.
+- Verify AI budget denial and degraded external-provider fallback.
+- Enable automatic reply only for one controlled company after idempotency, low-confidence handoff and one-message/one-response tests pass.
+
+## Release blockers
+
+- A pending migration or failed CI gate blocks dependent deployment.
+- A missing secret blocks only its provider; it must not be copied into source code.
+- Automatic reply, sensitive automations and transactional actions stay disabled until their policy and smoke-test gates pass.

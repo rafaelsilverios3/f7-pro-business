@@ -153,7 +153,8 @@ test('autonomous research keeps provenance and discovers machine identity from e
 
 test('autonomous research refines queries with bounded adaptive rounds', () => {
   assert.match(provider, /WEB_RESEARCH_MAX_QUERIES/);
-  assert.match(provider, /Math\.min\(Math\.max\(Number\(Deno\.env\.get\('WEB_RESEARCH_MAX_QUERIES'\)/);
+  assert.match(provider, /boundedInteger\(Deno\.env\.get\('WEB_RESEARCH_MAX_QUERIES'\)/);
+  assert.match(provider, /round < maxRounds/);
   assert.match(provider, /pendingQueries\.push/);
   assert.match(provider, /discoveredManufacturer/);
   assert.match(provider, /queriesDiagnosticsWithinBudget/);

@@ -414,7 +414,21 @@ function queriesDiagnosticsWithinBudget(diagnostics: ResearchQueryDiagnostic[], 
   return diagnostics.length < maxQueries;
 }
 
-export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number; onQuery?: (event: 'WEB_SEARCH_QUERY_STARTED' | 'WEB_SEARCH_QUERY_COMPLETED' | 'WEB_SEARCH_QUERY_FAILED', details: ResearchQueryDiagnostic) => Promise<void> | void }) {
+type ResearchLimits = {
+  max_rounds?: number;
+  max_web_queries?: number;
+  max_total_results?: number;
+  max_page_fetches?: number;
+  max_duration_ms?: number;
+  max_cost?: number;
+};
+
+function boundedInteger(value: unknown, fallback: number, ceiling: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), ceiling) : fallback;
+}
+
+export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number; limits?: ResearchLimits; onQuery?: (event: 'WEB_SEARCH_QUERY_STARTED' | 'WEB_SEARCH_QUERY_COMPLETED' | 'WEB_SEARCH_QUERY_FAILED', details: ResearchQueryDiagnostic) => Promise<void> | void }) {
   const started = Date.now();
   const hash = await queryHash(input.query);
   const now = new Date().toISOString();
@@ -428,8 +442,15 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   const researchState: ResearchState = { original_request: safeText(input.query.query, MAX_QUERY), current_objective: safeText(input.query.application || input.query.query, MAX_QUERY), known_facts: [], discovered_facts: [], unresolved_facts: [], queries_executed: [], sources: [], candidates: [], conflicts: [], confidence: 0, evidence: [], next_research_step: 'REFINE_SEARCH' };
   if (initialInput.model) researchState.known_facts.push({ field: 'model', value: safeText(initialInput.model, 80), provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: now });
   if (initialInput.manufacturer) researchState.known_facts.push({ field: 'manufacturer', value: safeText(initialInput.manufacturer, 120), provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: now });
+  const maxRounds = boundedInteger(input.limits?.max_rounds, MAX_RESEARCH_ROUNDS, MAX_RESEARCH_ROUNDS);
+  const configuredMaxQueries = boundedInteger(Deno.env.get('WEB_RESEARCH_MAX_QUERIES'), MAX_WEB_QUERIES, MAX_WEB_QUERIES);
+  const maxQueries = Math.min(configuredMaxQueries, boundedInteger(input.limits?.max_web_queries, MAX_WEB_QUERIES, MAX_WEB_QUERIES));
+  const maxTotalResults = boundedInteger(input.limits?.max_total_results, MAX_TOTAL_RESULTS, MAX_TOTAL_RESULTS);
+  const maxPageFetches = boundedInteger(input.limits?.max_page_fetches, MAX_PAGE_FETCHES, MAX_PAGE_FETCHES);
+  const maxDurationMs = boundedInteger(input.limits?.max_duration_ms, MAX_RESEARCH_DURATION_MS, MAX_RESEARCH_DURATION_MS);
+  const maxCost = boundedInteger(input.limits?.max_cost, MAX_RESEARCH_COST, MAX_RESEARCH_COST);
   const queries = planTechnicalResearchQueries(initialInput);
-  const pendingQueries = [...queries];
+  const pendingQueries = queries.map((query) => ({ query, round: 1 }));
   const allResults: WebSearchResult[] = [];
   const startedAt = Date.now();
   let queriesExecuted = 0;
@@ -437,10 +458,9 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   let queriesWithoutInformationGain = 0;
   let stopReason: 'confidence_sufficient' | 'official_source_confirmed' | 'customer_data_required' | 'cost_budget_reached' | 'timeout' | 'sources_exhausted' | null = null;
   const queryDiagnostics: ResearchQueryDiagnostic[] = [];
-  const maxQueries = Math.min(Math.max(Number(Deno.env.get('WEB_RESEARCH_MAX_QUERIES') || MAX_WEB_QUERIES), 1), MAX_WEB_QUERIES, MAX_RESEARCH_COST);
-  while (pendingQueries.length && queriesDiagnosticsWithinBudget(queryDiagnostics, maxQueries) && queriesExecuted < MAX_RESEARCH_COST) {
-    const query = pendingQueries.shift()!;
-    if (Date.now() - startedAt > MAX_RESEARCH_DURATION_MS) { stopReason = 'timeout'; break; }
+  while (pendingQueries.length && queriesDiagnosticsWithinBudget(queryDiagnostics, maxQueries) && queriesExecuted < maxCost) {
+    const { query, round } = pendingQueries.shift()!;
+    if (Date.now() - startedAt > maxDurationMs) { stopReason = 'timeout'; break; }
     const queryIndex = queryDiagnostics.length + 1;
     const queryStarted = Date.now();
     const queryContext = { query_index: queryIndex, query_length: query.length, manufacturer_present: Boolean(input.query.manufacturer), model_present: Boolean(input.query.model), part_description_present: Boolean(input.query.application), parameter_names: ['q', 'count'], results_count: 0, duration_ms: 0 };
@@ -462,9 +482,12 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
         if (!target.some((existing) => existing.field === fact.field && existing.value.toLocaleLowerCase() === fact.value.toLocaleLowerCase())) target.push(fact);
       }
       const discoveredManufacturer = identity.manufacturer;
-      if (discoveredManufacturer && !initialInput.manufacturer) {
+      if (discoveredManufacturer && !initialInput.manufacturer && round < maxRounds) {
         const discoveredQueries = planTechnicalResearchQueries({ ...initialInput, manufacturer: discoveredManufacturer, user_text: `${queryParts.join(' ')} ${discoveredManufacturer}` });
-        for (const nextQuery of discoveredQueries) if (!researchState.queries_executed.includes(nextQuery) && !pendingQueries.includes(nextQuery)) pendingQueries.push(nextQuery);
+        for (const nextQuery of discoveredQueries) {
+          const alreadyPending = pendingQueries.some((pending) => pending.query === nextQuery);
+          if (!researchState.queries_executed.includes(nextQuery) && !alreadyPending) pendingQueries.push({ query: nextQuery, round: round + 1 });
+        }
       }
       const candidatePreview = extractTechnicalEvidence(allResults, [], { manufacturer: discoveredManufacturer || initialInput.manufacturer, model: initialInput.model, part_description: initialInput.part_description }).candidates;
       researchState.candidates = candidatePreview;
@@ -494,11 +517,11 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
       }
     }
   }
-  if (!stopReason && queriesExecuted >= MAX_RESEARCH_COST) stopReason = 'cost_budget_reached';
+  if (!stopReason && queriesExecuted >= maxCost) stopReason = 'cost_budget_reached';
   if (!stopReason && !pendingQueries.length) stopReason = 'sources_exhausted';
-  const uniqueResults = [...new Map(allResults.map((result) => [result.url, result])).values()].slice(0, MAX_TOTAL_RESULTS);
+  const uniqueResults = [...new Map(allResults.map((result) => [result.url, result])).values()].slice(0, maxTotalResults);
   const pages: PageResponse[] = [];
-  for (const result of uniqueResults.slice(0, Math.min(input.max_pages || 2, MAX_PAGE_FETCHES))) {
+  for (const result of uniqueResults.slice(0, Math.min(input.max_pages || 2, maxPageFetches))) {
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
   const resolvedIdentity = resolveMachineIdentity(uniqueResults, initialInput);
@@ -507,7 +530,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   const noResultQueries = queryDiagnostics.filter((item) => item.code === 'WEB_SEARCH_NO_RESULTS');
   const successfulQueries = queryDiagnostics.length - failedQueries.length;
   const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : uniqueResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
-  const result = { provider: provider.name, status, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_state: { ...researchState, discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: MAX_RESEARCH_ROUNDS, max_web_queries: MAX_WEB_QUERIES, max_total_results: MAX_TOTAL_RESULTS, max_page_fetches: MAX_PAGE_FETCHES, max_duration_ms: MAX_RESEARCH_DURATION_MS, max_cost: MAX_RESEARCH_COST }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const result = { provider: provider.name, status, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_state: { ...researchState, discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {

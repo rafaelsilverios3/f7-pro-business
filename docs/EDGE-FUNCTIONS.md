@@ -1,13 +1,21 @@
 # Edge Functions
 
-As funções em `supabase/functions` são a única camada autorizada a usar `SUPABASE_SERVICE_ROLE_KEY` e secrets externos. `invite-user` gera token aleatório, persiste somente SHA-256 e retorna link; `whatsapp-webhook` valida o desafio Meta, resolve empresa pelo `phone_number_id` e deduplica `external_message_id`; `whatsapp-send` e `ai-assistant` começam bloqueados por segurança; `integration-health` expõe somente flags.
+Supabase Edge Functions are the only application layer allowed to use `SUPABASE_SERVICE_ROLE_KEY` and external provider secrets. The frontend sends the authenticated user's session token to these functions and never calls Meta, OpenAI or Brave directly.
 
-Secrets: `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_ENABLED`, `AI_API_KEY`, `AI_ENABLED`. Nunca prefixar secrets com `VITE_`.
+## Current functions
 
-## Hardening de integrações
+- `assistant-suggest`: canonical assisted orchestrator entry point, bounded research, decision and policy.
+- `assistant-worker`: atomic automatic-job worker with retry/idempotency and independent authorization.
+- `automation-worker`: server-side trigger/condition/action evaluator; only explicitly safe actions execute.
+- `ai-run-inspector`: company-scoped safe trace inspection for admin/gestor.
+- `platform-health`: evidence-based provider/platform health without paid probes.
+- `whatsapp-webhook`, `whatsapp-send`, `whatsapp-connect`, `whatsapp-disconnect`, `whatsapp-test`: Meta inbound, outbound and lifecycle operations.
+- `integration-health`: safe integration state and diagnostics.
+- `invite-user`: server-side invitation flow.
+- `ai-assistant`: legacy compatibility path; new AI behavior belongs to `assistant-suggest` and the orchestrator.
 
-Antes de habilitar credenciais, aplicar a 0014, configurar `WHATSAPP_APP_SECRET`, `WHATSAPP_GRAPH_VERSION` e revisar `APP_ORIGIN`. Validar assinatura Meta, rate limits e respostas codificadas antes do deploy.
+## Secret boundary
 
-## Etapa 14
+Server-side secrets include `SUPABASE_SERVICE_ROLE_KEY`, `AI_API_KEY`, `WEB_SEARCH_API_KEY`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN`. CI scans frontend sources for these identifiers and external provider endpoints.
 
-O envio WhatsApp agora está preparado para a Graph API com `WHATSAPP_GRAPH_VERSION`, token exclusivamente server-side, destino derivado da conversa, rate limit e `client_request_id`. Foram adicionadas as functions `whatsapp-connect` e `whatsapp-disconnect`. A ativação continua controlada por `WHATSAPP_ENABLED=false`.
+Every function is bundled during CI. External response bodies, prompts, messages, headers, tokens and keys are excluded from operational traces; only safe status, stage, counts, domains and error codes are retained.

@@ -15,6 +15,14 @@ The implementation follows the master directive in isolated phases. Automatic re
 | 8 | Structured handoff | Implemented locally: persisted dossier, atomic assignment and resumable human workflow; migration 0043 awaits manual application |
 | 9 | Knowledge and feedback loop | Implemented locally: verified company knowledge plus immutable human feedback; migration 0044 awaits manual application |
 | 10 | Unified Product Intelligence | Implemented: one resolver merges catalog, verified applications, equivalences, knowledge, research history and external evidence |
-| 11–15 | Supplier/market/opportunity, pricing/CRM, automation, observability and hardening | Individual commits, migrations, tests, and deployment records |
+| 11 | Supplier, market and opportunity intelligence | Unified company-scoped commercial signals and read-only orchestrator tools |
+| 12 | Pricing and CRM intelligence | Cost-aware recommendations and company-scoped customer/sales signals |
+| 13 | Automation engine | Server-side trigger/condition/action policy with stable idempotency; migration 0045 pending |
+| 14 | Observability, cost control and health | Trace inspector, atomic budgets and platform health; migration 0046 pending |
+| 15 | Production hardening | CI bundles every Edge Function, validates migrations/secrets and records honest readiness blockers |
 
 Every phase runs tests, both typechecks, lint, build, and Edge bundle validation when Edge code changes.
+
+## Deployment boundary
+
+Phases 0–15 are implemented in `main`. Migrations 0042–0046 remain manual and must be applied in order before their dependent Edge Functions are deployed. Automatic reply remains disabled by default and requires a controlled smoke test before company-level activation.

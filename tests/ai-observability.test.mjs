@@ -25,6 +25,13 @@ test('budget reservation is atomic and enforces every company limit', () => {
   assert.match(assistant, /reserveAIBudget/);
 });
 
+test('company research limits constrain the bounded research engine', () => {
+  const research = fs.readFileSync('supabase/functions/_shared/webResearch.ts', 'utf8');
+  assert.match(assistant, /limits:\s*\{\s*max_rounds:\s*maxResearchRounds,\s*max_web_queries:\s*maxWebQueriesPerRun\s*\}/);
+  assert.match(research, /round < maxRounds/);
+  assert.match(research, /max_web_queries:\s*maxQueries/);
+});
+
 test('assistant records the required trace stages and safe operational counts', () => {
   for (const stage of ['REQUEST_RECEIVED','CONTEXT_READY','TOOLS_SELECTED','RESEARCH_STARTED','RESEARCH_COMPLETED','DECISION_READY','POLICY_CHECKED','RESPONSE_CREATED','COMPLETED','FAILED']) assert.match(`${helper}\n${assistant}`, new RegExp(stage));
   for (const field of ['tool_names','query_count','source_domains','candidate_count','duration_ms','safe_error_code']) assert.match(helper, new RegExp(field));

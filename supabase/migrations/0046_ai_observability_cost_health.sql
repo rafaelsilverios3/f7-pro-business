@@ -2,7 +2,7 @@
 alter table public.company_assistant_settings
   add column if not exists max_daily_ai_calls integer not null default 100 check (max_daily_ai_calls between 0 and 100000),
   add column if not exists max_daily_web_queries integer not null default 300 check (max_daily_web_queries between 0 and 1000000),
-  add column if not exists max_research_rounds integer not null default 3 check (max_research_rounds between 1 and 10),
+  add column if not exists max_research_rounds integer not null default 2 check (max_research_rounds between 1 and 10),
   add column if not exists max_tokens_per_request integer not null default 8000 check (max_tokens_per_request between 256 and 1000000),
   add column if not exists max_daily_ai_cost numeric(12,4) not null default 0 check (max_daily_ai_cost >= 0),
   add column if not exists estimated_cost_per_1k_tokens numeric(12,6) not null default 0 check (estimated_cost_per_1k_tokens >= 0);
