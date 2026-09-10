@@ -40,7 +40,7 @@ export async function sendWhatsAppText(input: {
   }
 
   if (input.client_request_id) {
-    const outbox = await sb.from('whatsapp_outbox').select('id,status,provider_message_id,message_id,conversation_id,content,sender_type,sender_user_id,attempts,lease_expires_at').eq('company_id', companyId).eq('client_request_id', input.client_request_id).maybeSingle();
+    const outbox = await sb.from('whatsapp_outbox').select('id,status,provider_message_id,message_id,conversation_id,content,sender_type,sender_user_id,attempts,lease_expires_at,provider_call_started_at').eq('company_id', companyId).eq('client_request_id', input.client_request_id).maybeSingle();
     if (outbox.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_lookup', 500, safeCode(outbox.error));
     if (outbox.data) {
       if (outbox.data.status === 'sent' && outbox.data.message_id) {
@@ -61,7 +61,11 @@ export async function sendWhatsAppText(input: {
       if (outbox.data.status === 'sending') {
         const leaseExpired = !outbox.data.lease_expires_at || Date.parse(outbox.data.lease_expires_at) <= Date.now();
         if (!leaseExpired) return failure(sb, companyId, requestId, 'OUTBOUND_IN_FLIGHT', 'outbox_lease', 409, 'sending');
-        await sb.from('whatsapp_outbox').update({ status: 'retryable', lease_expires_at: null, last_error_code: 'LEASE_EXPIRED', updated_at: new Date().toISOString() }).eq('id', outbox.data.id).eq('company_id', companyId).eq('status', 'sending');
+        if (outbox.data.provider_call_started_at) {
+          await sb.from('whatsapp_outbox').update({ status: 'delivery_unknown', lease_expires_at: null, last_error_code: 'PROVIDER_RESPONSE_UNKNOWN', updated_at: new Date().toISOString() }).eq('id', outbox.data.id).eq('company_id', companyId).eq('status', 'sending');
+          return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, 'delivery_unknown');
+        }
+        await sb.from('whatsapp_outbox').update({ status: 'retryable', lease_expires_at: null, last_error_code: 'LEASE_EXPIRED_BEFORE_PROVIDER_CALL', updated_at: new Date().toISOString() }).eq('id', outbox.data.id).eq('company_id', companyId).eq('status', 'sending');
       }
     }
   }
@@ -80,9 +84,9 @@ export async function sendWhatsAppText(input: {
     const created = await sb.from('whatsapp_outbox').insert({ company_id: companyId, conversation_id: conversation.id, client_request_id: input.client_request_id, content, sender_type: input.sender_type, sender_user_id: input.sender_user_id || null, status: 'pending', attempts: 0 }).select('id,attempts,status').single();
     if (created.error) {
       if (safeCode(created.error) === '23505') {
-        const concurrent = await sb.from('whatsapp_outbox').select('id,status,provider_message_id,lease_expires_at,attempts').eq('company_id', companyId).eq('client_request_id', input.client_request_id).maybeSingle();
+        const concurrent = await sb.from('whatsapp_outbox').select('id,status,provider_message_id,lease_expires_at,provider_call_started_at,attempts').eq('company_id', companyId).eq('client_request_id', input.client_request_id).maybeSingle();
         if (concurrent.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_lookup', 500, safeCode(concurrent.error));
-        if (concurrent.data?.status === 'provider_accepted' || concurrent.data?.provider_message_id) return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, 'provider_accepted');
+        if (concurrent.data?.status === 'provider_accepted' || concurrent.data?.status === 'delivery_unknown' || concurrent.data?.provider_message_id || concurrent.data?.provider_call_started_at) return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, concurrent.data?.status || 'delivery_unknown');
         if (concurrent.data && (concurrent.data.status === 'pending' || concurrent.data.status === 'retryable')) {
           outboxId = concurrent.data.id;
           outboxAttempts = Number(concurrent.data.attempts || 0) + 1;
@@ -95,8 +99,12 @@ export async function sendWhatsAppText(input: {
     outboxId = created.data?.id || null;
     outboxAttempts = Number(created.data?.attempts || 0) + 1;
     const leaseExpiresAt = new Date(Date.now() + OUTBOX_LEASE_MS).toISOString();
-    const claimed = await sb.from('whatsapp_outbox').update({ status: 'sending', attempts: outboxAttempts, lease_expires_at: leaseExpiresAt, attempt_token: requestId, updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'pending').select('id').maybeSingle();
+    const claimed = await sb.from('whatsapp_outbox').update({ status: 'sending', attempts: outboxAttempts, lease_expires_at: leaseExpiresAt, attempt_token: requestId, provider_call_started_at: null, updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'pending').select('id').maybeSingle();
     if (claimed.error || !claimed.data) return failure(sb, companyId, requestId, 'OUTBOUND_IN_FLIGHT', 'outbox_lease', 409, safeCode(claimed.error) || 'concurrent_claim');
+  }
+  if (outboxId) {
+    const callStarted = await sb.from('whatsapp_outbox').update({ provider_call_started_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'sending').eq('attempt_token', requestId).select('id').maybeSingle();
+    if (callStarted.error || !callStarted.data) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_call_marker', 500, safeCode(callStarted.error) || 'call_not_marked');
   }
   const version = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v20.0';
   let response: Response;
@@ -107,8 +115,8 @@ export async function sendWhatsAppText(input: {
       body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body: content } }),
     });
   } catch (error) {
-    if (outboxId) await sb.from('whatsapp_outbox').update({ status: 'retryable', lease_expires_at: null, last_error_code: error?.name === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_UNAVAILABLE', updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'sending').eq('attempt_token', requestId);
-    return failure(sb, companyId, requestId, 'PROVIDER_UNAVAILABLE', 'meta_send', 503);
+    if (outboxId) await sb.from('whatsapp_outbox').update({ status: 'delivery_unknown', lease_expires_at: null, last_error_code: error?.name === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_RESPONSE_UNKNOWN', updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'sending').eq('attempt_token', requestId);
+    return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, error?.name === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_RESPONSE_UNKNOWN');
   }
   const providerPayload = await response.json().catch(() => ({}));
   if (!response.ok) {

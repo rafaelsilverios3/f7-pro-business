@@ -14,13 +14,14 @@ create table if not exists public.whatsapp_outbox (
   content text not null check (length(content) between 1 and 4000),
   sender_type text not null check (sender_type in ('user','assistant')),
   sender_user_id uuid,
-  status text not null default 'pending' check (status in ('pending','sending','retryable','provider_accepted','sent','failed')),
+  status text not null default 'pending' check (status in ('pending','sending','retryable','delivery_unknown','provider_accepted','sent','failed')),
   provider_message_id text,
   provider_status integer,
   message_id uuid references public.messages(id) on delete set null,
   attempts integer not null default 0 check (attempts >= 0),
   attempt_token text,
   lease_expires_at timestamptz,
+  provider_call_started_at timestamptz,
   last_error_code text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -29,7 +30,7 @@ create table if not exists public.whatsapp_outbox (
 
 alter table public.whatsapp_outbox drop constraint if exists whatsapp_outbox_status_check;
 alter table public.whatsapp_outbox add constraint whatsapp_outbox_status_check
-  check (status in ('pending','sending','retryable','provider_accepted','sent','failed'));
+  check (status in ('pending','sending','retryable','delivery_unknown','provider_accepted','sent','failed'));
 
 create index if not exists whatsapp_outbox_status_idx
   on public.whatsapp_outbox(company_id, status, created_at);
@@ -46,4 +47,4 @@ grant select, insert, update on public.whatsapp_outbox to service_role;
 comment on column public.company_assistant_settings.allow_external_source_disclosure is
   'Explicit company policy controlling whether external research provenance may be shown to customers; internal logs retain full provenance.';
 comment on table public.whatsapp_outbox is
-  'Server-side idempotency and reconciliation records. A provider_accepted row is never sent to Meta again.';
+  'Server-side idempotency and reconciliation records. provider_accepted and delivery_unknown rows are never sent to Meta again.';

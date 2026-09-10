@@ -47,3 +47,14 @@ test('outbox distinguishes leased attempts from retryable provider failures', ()
   assert.match(outbound, /OUTBOUND_IN_FLIGHT/);
   assert.match(outbound, /23505/);
 });
+
+test('ambiguous Meta timeout enters reconciliation and cannot make a second provider call', () => {
+  assert.match(outbound, /status: 'delivery_unknown'/);
+  assert.match(outbound, /PROVIDER_RESPONSE_UNKNOWN/);
+  assert.match(outbound, /provider_call_started_at/);
+  assert.match(outbound, /status === 'delivery_unknown'/);
+  assert.match(outbound, /OUTBOUND_RECONCILIATION_REQUIRED.*outbox_reconciliation/);
+  const ambiguousCatch = outbound.match(/catch \(error\) \{([\s\S]*?)\n  \}/)?.[1] || '';
+  assert.match(ambiguousCatch, /delivery_unknown/);
+  assert.doesNotMatch(ambiguousCatch, /status: 'retryable'/);
+});
