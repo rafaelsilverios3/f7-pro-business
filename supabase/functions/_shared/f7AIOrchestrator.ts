@@ -28,6 +28,8 @@ function selectDomain(input: F7AIOrchestratorInput) {
 }
 
 function selectIntent(message: string) {
+  if (/\b(pre[cç]o|precifica[cç][aã]o|margem|markup|custo real)\b/i.test(message)) return 'pricing_analysis';
+  if (/\b(lead|cliente inativo|follow.?up|recorr[eê]ncia|upsell|crm)\b/i.test(message)) return 'crm_analysis';
   if (/\b(fornecedor|prazo de entrega|reputa[cç][aã]o|risco do fornecedor)\b/i.test(message)) return 'supplier_research';
   if (/\b(mercado|demanda|tend[eê]ncia|concorr[eê]ncia|pre[cç]o m[eé]dio)\b/i.test(message)) return 'market_research';
   if (/\b(oportunidade|potencial de venda|novo produto|viabilidade)\b/i.test(message)) return 'opportunity_analysis';

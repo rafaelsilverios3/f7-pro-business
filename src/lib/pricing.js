@@ -49,3 +49,10 @@ export function buildPricingSummary(input = {}, price = 0) {
   const minimumPrice = calculateMinimumPrice(input);
   return { realCost, variableRate, price: num(price), markup: calculateMarkup(price, realCost), margin: calculateMargin(price, realCost, variableRate), minimumPrice, feasible: minimumPrice != null, scenarios: buildPricingScenarios(input) };
 }
+
+export function buildPricingRecommendation(input = {}, price = 0) {
+  const summary = buildPricingSummary(input, price);
+  const configured = ['purchaseCost', 'freight', 'taxPct', 'financialFeePct', 'packaging', 'commissionPct', 'channelFeePct', 'otherCosts', 'additionalCost'].filter((key) => input[key] !== undefined && input[key] !== null && input[key] !== '');
+  const missing = input.purchaseCost === undefined || input.purchaseCost === null || input.purchaseCost === '' ? ['purchaseCost'] : [];
+  return { ...summary, configured_components: configured, missing_components: missing, status: missing.length ? 'NEEDS_CONFIGURATION' : summary.feasible ? 'READY_FOR_HUMAN_REVIEW' : 'INFEASIBLE', assumptions: [], policy: { advisory_only: true, automatic_price_change_allowed: false, automatic_tax_estimation_allowed: false, requires_human_approval: true } };
+}
