@@ -40,4 +40,6 @@ test('outbox is company-scoped and server-only', () => {
   assert.match(outboxMigration, /alter table public\.whatsapp_outbox enable row level security/);
   assert.match(outboxMigration, /revoke all on public\.whatsapp_outbox from anon, authenticated/);
   assert.match(outboxMigration, /grant select, insert, update on public\.whatsapp_outbox to service_role/);
+  for (const state of ['pending', 'sending', 'retryable', 'provider_accepted', 'sent', 'failed']) assert.match(outboxMigration, new RegExp(state));
+  assert.match(outboxMigration, /lease_expires_at timestamptz/);
 });

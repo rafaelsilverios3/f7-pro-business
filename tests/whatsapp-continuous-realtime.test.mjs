@@ -37,3 +37,13 @@ test('outbound persistence uses a pre-send outbox and never resends provider-acc
   assert.match(outbound, /OUTBOUND_RECONCILIATION_REQUIRED/);
   assert.match(outbound, /Never[\s\S]*send it again/);
 });
+
+test('outbox distinguishes leased attempts from retryable provider failures', () => {
+  assert.match(outbound, /OUTBOX_LEASE_MS/);
+  assert.match(outbound, /status: 'sending'/);
+  assert.match(outbound, /status: 'retryable'/);
+  assert.match(outbound, /lease_expires_at/);
+  assert.match(outbound, /PROVIDER_TIMEOUT/);
+  assert.match(outbound, /OUTBOUND_IN_FLIGHT/);
+  assert.match(outbound, /23505/);
+});

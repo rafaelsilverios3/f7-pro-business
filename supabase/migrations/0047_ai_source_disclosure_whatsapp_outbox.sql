@@ -14,16 +14,22 @@ create table if not exists public.whatsapp_outbox (
   content text not null check (length(content) between 1 and 4000),
   sender_type text not null check (sender_type in ('user','assistant')),
   sender_user_id uuid,
-  status text not null default 'pending' check (status in ('pending','provider_accepted','sent','failed')),
+  status text not null default 'pending' check (status in ('pending','sending','retryable','provider_accepted','sent','failed')),
   provider_message_id text,
   provider_status integer,
   message_id uuid references public.messages(id) on delete set null,
   attempts integer not null default 0 check (attempts >= 0),
+  attempt_token text,
+  lease_expires_at timestamptz,
   last_error_code text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(company_id, client_request_id)
 );
+
+alter table public.whatsapp_outbox drop constraint if exists whatsapp_outbox_status_check;
+alter table public.whatsapp_outbox add constraint whatsapp_outbox_status_check
+  check (status in ('pending','sending','retryable','provider_accepted','sent','failed'));
 
 create index if not exists whatsapp_outbox_status_idx
   on public.whatsapp_outbox(company_id, status, created_at);
