@@ -38,9 +38,11 @@ test('manual send persists real provider id and status, then updates conversatio
   assert.match(send, /message_sent/);
 });
 
-test('inbox renders real delivery statuses and keeps AI disabled for Supabase', () => {
+test('inbox renders real delivery statuses and keeps AI assisted with human sending', () => {
   for (const status of ['delivered', 'read', 'failed', 'sent']) assert.match(page, new RegExp(status));
-  assert.match(page, /resposta por IA será habilitada/);
+  assert.match(page, /Sugerir resposta/);
+  assert.match(page, /Usar resposta/);
+  assert.doesNotMatch(page, /InvokeLLM|IA responder/);
   assert.match(permissions, /conversation\.view/);
   assert.match(permissions, /conversation\.manage/);
 });

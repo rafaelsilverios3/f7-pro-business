@@ -45,6 +45,28 @@ const CHANNEL_CONFIGURED = {
   whatsapp: false, site: false, instagram: false, telegram: false, manual: true,
 };
 
+const ASSISTANT_ACTION_LABEL = {
+  SEARCH_MORE: 'Continuar pesquisa', ASK_CUSTOMER: 'Perguntar ao cliente', ANSWER_WITH_OPTIONS: 'Apresentar opções', ANSWER_CONFIDENTLY: 'Responder com confiança', CHECK_STOCK: 'Verificar estoque', PREPARE_QUOTE: 'Preparar orçamento', HANDOFF_HUMAN: 'Transferir para humano', STOP: 'Encerrar investigação',
+};
+const ASSISTANT_CONFIDENCE_LABEL = { CONFIRMED: 'Confirmada', HIGH: 'Alta', MEDIUM: 'Média', LOW: 'Baixa', INSUFFICIENT: 'Dados insuficientes' };
+
+function AssistantInvestigation({ suggestion }) {
+  const decision = suggestion?.decision || {};
+  const research = suggestion?.product_intelligence?.research_state || {};
+  const facts = [...(Array.isArray(decision.known_facts) ? decision.known_facts : []), ...(Array.isArray(decision.discovered_facts) ? decision.discovered_facts : [])].slice(0, 12);
+  const queries = Array.isArray(research.queries_executed) ? research.queries_executed : [];
+  const candidates = Array.isArray(suggestion?.product_intelligence?.candidates) ? suggestion.product_intelligence.candidates.slice(0, 10) : [];
+  const sources = Array.isArray(suggestion?.sources) ? suggestion.sources : [];
+  return <div className="mt-3 grid gap-3 rounded-xl border border-white/20 bg-slate-950/35 p-3 text-xs text-blue-50 md:grid-cols-2">
+    <div><p className="font-semibold text-white">Decisão</p><p>Intenção: {decision.intent || 'não classificada'}</p><p>Especialista: {decision.specialist || 'geral'}</p><p>Confiança: {ASSISTANT_CONFIDENCE_LABEL[decision.confidence] || decision.confidence || 'não calculada'}</p><p>Próxima ação: {ASSISTANT_ACTION_LABEL[decision.next_action] || decision.next_action || 'não definida'}</p><p>Execução: {decision.execution?.status === 'awaiting_human_review' ? 'aguardando revisão humana' : decision.execution?.status || 'não executada'}</p><p>Motivo: {decision.execution?.reason || decision.policy_result?.reason || 'não informado'}</p></div>
+    <div><p className="font-semibold text-white">Rastreamento</p><p>Trace: {decision.trace_id || 'não informado'}</p><p>Estado: {decision.investigation_state || 'não informado'}</p><p>Objetivo: {research.current_objective || decision.objective || 'não informado'}</p><p>Próximo passo da pesquisa: {research.next_research_step || 'concluído'}</p></div>
+    <div><p className="font-semibold text-white">Fatos</p>{facts.length ? facts.map((fact, index) => <p key={`${fact.field || 'fact'}-${index}`}>{fact.field || 'fato'}: {fact.value || 'não informado'} · {fact.provenance || 'sem origem'} · {fact.confidence || 'sem confiança'}</p>) : <p>Nenhum fato estruturado.</p>}</div>
+    <div><p className="font-semibold text-white">Pesquisas</p>{queries.length ? queries.map((query, index) => <p key={`${index}-${query}`}>{index + 1}. {query}</p>) : <p>Nenhuma consulta externa executada.</p>}</div>
+    <div><p className="font-semibold text-white">Candidatos</p>{candidates.length ? candidates.map((candidate, index) => <p key={`${candidate.part_number || index}-${index}`}>{candidate.part_number || 'sem PN'} · {candidate.confidence_level || candidate.confidence || 'sem confiança'} · score {candidate.score ?? 'n/d'} · {candidate.source_domain || candidate.source_type || 'sem fonte'}</p>) : <p>Nenhum candidato encontrado.</p>}</div>
+    <div><p className="font-semibold text-white">Fontes</p>{sources.length ? [...new Map(sources.map((source) => [source.domain || source.source_domain || source.url, source])).values()].map((source, index) => <p key={`${source.domain || source.source_domain || index}-${index}`}>{source.type || source.source_type || 'fonte'} · {source.domain || source.source_domain || 'origem interna'}</p>) : <p>Somente contexto interno.</p>}</div>
+  </div>;
+}
+
 function MediaContent({ message }) {
   if (!message.media_type) return <p>{message.text}</p>;
   if (!message.media_url) return <p className="text-slate-400">Mídia indisponível</p>;
@@ -72,6 +94,7 @@ export default function Atendimento() {
   const [aiThinking, setAiThinking] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState({ mode: 'manual' });
   const [assistantSuggestion, setAssistantSuggestion] = useState(null);
+  const [showAssistantInvestigation, setShowAssistantInvestigation] = useState(false);
   const [assistantError, setAssistantError] = useState('');
   const [products, setProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -91,6 +114,7 @@ export default function Atendimento() {
   const conversationsRef = useRef(conversations);
   const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { setAssistantSuggestion(null); setAssistantError(''); setShowAssistantInvestigation(false); }, [selected?.id]);
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
 
   const load = async (silent = false) => {
@@ -300,7 +324,7 @@ export default function Atendimento() {
 
   const suggestReply = async () => {
     if (!assistantCanSuggest || aiThinking) return;
-    setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null);
+    setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null); setShowAssistantInvestigation(false);
     try {
       const result = await suggestConversationReply(selected.id);
       if (result?.success !== false && result?.suggestion) setAssistantSuggestion(result);
@@ -312,49 +336,6 @@ export default function Atendimento() {
       setAssistantError(`${safeMessage}${diagnostic}${code && !safeMessage.includes(code) ? ` Código: ${code}` : ''}`);
     }
     finally { setAiThinking(false); }
-  };
-
-  const aiRespond = async () => {
-    if (!selected) return;
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') { alert('A resposta por IA será habilitada após a integração segura do provedor de IA.'); return; }
-    setAiThinking(true);
-    try {
-      const lastMessages = (selected.messages || []).slice(-6).map((m) => `${m.sender}: ${m.text}`).join('\n');
-      const productList = products.slice(0, 20).map((p) => `${p.name} - ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.sale_price)} (estoque: ${p.stock})`).join('\n');
-      const prompt = `Você é a assistente virtual da empresa ${company?.name || ''}. Responda o cliente de forma breve e útil. Dados disponíveis:\nProdutos:\n${productList}\n\nHistórico:\n${lastMessages}\n\nResponda a última mensagem do cliente:`;
-      const res = await base44.integrations.Core.InvokeLLM({
-        prompt,
-        response_json_schema: { type: 'object', properties: { reply: { type: 'string' }, should_transfer: { type: 'boolean' }, create_lead: { type: 'boolean' } } },
-      });
-      const now = new Date().toISOString();
-      const aiMsg = { sender: 'ai', text: res.reply || 'Como posso ajudar?', timestamp: now };
-      const newMessages = [...(selected.messages || []), aiMsg];
-      const updates = { messages: newMessages, last_message_at: now };
-      if (res.should_transfer) {
-        updates.status = 'waiting_human';
-        updates.ai_enabled = false;
-      }
-      await base44.entities.Conversation.update(selected.id, updates);
-      if (res.create_lead && selected.customer_name) {
-        await base44.entities.Opportunity.create({
-          company_id: company.id,
-          title: `Oportunidade — ${selected.customer_name}`,
-          description: `Gerada pelo atendimento via ${CHANNEL_LABELS[selected.channel]}.`,
-          source: 'atendimento',
-          customer_name: selected.customer_name,
-          conversation_id: selected.id,
-          stage: 'new',
-        });
-      }
-      load();
-    } catch {
-      const now = new Date().toISOString();
-      const fallback = { sender: 'ai', text: 'Desculpe, não consegui processar agora. Um atendente humano continuará o atendimento.', timestamp: now };
-      const newMessages = [...(selected.messages || []), fallback];
-      await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'waiting_human', ai_enabled: false });
-      load();
-    }
-    setAiThinking(false);
   };
 
   const transferToHuman = async () => {
@@ -477,7 +458,6 @@ export default function Atendimento() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  {selected.ai_enabled && <Button size="sm" variant="outline" onClick={aiRespond} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Pensando...' : 'IA responder'}</Button>}
                   {import.meta.env.VITE_DATA_PROVIDER === 'supabase' && assistantCanSuggest && <Button size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}><Sparkles className="mr-1 h-3.5 w-3.5" /> {aiThinking ? 'Gerando sugestão...' : 'Sugerir resposta'}</Button>}
                   <Button size="sm" variant="outline" onClick={createOpportunity}><UserPlus className="mr-1 h-3.5 w-3.5" /> Oportunidade</Button>
                   <Button size="sm" variant="outline" onClick={transferToHuman} disabled={selected.status === 'waiting_human'}>Transferir</Button>
@@ -518,7 +498,17 @@ export default function Atendimento() {
               </div>
 
               {assistantError && <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">{assistantError}</div>}
-              {assistantSuggestion && <div className="border-t border-blue-400/30 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm text-white"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-blue-100">✨ F7 IA · sugestão editável</p><textarea className="min-h-20 w-full rounded-lg border border-blue-300/40 bg-[#0b1424] p-2 text-sm text-white placeholder:text-slate-400" value={assistantSuggestion.suggestion} onChange={(event) => setAssistantSuggestion({ ...assistantSuggestion, suggestion: event.target.value })} /><p className="mt-1 text-[10px] text-blue-100">{assistantSuggestion.sources?.length ? `Fontes: ${[...new Map(assistantSuggestion.sources.map((source) => { const domain = source.domain || source.source_domain || 'fonte externa'; const label = source.type === 'internal_catalog' ? 'Catálogo interno' : source.type === 'manufacturer_official' ? `Fabricante oficial — ${domain}` : `Fonte externa — ${domain}`; return [domain, label]; })).values()].join(', ')}` : 'Fonte: dados internos da empresa'}</p></div><div className="flex shrink-0 gap-1"><Button type="button" size="sm" onClick={() => { setMessage(assistantSuggestion.suggestion); setAssistantSuggestion(null); }}>Usar resposta</Button><Button type="button" size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}>Gerar novamente</Button><Button type="button" size="sm" variant="ghost" onClick={() => setAssistantSuggestion(null)}><X className="h-4 w-4" /></Button></div></div></div>}
+              {assistantSuggestion && <div className="border-t border-blue-400/30 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-blue-100"><span>✨ F7 IA · sugestão editável</span><span>Modo assistido</span><span>Confiança: {ASSISTANT_CONFIDENCE_LABEL[assistantSuggestion.decision?.confidence] || assistantSuggestion.confidence || 'não calculada'}</span><span>Próxima ação: {ASSISTANT_ACTION_LABEL[assistantSuggestion.decision?.next_action] || 'revisão humana'}</span></div>
+                    <textarea className="min-h-20 w-full rounded-lg border border-blue-300/40 bg-[#0b1424] p-2 text-sm text-white placeholder:text-slate-400" value={assistantSuggestion.suggestion} onChange={(event) => setAssistantSuggestion({ ...assistantSuggestion, suggestion: event.target.value })} />
+                    <p className="mt-1 text-[10px] text-blue-100">{assistantSuggestion.sources?.length ? `Fontes: ${[...new Map(assistantSuggestion.sources.map((source) => { const domain = source.domain || source.source_domain || 'fonte externa'; const label = source.type === 'internal_catalog' ? 'Catálogo interno' : source.type === 'manufacturer_official' ? `Fabricante oficial — ${domain}` : `Fonte externa — ${domain}`; return [domain, label]; })).values()].join(', ')}` : 'Fonte: dados internos da empresa'}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-1"><Button type="button" size="sm" onClick={() => { setMessage(assistantSuggestion.suggestion); setAssistantSuggestion(null); setShowAssistantInvestigation(false); }}>Usar resposta</Button><Button type="button" size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}>Gerar novamente</Button><Button type="button" size="sm" variant="outline" onClick={() => setShowAssistantInvestigation((visible) => !visible)}>{showAssistantInvestigation ? 'Ocultar investigação' : 'Ver investigação'}</Button><Button type="button" size="sm" variant="ghost" onClick={() => { setAssistantSuggestion(null); setShowAssistantInvestigation(false); }}><X className="h-4 w-4" /></Button></div>
+                </div>
+                {showAssistantInvestigation && <AssistantInvestigation suggestion={assistantSuggestion} />}
+              </div>}
 
               {/* Input */}
               {sendError && <div className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs text-rose-700">{sendError}</div>}

@@ -8,6 +8,7 @@ const tools = fs.readFileSync('supabase/functions/_shared/toolRegistry.ts', 'utf
 const specialists = fs.readFileSync('supabase/functions/_shared/specialistRegistry.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0041_autonomous_assistant.sql', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
+const page = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 
 test('autonomous decision engine is confidence and guardrail based', () => {
   assert.match(decision, /AssistantDecision/);
@@ -15,6 +16,10 @@ test('autonomous decision engine is confidence and guardrail based', () => {
   assert.match(decision, /automaticReplyEnabled/);
   assert.match(decision, /graveConflict/);
   assert.match(decision, /auto_reply_eligible/);
+  assert.match(decision, /normalizedConfidence/);
+  assert.match(decision, /VERIFIED.*HIGH/);
+  assert.match(decision, /LIKELY.*MEDIUM/);
+  assert.match(decision, /execution/);
 });
 
 test('tool registry declares policy metadata and keeps transactional tools disabled', () => {
@@ -51,4 +56,12 @@ test('assisted endpoint uses the central orchestrator and never approves automat
   assert.match(assistant, /automatic_policy: \{ enabled: false \}/);
   assert.match(assistant, /decision: assistantDecision/);
   assert.doesNotMatch(assistant, /whatsapp-send/);
+  assert.match(assistant, /Siga a ação selecionada em PRODUCT_INTELLIGENCE\.decision/);
+});
+
+test('Smart Atendimento exposes the central decision and keeps human review in control', () => {
+  for (const label of ['Modo assistido', 'Confiança:', 'Próxima ação:', 'Ver investigação', 'Rastreamento', 'Fatos', 'Pesquisas', 'Candidatos', 'Fontes']) assert.match(page, new RegExp(label));
+  assert.match(page, /awaiting_human_review/);
+  assert.match(page, /setMessage\(assistantSuggestion\.suggestion\)/);
+  assert.doesNotMatch(page, /InvokeLLM|IA responder/);
 });
