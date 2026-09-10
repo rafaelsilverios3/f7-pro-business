@@ -14,6 +14,7 @@ The implementation follows the master directive in isolated phases. Automatic re
 | 7 | Jobs and auto reply | Implemented locally: atomic claim, bounded retry state, idempotent response, independent policy authorization; migration 0042 awaits manual application |
 | 8 | Structured handoff | Implemented locally: persisted dossier, atomic assignment and resumable human workflow; migration 0043 awaits manual application |
 | 9 | Knowledge and feedback loop | Implemented locally: verified company knowledge plus immutable human feedback; migration 0044 awaits manual application |
-| 10–15 | Unified intelligence, automation, observability, budgets, hardening | Individual commits, migrations, tests, and deployment records |
+| 10 | Unified Product Intelligence | Implemented: one resolver merges catalog, verified applications, equivalences, knowledge, research history and external evidence |
+| 11–15 | Supplier/market/opportunity, pricing/CRM, automation, observability and hardening | Individual commits, migrations, tests, and deployment records |
 
 Every phase runs tests, both typechecks, lint, build, and Edge bundle validation when Edge code changes.

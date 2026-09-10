@@ -128,7 +128,7 @@ test('technical extraction keeps an official John Deere PN candidate', () => {
 
 test('external candidates and sources remain explicit for the assistant and UI', () => {
   assert.match(assistant, /candidate_diagnostics/);
-  assert.match(assistant, /productIntelligence\.candidates = \[/);
+  assert.match(assistant, /productIntelligence\.candidates = mergeProductIntelligenceCandidates/);
   assert.match(assistant, /source_domain/);
   assert.match(assistant, /source_type/);
 });

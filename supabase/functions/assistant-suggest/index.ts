@@ -1,6 +1,6 @@
 import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
 import { CompanyInternalSource } from '../_shared/officialSources.ts';
-import { resolveProductOrPart } from '../_shared/productIntelligence.ts';
+import { mergeProductIntelligenceCandidates, resolveProductOrPart } from '../_shared/productIntelligence.ts';
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains } from '../_shared/webResearch.ts';
 import { F7AIOrchestrator } from '../_shared/f7AIOrchestrator.ts';
 import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
@@ -365,9 +365,11 @@ Deno.serve(async (req) => {
       { resource: 'company_quick_replies', okStage: 'CONTEXT_QUICK_REPLIES_OK', query: sb.from('company_quick_replies').select('reply_key,title,body,category,active').eq('company_id', conversation.company_id).eq('active', true).limit(100) },
       { resource: 'company_handoff_rules', okStage: 'CONTEXT_HANDOFF_RULES_OK', query: sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100) },
       { resource: 'company_knowledge', okStage: 'CONTEXT_KNOWLEDGE_OK', query: sb.from('company_knowledge').select('knowledge_type,subject_key,fact_key,fact_value,source_type,confidence,scope,verified_at').eq('company_id', conversation.company_id).eq('status', 'active').order('verified_at', { ascending: false }).limit(100) },
+      { resource: 'verified_product_applications', okStage: 'CONTEXT_VERIFIED_APPLICATIONS_OK', query: sb.from('verified_product_applications').select('manufacturer,machine_model,machine_year,serial_range,system,assembly,position,part_number,source_refs,verification_state,verified_at').eq('company_id', conversation.company_id).in('verification_state', ['candidate', 'verified']).limit(100) },
+      { resource: 'part_cross_references', okStage: 'CONTEXT_CROSS_REFERENCES_OK', query: sb.from('part_cross_references').select('original_part_number,equivalent_part_number,original_manufacturer,equivalent_manufacturer,relation_type,evidence,confidence').eq('company_id', conversation.company_id).limit(100) },
     ];
     const contextResults = await Promise.all(contextResources.map(({ query }) => query));
-    const [messagesResult, productsResult, quickRepliesResult, handoffRulesResult, knowledgeResult] = contextResults;
+    const [messagesResult, productsResult, quickRepliesResult, handoffRulesResult, knowledgeResult, verifiedApplicationsResult, crossReferencesResult] = contextResults;
     const contextFailureIndex = contextResults.findIndex((result) => result.error);
     if (contextFailureIndex >= 0) {
       const failedResource = contextResources[contextFailureIndex];
@@ -381,6 +383,8 @@ Deno.serve(async (req) => {
     const { data: quickReplies } = quickRepliesResult;
     const { data: handoffRules } = handoffRulesResult;
     const { data: knowledge } = knowledgeResult;
+    const { data: verifiedApplications } = verifiedApplicationsResult;
+    const { data: crossReferences } = crossReferencesResult;
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
@@ -393,7 +397,7 @@ Deno.serve(async (req) => {
     const relevantProducts = selectRelevantProducts(productRows, terms);
     stage = 'INTERNAL_PRODUCTS_RESOLVED';
     await logStage(sb, conversation.company_id, stage);
-    const productIntelligence = await resolveProductOrPart({ company_id: conversation.company_id, query: latestText, products: productRows, manufacturer: undefined });
+    const productIntelligence = await resolveProductOrPart({ company_id: conversation.company_id, query: latestText, products: productRows, verified_applications: verifiedApplications || [], cross_references: crossReferences || [], verified_knowledge: knowledge || [], manufacturer: undefined });
     stage = 'PRODUCT_INTELLIGENCE_INTERNAL_READY';
     await logStage(sb, conversation.company_id, stage);
     const relevantQuickReplies = selectRelevantRows(quickReplies || [], terms, MAX_QUICK_REPLIES_CONTEXT, ['reply_key', 'title', 'body', 'category']);
@@ -406,6 +410,7 @@ Deno.serve(async (req) => {
       if (sourceMetadata.some((item) => item.type === type && item.domain === domain)) return;
       sourceMetadata.push({ type, domain, source_domain: domain, manufacturer: safeText(source.manufacturer, 120) || null, url: source.url || source.source_url || null, title: safeText(source.title, 240) || null, retrieved_at: source.retrieved_at || new Date().toISOString() });
     };
+    for (const candidate of productIntelligence.candidates || []) addSourceMetadata({ type: candidate.source_type, domain: candidate.source_name, manufacturer: candidate.manufacturer, retrieved_at: candidate.retrieved_at });
     let webResearch: any = { searched: false, results: [], pages: [], candidates: [], evidence: { part_numbers: [], source_urls: [], confidence: 0, candidates: [] }, code: 'WEB_RESEARCH_NOT_REQUESTED' };
     let technicalInput: any;
     stage = 'WEB_RESEARCH_INPUT_READY';
@@ -441,7 +446,7 @@ Deno.serve(async (req) => {
         productIntelligence.web_research = { searched: true, search_provider: webResearch.provider, evidence: webResearch.evidence, candidates: webResearch.candidates || webResearch.evidence?.candidates || [], conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
         productIntelligence.research_state = webResearch.research_state || null;
         productIntelligence.discovered_machine = webResearch.discovered_machine || null;
-        productIntelligence.candidates = [...(productIntelligence.candidates || []), ...(webResearch.candidates || webResearch.evidence?.candidates || [])];
+        productIntelligence.candidates = mergeProductIntelligenceCandidates(productIntelligence.candidates || [], webResearch.candidates || webResearch.evidence?.candidates || []);
         const researchEvent = webResearch.status === 'PARTIAL' ? 'WEB_RESEARCH_PARTIAL' : webResearch.status === 'FAILED' ? 'WEB_RESEARCH_FAILED' : 'WEB_RESEARCH_COMPLETED';
         const failedDiagnostic = webResearch.query_diagnostics?.find((item: any) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
         await logResearchEvent(sb, conversation.company_id, conversationId, researchEvent, { technical_research_needed: true, feature_enabled: true, provider: webResearch.provider, http_status: failedDiagnostic?.http_status ?? undefined, duration_ms: webResearch.duration_ms, queries_planned: webResearch.queries_planned, queries_executed: webResearch.queries_executed, successful_queries: webResearch.successful_queries, failed_queries: webResearch.failed_queries, no_result_queries: webResearch.no_result_queries, results_count: webResearch.results_count || webResearch.results?.length || 0, candidate_count: (webResearch.candidates || webResearch.evidence?.candidates || []).length, confidence_levels: (webResearch.candidates || webResearch.evidence?.candidates || []).map((candidate: any) => candidate.confidence_level), failure_codes: webResearch.failure_codes, cache_hit: Boolean(webResearch.cache_hit), cache_miss: Boolean(webResearch.cache_miss), reason: webResearch.status || webResearch.code || 'completed' });
