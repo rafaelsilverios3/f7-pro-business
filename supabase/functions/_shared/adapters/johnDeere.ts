@@ -25,14 +25,17 @@ export const JohnDeereAdapter = Object.freeze({
     const sources = evidence.filter((item) => this.official_domains.some((domain) => item.domain === domain || item.domain?.endsWith(`.${domain}`))).map((item) => item.url).filter(Boolean).slice(0, 5);
     return { manufacturer: this.manufacturer, equipment_type: equipment, model: String(input.model || '').trim() || null, confidence: sources.length ? 'HIGH' as const : 'MEDIUM' as const, sources, provenance: sources.length ? 'official_source' as const : 'public_web' as const };
   },
-  buildOfficialQueries(input: { model?: string; part_description?: string; old_part_number?: string }) {
+  buildOfficialQueries(input: { model?: string; part_description?: string; old_part_number?: string; country?: string; market?: string; region?: string; locale?: string }) {
     const model = String(input.model || '').trim();
     const part = String(input.part_description || '').trim();
     const oldPart = String(input.old_part_number || '').trim();
     if (!model && !oldPart) return [];
+    const southAmerica = input.region === 'south_america' || input.country === 'BR' || input.market === 'brazil' || /^pt[-_]br$/i.test(input.locale || '');
+    const northAmerica = input.region === 'north_america' || input.country === 'US' || input.market === 'united_states' || /^en[-_]us$/i.test(input.locale || '');
+    const regionalTerms = southAmerica ? 'South America Brazil' : northAmerica ? 'North America United States' : '';
     return [
-      model && part ? `site:${this.official_domains[0]} ${model} ${part}` : '',
-      model && part ? `site:${this.official_domains[1]} ${model} ${part} part number` : '',
+      model && part ? `site:${this.official_domains[0]} ${model} ${part} ${regionalTerms}`.trim() : '',
+      model && part ? `site:${this.official_domains[1]} ${model} ${part} part number ${regionalTerms}`.trim() : '',
       oldPart ? `site:${this.official_domains[2]} ${oldPart} replacement` : '',
     ].filter(Boolean);
   },

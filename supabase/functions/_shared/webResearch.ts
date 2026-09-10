@@ -11,6 +11,9 @@ export type WebSearchInput = {
   application?: string;
   domains?: string[];
   locale?: string;
+  country?: string;
+  market?: string;
+  region?: string;
   max_results?: number;
 };
 
@@ -21,6 +24,11 @@ export type WebSearchResult = {
   snippet: string;
   retrieved_at: string;
   source_type: 'manufacturer_official' | 'distributor' | 'approved_catalog' | 'public_web';
+  country?: string | null;
+  market?: string | null;
+  region?: string | null;
+  catalog_id?: string | null;
+  catalog_edition?: string | null;
 };
 
 export type WebSearchResponse = {
@@ -85,6 +93,33 @@ function sourceType(url: URL, domains: string[] = []) {
   if (domains.some((item) => domain === item || domain.endsWith(`.${item}`))) return 'manufacturer_official' as const;
   if (/market|shop|store|parts|distrib|catalog/i.test(domain)) return 'distributor' as const;
   return 'public_web' as const;
+}
+
+function regionalEvidence(text: string): Pick<ResearchRegionContext, 'country' | 'market' | 'region'> & { catalog_id?: string; catalog_edition?: string } {
+  const value = safeText(text, 2400);
+  const catalog_id = value.match(/\bPC\d{4,}\b/i)?.[0]?.toUpperCase();
+  const southAmerica = /south\s+america|sul[- ]americana?|brasil|brazil|latam|am[eé]rica\s+do\s+sul/i.test(value);
+  const northAmerica = /north\s+america|norte[- ]americana?|united\s+states|\bUSA\b|\bUS\s+edition\b/i.test(value);
+  const result: Pick<ResearchRegionContext, 'country' | 'market' | 'region'> & { catalog_id?: string; catalog_edition?: string } = {};
+  if (southAmerica && !northAmerica) Object.assign(result, { country: /brasil|brazil/i.test(value) ? 'BR' : undefined, market: /brasil|brazil/i.test(value) ? 'brazil' : 'south_america', region: 'south_america', catalog_id });
+  else if (northAmerica && !southAmerica) Object.assign(result, { country: /united\s+states|\bUSA\b|\bUS\s+edition\b/i.test(value) ? 'US' : undefined, market: 'united_states', region: 'north_america', catalog_id });
+  else if (catalog_id) result.catalog_id = catalog_id;
+  const edition = value.match(/((?:south|north)\s+america(?:n)?|sul[- ]americana?|norte[- ]americana?|US|Brazil|Brasil)\s*(?:edition|edi[cç][aã]o)?/i)?.[0];
+  if (edition) result.catalog_edition = safeText(edition, 80);
+  return result;
+}
+
+function regionalScore(target: ResearchRegionContext, evidence: ReturnType<typeof regionalEvidence>) {
+  if (!target.region && !target.country && !target.market) return 0;
+  const targetSouth = target.region === 'south_america' || target.country === 'BR' || target.market === 'brazil';
+  const targetNorth = target.region === 'north_america' || target.country === 'US' || target.market === 'united_states';
+  const evidenceSouth = evidence.region === 'south_america' || evidence.country === 'BR' || evidence.market === 'brazil';
+  const evidenceNorth = evidence.region === 'north_america' || evidence.country === 'US' || evidence.market === 'united_states';
+  if (targetSouth && evidenceSouth) return 80;
+  if (targetNorth && evidenceNorth) return 80;
+  if (targetSouth && evidenceNorth) return -45;
+  if (targetNorth && evidenceSouth) return -45;
+  return 0;
 }
 function providerConfig() {
   const endpoint = Deno.env.get('WEB_SEARCH_API_URL') || '';
@@ -239,6 +274,11 @@ export type TechnicalPartCandidate = {
   is_official?: boolean;
   trust_score?: number;
   trust_level?: 'HIGH_TRUST' | 'MEDIUM_TRUST' | 'LOW_TRUST' | 'INSUFFICIENT_DATA';
+  country?: string | null;
+  market?: string | null;
+  region?: string | null;
+  catalog_id?: string | null;
+  catalog_edition?: string | null;
 };
 
 export type TechnicalResearchQueryInput = {
@@ -251,7 +291,25 @@ export type TechnicalResearchQueryInput = {
   old_part_number?: string;
   serial?: string;
   user_text?: string;
+  country?: string;
+  market?: string;
+  region?: string;
+  locale?: string;
 };
+
+export type ResearchRegionContext = { country?: string; market?: string; region?: string; locale?: string };
+
+/** Resolve regional targeting from structured company settings. Free text is deliberately ignored. */
+export function resolveResearchRegion(input: { country?: unknown; market?: unknown; region?: unknown; locale?: unknown; language?: unknown } = {}): ResearchRegionContext {
+  const country = safeText(input.country, 40).toUpperCase();
+  const market = safeText(input.market, 60).toLowerCase();
+  const region = safeText(input.region, 60).toLowerCase();
+  const locale = safeText(input.locale || input.language, 20);
+  if (country || market || region) return { ...(country ? { country } : {}), ...(market ? { market } : {}), ...(region ? { region } : {}), ...(locale ? { locale } : {}) };
+  if (/^pt[-_]br$/i.test(locale)) return { country: 'BR', market: 'brazil', region: 'south_america', locale: 'pt-BR' };
+  if (/^en[-_]us$/i.test(locale)) return { country: 'US', market: 'united_states', region: 'north_america', locale: 'en-US' };
+  return locale ? { locale } : {};
+}
 
 export type ResearchFact = {
   field: 'manufacturer' | 'model' | 'equipment_type' | 'part_description';
@@ -328,7 +386,7 @@ export function planTechnicalResearchQueries(input: TechnicalResearchQueryInput)
   const adapter = ManufacturerAdapterRegistry.select({ manufacturer, text: input.user_text });
   const officialDomain = adapter?.official_domains[0];
   const queries = [
-    ...(adapter?.buildOfficialQueries({ model, part_description: compactPart, old_part_number: oldPart }) || []),
+    ...(adapter?.buildOfficialQueries({ model, part_description: compactPart, old_part_number: oldPart, country: input.country, market: input.market, region: input.region, locale: input.locale }) || []),
     manufacturer && model && compactPart && officialDomain ? `site:${officialDomain} ${model} ${compactPart} part number` : '',
     manufacturer && model && compactPart ? `${manufacturer} ${model} ${translatedPart} part number` : (base ? `${base} part number` : safeText(input.user_text, MAX_QUERY)),
     oldPart ? `${oldPart} replacement equivalent ${manufacturer}` : (model && compactPart ? `${model} ${translatedPart} PN` : (base ? `${base} OEM` : '')),
@@ -342,29 +400,37 @@ function candidateLevel(confidence: number): TechnicalPartCandidate['confidence_
   return confidence >= 0.9 ? 'VERIFIED' : confidence >= 0.55 ? 'LIKELY' : 'DISCOVERED';
 }
 
-function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageResponse[], context: { manufacturer?: string; model?: string; part_description?: string } = {}) {
+function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageResponse[], context: { manufacturer?: string; model?: string; part_description?: string; country?: string; market?: string; region?: string; locale?: string } = {}) {
   const page = pages.find((item) => item.url === result.url);
   const evidenceText = safeText(`${result.title} ${result.snippet} ${page?.text || ''}`, 1800);
   const labelled = [...evidenceText.matchAll(/(?:part\s*(?:number|no)?|p\/?n|oem|c[oó]digo|refer[eê]ncia|reference)\s*[:#-]?\s*([A-Z0-9][A-Z0-9./ -]{3,})/gi)].map((match) => match[1].trim().split(/\s+(?:for|fits|compatible|replaces|replacement)\b/i)[0]);
   const alphanumeric = evidenceText.match(/\b[A-Z]{1,6}[- ]?\d{3,}[A-Z0-9-]*\b/gi) || [];
   const normalizedLabelled = new Set(labelled.map((value) => value.toUpperCase().replace(/[.,;:]$/, '')));
   const hasPartContext = /\b(?:part\s*(?:number|no)?|p\/?n|oem|filtro|filter|conjunto|elemento|pe[cç]a|c[oó]digo)\b/i.test(evidenceText);
-  const numbers = [...new Set([...labelled, ...alphanumeric].map((value) => value.toUpperCase().replace(/[.,;:]$/, '')).filter((value) => /[A-Z]/.test(value) && /\d/.test(value) && value.length >= 4 && value.length <= 40 && !/^\d{3,5}[A-Z]?$/.test(value) && (normalizedLabelled.has(value) || hasPartContext)))];
+  const numbers = [...new Set([...labelled, ...alphanumeric].map((value) => value.toUpperCase().replace(/[.,;:]$/, '')).filter((value) => /[A-Z]/.test(value) && /\d/.test(value) && value.length >= 4 && value.length <= 40 && !/^PC\d{4,}$/i.test(value) && !/^\d{3,5}[A-Z]?$/.test(value) && !/^[A-Z]{4,}\s+\d/.test(value) && !/\s/.test(value) && !(context.model && value.replace(/[\s-]/g, '') === String(context.model).toUpperCase().replace(/[\s-]/g, '')) && (normalizedLabelled.has(value) || hasPartContext)))];
   const contextText = `${context.manufacturer || ''} ${context.model || ''} ${context.part_description || ''}`.toLocaleLowerCase('pt-BR');
   const haystack = evidenceText.toLocaleLowerCase('pt-BR');
   const contextualMatch = Boolean(context.model && haystack.includes(String(context.model).toLocaleLowerCase('pt-BR'))) || Boolean(context.part_description && haystack.includes(String(context.part_description).toLocaleLowerCase('pt-BR')));
   const isOfficial = result.source_type === 'manufacturer_official';
+  const targetRegion = resolveResearchRegion(context);
+  const regional = regionalEvidence(evidenceText);
+  const regionalBonus = regionalScore(targetRegion, regional);
   const confidence = Math.min(0.98, (isOfficial ? 0.78 : result.source_type === 'distributor' || result.source_type === 'approved_catalog' ? 0.5 : 0.3) + (contextualMatch ? 0.17 : 0));
-  const score = (isOfficial ? 100 : 40) + (contextualMatch ? 35 : 0) + (hasPartContext ? 20 : 0);
+  // Keep source authority dominant: an official catalog from another market is
+  // still preferable to a distributor result, while regional evidence decides
+  // between otherwise comparable official sources.
+  const sourcePriority = isOfficial ? 300 : result.source_type === 'approved_catalog' ? 180 : result.source_type === 'distributor' ? 100 : 20;
+  const score = sourcePriority + (contextualMatch ? 35 : 0) + (hasPartContext ? 20 : 0) + regionalBonus;
   const trust = evaluateSourceTrust({ source_type: result.source_type, domain: result.domain, evidence_count: 1, retrieved_at: result.retrieved_at });
   return numbers.map((partNumber) => {
-    const candidate = { part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, model: safeText(context.model, 120) || null, system: null, position: null, serial_range: null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score: score + Math.round(trust.score * 20), is_official: isOfficial, trust_score: trust.score, trust_level: trust.level, confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate;
+    const adjustedConfidence = Math.max(0, Math.min(0.98, confidence + (regionalBonus > 0 ? 0.05 : regionalBonus < 0 ? -0.08 : 0)));
+    const candidate = { part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, model: safeText(context.model, 120) || null, system: null, position: null, serial_range: null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score: score + Math.round(trust.score * 20), is_official: isOfficial, trust_score: trust.score, trust_level: trust.level, confidence: adjustedConfidence, confidence_level: candidateLevel(adjustedConfidence), supporting_sources: [result.url], country: regional.country || null, market: regional.market || null, region: regional.region || null, catalog_id: regional.catalog_id || null, catalog_edition: regional.catalog_edition || null } satisfies TechnicalPartCandidate;
     if (AgriculturalPartsSpecialist.matches({ text: `${context.manufacturer || ''} ${context.model || ''} ${context.part_description || ''}` })) candidate.score = AgriculturalPartsSpecialist.rankCandidate(candidate, context);
     return candidate;
   });
 }
 
-export function extractTechnicalEvidence(results: WebSearchResult[], pages: PageResponse[] = [], context: { manufacturer?: string; model?: string; part_description?: string } = {}): TechnicalEvidence {
+export function extractTechnicalEvidence(results: WebSearchResult[], pages: PageResponse[] = [], context: { manufacturer?: string; model?: string; part_description?: string; country?: string; market?: string; region?: string; locale?: string } = {}): TechnicalEvidence {
   const all = [...results.map((item) => `${item.title} ${item.snippet}`), ...pages.map((item) => item.text)].join(' ');
   const candidatesByPart = new Map<string, TechnicalPartCandidate>();
   for (const result of results) for (const candidate of extractPartCandidatesFromResult(result, pages, context)) {
@@ -384,7 +450,11 @@ export function extractTechnicalEvidence(results: WebSearchResult[], pages: Page
   const manufacturers = [...new Set(results.filter((item) => item.source_type === 'manufacturer_official').map((item) => item.domain).slice(0, 10))];
   const urls = [...new Set([...results.map((item) => item.url), ...pages.map((item) => item.url)])].slice(0, 20);
   const unique = new Set(results.map((item) => item.snippet.toLocaleLowerCase('pt-BR')).filter(Boolean));
-  return { part_numbers: partNumbers, manufacturers, applications: [], models: [], specifications: [], source_urls: urls, confidence: candidates.length > 1 ? 0.65 : candidates.length ? candidates[0].confidence : results.length >= 2 && unique.size >= 2 ? 0.35 : 0, conflicts: candidates.length > 1 ? ['Mais de um PN candidato foi encontrado; confirmar aplicação.'] : [], candidates };
+  const regionalCandidates = candidates.filter((candidate) => candidate.region || candidate.country || candidate.market);
+  const regionalConflict = new Set(regionalCandidates.map((candidate) => `${candidate.region || ''}:${candidate.country || ''}:${candidate.market || ''}`)).size > 1;
+  const conflicts = candidates.length > 1 ? ['Mais de um PN candidato foi encontrado; confirmar aplicação.'] : [];
+  if (regionalConflict) conflicts.push('Conflito regional: foram encontradas aplicações em catálogos de mercados diferentes; não tratar os PNs como equivalentes.');
+  return { part_numbers: partNumbers, manufacturers, applications: [], models: [], specifications: [], source_urls: urls, confidence: candidates.length > 1 ? 0.65 : candidates.length ? candidates[0].confidence : results.length >= 2 && unique.size >= 2 ? 0.35 : 0, conflicts, candidates };
 }
 
 export function isTechnicalResearchNeeded(input: { text: string; manufacturer?: string; model?: string; part_number?: string; userAskedExternal?: boolean }) {
@@ -406,7 +476,7 @@ export function manufacturerDomains(manufacturer?: string) {
 export { safeText };
 
 function queryHash(input: WebSearchInput) {
-  const normalized = JSON.stringify({ strategy: RESEARCH_STRATEGY_VERSION, query: safeText(input.query, MAX_QUERY).toLocaleLowerCase('pt-BR'), manufacturer: safeText(input.manufacturer, 160).toLocaleLowerCase('pt-BR'), part_number: safeText(input.part_number, 120).toLocaleUpperCase('pt-BR'), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), domains: (input.domains || []).slice().sort() });
+  const normalized = JSON.stringify({ strategy: RESEARCH_STRATEGY_VERSION, query: safeText(input.query, MAX_QUERY).toLocaleLowerCase('pt-BR'), manufacturer: safeText(input.manufacturer, 160).toLocaleLowerCase('pt-BR'), part_number: safeText(input.part_number, 120).toLocaleUpperCase('pt-BR'), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), country: safeText(input.country, 40).toUpperCase(), market: safeText(input.market, 60).toLowerCase(), region: safeText(input.region, 60).toLowerCase(), locale: safeText(input.locale, 20), domains: (input.domains || []).slice().sort() });
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized)).then((buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join(''));
 }
 
@@ -438,7 +508,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   } catch { /* cache is an optimization; research can continue */ }
   const provider = WebSearchProviderRegistry.create();
   const queryParts = [input.query.query, input.query.manufacturer, input.query.model, input.query.part_number, input.query.application].filter(Boolean).map((part) => safeText(part, 240));
-  const initialInput = { manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, user_text: queryParts.join(' ') } satisfies TechnicalResearchQueryInput;
+  const initialInput = { manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, country: input.query.country, market: input.query.market, region: input.query.region, locale: input.query.locale, user_text: queryParts.join(' ') } satisfies TechnicalResearchQueryInput;
   const researchState: ResearchState = { original_request: safeText(input.query.query, MAX_QUERY), current_objective: safeText(input.query.application || input.query.query, MAX_QUERY), known_facts: [], discovered_facts: [], unresolved_facts: [], queries_executed: [], sources: [], candidates: [], conflicts: [], confidence: 0, evidence: [], next_research_step: 'REFINE_SEARCH' };
   if (initialInput.model) researchState.known_facts.push({ field: 'model', value: safeText(initialInput.model, 80), provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: now });
   if (initialInput.manufacturer) researchState.known_facts.push({ field: 'manufacturer', value: safeText(initialInput.manufacturer, 120), provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: now });
@@ -489,7 +559,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
           if (!researchState.queries_executed.includes(nextQuery) && !alreadyPending) pendingQueries.push({ query: nextQuery, round: round + 1 });
         }
       }
-      const candidatePreview = extractTechnicalEvidence(allResults, [], { manufacturer: discoveredManufacturer || initialInput.manufacturer, model: initialInput.model, part_description: initialInput.part_description }).candidates;
+      const candidatePreview = extractTechnicalEvidence(allResults, [], { ...initialInput, manufacturer: discoveredManufacturer || initialInput.manufacturer }).candidates;
       researchState.candidates = candidatePreview;
       researchState.confidence = candidatePreview.length ? Math.max(...candidatePreview.map((candidate) => candidate.confidence)) : 0;
       researchState.evidence = candidatePreview.flatMap((candidate) => candidate.evidence || []).slice(0, 30);
@@ -525,12 +595,12 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
   const resolvedIdentity = resolveMachineIdentity(uniqueResults, initialInput);
-  const evidence = extractTechnicalEvidence(uniqueResults, pages, { manufacturer: resolvedIdentity.manufacturer || input.query.manufacturer, model: resolvedIdentity.model || input.query.model, part_description: input.query.application });
+  const evidence = extractTechnicalEvidence(uniqueResults, pages, { ...initialInput, manufacturer: resolvedIdentity.manufacturer || input.query.manufacturer, model: resolvedIdentity.model || input.query.model, part_description: input.query.application });
   const failedQueries = queryDiagnostics.filter((item) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
   const noResultQueries = queryDiagnostics.filter((item) => item.code === 'WEB_SEARCH_NO_RESULTS');
   const successfulQueries = queryDiagnostics.length - failedQueries.length;
   const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : uniqueResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
-  const result = { provider: provider.name, status, results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_state: { ...researchState, discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const result = { provider: provider.name, status, region_context: resolveResearchRegion(initialInput), results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_state: { ...researchState, discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {
