@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import fs from 'node:fs';
+import { build } from 'esbuild';
+const bundled = await build({ entryPoints: [path.resolve('supabase/functions/_shared/automationEngine.ts')], bundle: true, write: false, platform: 'node', format: 'esm', target: 'node20', logLevel: 'silent' });
+const engine = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+const migration = fs.readFileSync('supabase/migrations/0045_automation_engine_hardening.sql', 'utf8');
+const worker = fs.readFileSync('supabase/functions/automation-worker/index.ts', 'utf8');
+const page = fs.readFileSync('src/pages/Automacoes.jsx', 'utf8');
+test('conditions are deterministic and unknown operators fail closed', () => { assert.equal(engine.matchesAutomationConditions({ total: 100 }, [{ field: 'total', operator: 'gte', value: 100 }]), true); assert.equal(engine.matchesAutomationConditions({ total: 100 }, [{ field: 'total', operator: 'unknown', value: 100 }]), false); });
+test('automation plan allows only internal notification and blocks transactions', () => { const plan = engine.buildAutomationPlan({ company_id: 'a', active: true, trigger_type: 'new_sale', conditions: [], actions: [{ type: 'notify' }, { type: 'create_sale' }, { type: 'decrement_stock' }] }, { company_id: 'a', trigger_type: 'new_sale', event_id: 'sale-1', event_data: {} }); assert.deepEqual(plan.actions.map((action) => action.execution), ['allowed', 'requires_explicit_authorization', 'requires_explicit_authorization']); });
+test('worker requires service authorization and stable idempotency', () => { assert.match(worker, /SUPABASE_SERVICE_ROLE_KEY/); assert.match(worker, /const idempotencyKey = `\$\{triggerType\}:\$\{eventId\}`/); assert.match(worker, /23505/); assert.doesNotMatch(worker, /Date\.now\(\)/); });
+test('migration keeps company RLS and removes authenticated run writes', () => { assert.match(migration, /enable row level security/); assert.match(migration, /current_company_role\(company_id\)/); assert.match(migration, /revoke insert, update, delete on public\.automation_runs from authenticated/); assert.match(migration, /grant select, insert, update on public\.automation_runs to service_role/); assert.doesNotMatch(migration, /grant all/i); });
+test('frontend writes the real trigger_type column', () => { assert.match(page, /trigger_type: trigger/); });

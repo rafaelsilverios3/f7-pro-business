@@ -172,7 +172,7 @@ function AutomationDialog({ open, onClose, company, onDone }) {
       if (a.type === 'notify') return { type: 'notify', params: { title: notifyTitle, message: notifyMessage } };
       return a;
     });
-    const payload = { company_id: company.id, name, trigger, conditions: [], actions: finalActions, active: true };
+    const payload = { company_id: company.id, name, trigger_type: trigger, conditions: [], actions: finalActions, active: true };
     if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.create(company.id, payload);
     else await base44.entities.Automation.create(payload);
     setName(''); setTaskTitle(''); setNotifyTitle(''); setNotifyMessage('');

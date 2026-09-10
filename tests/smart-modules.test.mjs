@@ -14,8 +14,9 @@ test('supabase provider maps all smart module entities', () => {
   for (const entity of ['Conversation','Message','Opportunity','Automation','AutomationRun','IntelligenceInsight']) assert.match(source, new RegExp(`${entity}:`));
 });
 
-test('automation service records idempotent runs', () => {
+test('automation service exposes runs but delegates execution to the server worker', () => {
   const source = fs.readFileSync('src/services/automationService.js', 'utf8');
-  assert.match(source, /idempotency_key/);
   assert.match(source, /AutomationRun/);
+  assert.match(source, /AUTOMATION_SERVER_SIDE_ONLY/);
+  assert.doesNotMatch(source, /Date\.now\(\)/);
 });

@@ -1,5 +1,11 @@
 import { createRepository } from '@/data/repositoryFactory';
-import { notificationsService } from '@/services/notificationsService';
 const automations = createRepository('Automation');
 const runs = createRepository('AutomationRun');
-export const automationService = { list: (companyId) => automations.list(companyId, '-created_at'), create: (companyId, data) => automations.create(data, companyId), update: (companyId, id, data) => automations.update(id, data, companyId), remove: (companyId, id) => automations.remove(id, companyId), async run(companyId, triggerType, triggerData = {}) { const rules = (await automations.list(companyId)).filter((rule) => rule.active && rule.trigger_type === triggerType); const output = []; for (const rule of rules) { const key = `${triggerType}:${triggerData.id || triggerData.sale_id || Date.now()}`; try { const existing = await runs.list(companyId); if (existing.some((run) => run.automation_id === rule.id && run.idempotency_key === key)) continue; const actions = Array.isArray(rule.actions) ? rule.actions : []; for (const action of actions) if (action.type === 'create_notification') await notificationsService.list(companyId).then(() => createRepository('Notification').create({ company_id: companyId, type: action.notification_type || 'automation', title: action.title || rule.name, message: action.message || 'Automação executada.', read: false }, companyId)); output.push(await runs.create({ automation_id: rule.id, status: 'executed', trigger_data: triggerData, result: { actions: actions.length }, idempotency_key: key }, companyId)); } catch (error) { output.push(await runs.create({ automation_id: rule.id, status: 'error', trigger_data: triggerData, error_message: error.message, idempotency_key: key }, companyId)); } } return output; } };
+export const automationService = {
+  list: (companyId) => automations.list(companyId, '-created_at'),
+  listRuns: (companyId) => runs.list(companyId, '-created_at'),
+  create: (companyId, data) => automations.create(data, companyId),
+  update: (companyId, id, data) => automations.update(id, data, companyId),
+  remove: (companyId, id) => automations.remove(id, companyId),
+  async run() { throw new Error('AUTOMATION_SERVER_SIDE_ONLY'); },
+};
