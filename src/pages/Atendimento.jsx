@@ -19,6 +19,7 @@ import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { getAssistantSettings } from '@/services/assistantSettingsService';
 import { suggestConversationReply } from '@/services/assistantSuggestService';
 import { assistantHandoffService } from '@/services/assistantHandoffService';
+import { assistantFeedbackService } from '@/services/assistantFeedbackService';
 import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 const STATUS_STYLE = {
@@ -95,6 +96,7 @@ export default function Atendimento() {
   const [aiThinking, setAiThinking] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState({ mode: 'manual' });
   const [assistantSuggestion, setAssistantSuggestion] = useState(null);
+  const [assistantDraft, setAssistantDraft] = useState(null);
   const [showAssistantInvestigation, setShowAssistantInvestigation] = useState(false);
   const [assistantError, setAssistantError] = useState('');
   const [activeHandoff, setActiveHandoff] = useState(null);
@@ -119,7 +121,7 @@ export default function Atendimento() {
   const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
   const handoffCanManage = Boolean(!membership.loading && membership.active && can({ role: membership.role }, 'assistant_handoff.manage'));
   useEffect(() => { selectedRef.current = selected; }, [selected]);
-  useEffect(() => { setAssistantSuggestion(null); setAssistantError(''); setShowAssistantInvestigation(false); }, [selected?.id]);
+  useEffect(() => { setAssistantSuggestion(null); setAssistantDraft(null); setAssistantError(''); setShowAssistantInvestigation(false); }, [selected?.id]);
   useEffect(() => {
     let cancelled = false;
     if (!company?.id || !selected?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setActiveHandoff(null); return undefined; }
@@ -325,10 +327,16 @@ export default function Atendimento() {
     const text = message.trim();
     setSending(true); setSendError('');
     try {
+      let sentMessage = null;
       if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
-        if (selected.channel === 'whatsapp') await conversationsService.sendWhatsApp(company.id, selected.id, text, crypto.randomUUID());
+        if (selected.channel === 'whatsapp') sentMessage = await conversationsService.sendWhatsApp(company.id, selected.id, text, crypto.randomUUID());
         else { const now = new Date().toISOString(); await conversationsService.addMessage(company.id, { conversation_id: selected.id, sender_type: 'user', content: text, message_type: 'text', created_at: now }); await conversationsService.update(company.id, selected.id, { last_message_at: now, status: 'in_progress' }); }
       } else { const now = new Date().toISOString(); const newMessages = [...(selected.messages || []), { sender: 'agent', text, timestamp: now }]; await base44.entities.Conversation.update(selected.id, { messages: newMessages, last_message_at: now, status: 'in_progress' }); }
+      if (assistantDraft && import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
+        try { await assistantFeedbackService.record({ companyId: company.id, conversationId: selected.id, messageId: sentMessage?.message?.id || null, traceId: assistantDraft.trace_id, type: text === assistantDraft.original ? 'accepted' : 'edited', originalSuggestion: assistantDraft.original, finalResponse: text }); }
+        catch { /* immutable feedback is best effort after a successful human send */ }
+      }
+      setAssistantDraft(null);
       setMessage('');
       await load(true);
     } catch (error) {
@@ -342,7 +350,7 @@ export default function Atendimento() {
     setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null); setShowAssistantInvestigation(false);
     try {
       const result = await suggestConversationReply(selected.id);
-      if (result?.success !== false && result?.suggestion) setAssistantSuggestion(result);
+      if (result?.success !== false && result?.suggestion) setAssistantSuggestion({ ...result, original_suggestion: result.suggestion });
       else setAssistantError(`${result?.message || 'Não foi possível gerar uma sugestão segura.'}${result?.code ? ` Código: ${result.code}` : ''}`);
     } catch (error) {
       const code = typeof error?.code === 'string' ? error.code : null;
@@ -365,6 +373,22 @@ export default function Atendimento() {
       await load();
     } catch { setHandoffError('Não foi possível criar a transferência.'); }
     finally { setHandoffLoading(false); }
+  };
+
+  const useAssistantSuggestion = () => {
+    if (!assistantSuggestion?.suggestion) return;
+    setMessage(assistantSuggestion.suggestion);
+    setAssistantDraft({ original: assistantSuggestion.original_suggestion || assistantSuggestion.suggestion, trace_id: assistantSuggestion.decision?.trace_id || null });
+    setAssistantSuggestion(null);
+    setShowAssistantInvestigation(false);
+  };
+
+  const rejectAssistantSuggestion = async () => {
+    const rejected = assistantSuggestion;
+    setAssistantSuggestion(null); setShowAssistantInvestigation(false);
+    if (!rejected || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return;
+    try { await assistantFeedbackService.record({ companyId: company.id, conversationId: selected.id, traceId: rejected.decision?.trace_id, type: 'rejected', originalSuggestion: rejected.original_suggestion || rejected.suggestion }); }
+    catch { /* feedback failure must not block human service */ }
   };
 
   const claimHandoff = async () => {
@@ -549,7 +573,7 @@ export default function Atendimento() {
                     <textarea className="min-h-20 w-full rounded-lg border border-blue-300/40 bg-[#0b1424] p-2 text-sm text-white placeholder:text-slate-400" value={assistantSuggestion.suggestion} onChange={(event) => setAssistantSuggestion({ ...assistantSuggestion, suggestion: event.target.value })} />
                     <p className="mt-1 text-[10px] text-blue-100">{assistantSuggestion.sources?.length ? `Fontes: ${[...new Map(assistantSuggestion.sources.map((source) => { const domain = source.domain || source.source_domain || 'fonte externa'; const label = source.type === 'internal_catalog' ? 'Catálogo interno' : source.type === 'manufacturer_official' ? `Fabricante oficial — ${domain}` : `Fonte externa — ${domain}`; return [domain, label]; })).values()].join(', ')}` : 'Fonte: dados internos da empresa'}</p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-1"><Button type="button" size="sm" onClick={() => { setMessage(assistantSuggestion.suggestion); setAssistantSuggestion(null); setShowAssistantInvestigation(false); }}>Usar resposta</Button><Button type="button" size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}>Gerar novamente</Button><Button type="button" size="sm" variant="outline" onClick={() => setShowAssistantInvestigation((visible) => !visible)}>{showAssistantInvestigation ? 'Ocultar investigação' : 'Ver investigação'}</Button><Button type="button" size="sm" variant="ghost" onClick={() => { setAssistantSuggestion(null); setShowAssistantInvestigation(false); }}><X className="h-4 w-4" /></Button></div>
+                  <div className="flex shrink-0 flex-wrap gap-1"><Button type="button" size="sm" onClick={useAssistantSuggestion}>Usar resposta</Button><Button type="button" size="sm" variant="outline" onClick={suggestReply} disabled={aiThinking}>Gerar novamente</Button><Button type="button" size="sm" variant="outline" onClick={() => setShowAssistantInvestigation((visible) => !visible)}>{showAssistantInvestigation ? 'Ocultar investigação' : 'Ver investigação'}</Button><Button type="button" size="sm" variant="ghost" onClick={rejectAssistantSuggestion}><X className="h-4 w-4" /></Button></div>
                 </div>
                 {showAssistantInvestigation && <AssistantInvestigation suggestion={assistantSuggestion} />}
               </div>}
