@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Building2, Users, Package, ShoppingCart, LayoutDashboard, Check, ChevronRight } from 'lucide-react';
 import { salesService } from '@/services/salesService';
 import { customersService } from '@/services/customersService';
@@ -19,8 +19,10 @@ const STEPS = [
 ];
 
 export default function Onboarding() {
-  const { company } = useOutletContext();
-  const { createCompany } = useCompany();
+  // /onboarding is intentionally outside CompanyGuard so a new authenticated
+  // user can create the first company. Read the active company directly from
+  // CompanyProvider so the page updates after the idempotent RPC completes.
+  const { company, createCompany } = useCompany();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [done, setDone] = useState({});
