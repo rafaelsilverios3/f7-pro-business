@@ -44,6 +44,7 @@ const NAV = [
       { to: '/sales-hub', label: 'F7 Sales Hub', icon: BarChart3, permission: 'sales_channels.view' },
       { to: '/ai-sales', label: 'AI Sales Assistant', icon: BrainCircuit, permission: 'ai_sales.view' },
       { to: '/opportunity-radar', label: 'Opportunity Radar', icon: Target, permission: 'opportunity_radar.view' },
+      { to: '/ai-observability', label: 'Execuções da IA', icon: BrainCircuit, permission: 'ai_observability.view' },
       { to: '/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'reports.view' },
     ],
   },

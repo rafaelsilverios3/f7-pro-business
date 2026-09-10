@@ -5,6 +5,7 @@ import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNee
 import { F7AIOrchestrator } from '../_shared/f7AIOrchestrator.ts';
 import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from '../_shared/specialists/agriculturalParts.ts';
+import { recordAIStage, reserveAIBudget } from '../_shared/aiObservability.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -301,6 +302,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   let stage = 'ASSISTANT_REQUEST_RECEIVED';
   const requestStartedAt = Date.now();
+  const traceId = crypto.randomUUID();
   let diagnosticCompanyId: string | null = null;
   try {
     const jwt = auth(req);
@@ -347,7 +349,7 @@ Deno.serve(async (req) => {
     const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: internalJobRequest ? conversation.company_id : user.id, target_metric: internalJobRequest ? 'assistant-auto-reply' : 'assistant-suggest', max_count: internalJobRequest ? 30 : 10, window_seconds: internalJobRequest ? 3600 : 60 });
     if (limited.error) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna no controle de uso.', stage: 'rate_limit', internal_error_code: safeInternalCode(limited.error) }, 500);
     if (limited.data === false) return json({ code: 'RATE_LIMITED' }, 429);
-    const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode,automatic_reply_enabled,auto_reply_min_confidence,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,human_handoff_on_low_confidence').eq('company_id', conversation.company_id).maybeSingle();
+    const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode,automatic_reply_enabled,auto_reply_min_confidence,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,human_handoff_on_low_confidence,max_daily_ai_calls,max_daily_web_queries,max_research_rounds,max_tokens_per_request,max_daily_ai_cost,estimated_cost_per_1k_tokens').eq('company_id', conversation.company_id).maybeSingle();
     if (settingsError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao carregar a configuração do assistente.', stage: 'settings_lookup', internal_error_code: safeInternalCode(settingsError) }, 500);
     if (internalJobRequest) {
       if (settings?.mode !== 'automatic' || settings?.automatic_reply_enabled !== true) return json({ code: 'AUTOMATIC_MODE_DISABLED' }, 403);
@@ -388,7 +390,9 @@ Deno.serve(async (req) => {
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
-    const researchTraceId = crypto.randomUUID();
+    const researchTraceId = traceId;
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'REQUEST_RECEIVED' });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'CONTEXT_READY' });
     stage = 'CONTEXT_MESSAGES_READY';
     await logStage(sb, conversation.company_id, stage);
     const latestText = bounded.map((item: any) => item.content || '').join(' ');
@@ -432,9 +436,13 @@ Deno.serve(async (req) => {
       await logResearchEvent(sb, conversation.company_id, conversationId, researchAllowed ? 'WEB_RESEARCH_STARTED' : 'WEB_RESEARCH_SKIPPED', { technical_research_needed: true, feature_enabled: Boolean(researchAllowed), reason: researchFeatureError ? 'feature_lookup_failed' : researchAllowed ? 'feature_enabled' : 'feature_denied' });
       if (!researchFeatureError && researchAllowed) {
         try {
+          const webBudget = await reserveAIBudget(sb, { company_id: conversation.company_id, web_queries: Math.min(3, Number(settings?.max_daily_web_queries || 3)) });
+          if (!webBudget.allowed) throw Object.assign(new Error('AI_WEB_BUDGET_EXCEEDED'), { code: 'AI_WEB_BUDGET_EXCEEDED' });
+          await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'RESEARCH_STARTED', provider: 'brave', query_count: 3 });
           const safeResearchQuery = [...new Set([...terms, safeText(settings?.segment, 80)].filter(Boolean))].join(' ').slice(0, 500);
           await logResearchEvent(sb, conversation.company_id, conversationId, 'MACHINE_IDENTITY_DISCOVERY_STARTED', { research_trace_id: researchTraceId, model: technicalInput?.model, requested_part: technicalInput?.part_description });
           webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, manufacturer: technicalInput?.manufacturer, model: technicalInput?.model, year: technicalInput?.year, application: technicalInput?.part_description, part_number: technicalInput?.old_part_number, domains: [], locale: 'pt-BR', max_results: 5 }, ttl_hours: 24, max_pages: 2, onQuery: (event, details) => logResearchEvent(sb, conversation.company_id, conversationId, event, { research_trace_id: researchTraceId, provider: 'BraveWebSearchProvider', ...details }) });
+          await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'RESEARCH_COMPLETED', provider: 'brave', query_count: webResearch.queries_executed || 0, source_domains: (webResearch.results || []).map((item: any) => item.domain), candidate_count: (webResearch.candidates || []).length, duration_ms: webResearch.duration_ms });
           stage = 'WEB_RESEARCH_READY';
           await logStage(sb, conversation.company_id, stage);
         } catch (error) {
@@ -469,12 +477,22 @@ Deno.serve(async (req) => {
     productIntelligenceContext.missing_for_confirmation = missingForConfirmation;
     await logResearchEvent(sb, conversation.company_id, conversationId, 'AI_CONTEXT_READY', { research_trace_id: researchTraceId, candidate_count: productIntelligenceContext.candidates.length, top_candidate_pns: productIntelligenceContext.candidates.slice(0, 10).map((candidate: any) => candidate.part_number), source_domains: sourceMetadata.map((source: any) => source.domain || source.source_domain), source_types: sourceMetadata.map((source: any) => source.type || source.source_type), manufacturer: webResearch.discovered_machine?.manufacturer || technicalInput?.manufacturer, model: webResearch.discovered_machine?.model || technicalInput?.model, requested_part: technicalInput?.part_description, missing_for_confirmation: missingForConfirmation });
     const assistantDecision = F7AIOrchestrator.orchestrate({ trace_id: researchTraceId, message: latestText, company: { segment: settings?.segment, business_description: settings?.business_description, specific_rules: settings?.specific_rules, mode: internalJobRequest ? 'automatic' : 'assisted', allow_web_research: settings?.allow_web_research !== false }, product_intelligence: productIntelligenceContext, automatic_policy: { enabled: internalJobRequest && settings?.automatic_reply_enabled === true, min_confidence: settings?.auto_reply_min_confidence } });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'TOOLS_SELECTED', tool_names: assistantDecision.tools });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'DECISION_READY', tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: assistantDecision.confidence });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'POLICY_CHECKED', confidence: assistantDecision.confidence });
     stage = 'AI_CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage, { candidate_count: productIntelligenceContext.candidates.length });
     // The provider receives only sanitized context and source metadata, never
     // signed media URLs or credentials from the company data.
     const startedAt = Date.now();
     const model = Deno.env.get('AI_MODEL') || DEFAULT_MODEL;
+    const estimatedTokens = Math.ceil(JSON.stringify({ bounded, relevantProducts, verifiedKnowledge, productIntelligenceContext }).length / 4);
+    const estimatedCost = Number(settings?.estimated_cost_per_1k_tokens || 0) * estimatedTokens / 1000;
+    const aiBudget = await reserveAIBudget(sb, { company_id: conversation.company_id, ai_calls: 1, tokens: estimatedTokens, estimated_cost: estimatedCost });
+    if (!aiBudget.allowed) {
+      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'FAILED', safe_error_code: aiBudget.reason, duration_ms: Date.now() - requestStartedAt });
+      return json({ success: false, code: 'AI_BUDGET_EXCEEDED', error: 'AI_BUDGET_EXCEEDED', message: 'Limite de uso da IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
+    }
     stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
     const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata, knowledge: verifiedKnowledge, productIntelligence: { ...productIntelligenceContext, decision: assistantDecision } });
@@ -484,11 +502,14 @@ Deno.serve(async (req) => {
       await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'failure', providerSuggestion.code, bounded.length, relevantProducts.length, sourceMetadata.length);
       const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_EXCEEDED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_PROVIDER_MODEL_NOT_FOUND' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_STRUCTURED_OUTPUT_UNSUPPORTED' || providerSuggestion.code === 'AI_PROVIDER_CONFIG_INVALID' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
       await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: providerSuggestion.code, provider_code: providerSuggestion.provider_code, provider_type: providerSuggestion.provider_type, provider_param: providerSuggestion.provider_param, provider_request_id: providerSuggestion.request_id, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model }, http_status: status, model });
+      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'FAILED', provider: 'openai', model, tool_names: assistantDecision.tools, candidate_count: productIntelligenceContext.candidates.length, input_tokens: estimatedTokens, estimated_cost: estimatedCost, safe_error_code: providerSuggestion.code, duration_ms: Date.now() - requestStartedAt });
       return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: sourceMetadata, missing_information: missingInformation, decision: assistantDecision }, status);
     }
     await logStage(sb, conversation.company_id, 'AI_RESPONSE_PARSED', { duration_ms: Date.now() - requestStartedAt, model });
     await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'success', null, bounded.length, relevantProducts.length, sourceMetadata.length);
     await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'RESPONSE_CREATED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'COMPLETED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
     return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, decision: assistantDecision, sources: sourceMetadata, product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, sale_price: product.price, stock_quantity: product.stock })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
   } catch (error) {
     const safeCode = safeInternalCode(error) || 'INTERNAL_PROVIDER_ERROR';
