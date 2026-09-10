@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const webhook = fs.readFileSync('supabase/functions/whatsapp-webhook/index.ts', 'utf8');
 const inbox = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 const send = fs.readFileSync('supabase/functions/whatsapp-send/index.ts', 'utf8');
+const outbound = fs.readFileSync('supabase/functions/_shared/whatsappOutbound.ts', 'utf8');
 
 test('WhatsApp webhook reuses the latest company conversation regardless of commercial status', () => {
   assert.match(webhook, /eq\('channel', 'whatsapp'\).*eq\('lead_phone', phone\).*order\('last_message_at'/s);
@@ -25,6 +26,7 @@ test('manual sending disables duplicate clicks and preserves text on safe errors
   assert.match(inbox, /setMessage\(''\)/);
   assert.match(inbox, /INTERNAL_PROVIDER_ERROR/);
   assert.match(inbox, /Enviando\.\.\./);
-  assert.match(send, /'message_insert'/);
+  assert.match(send, /sendWhatsAppText/);
+  assert.match(outbound, /'message_insert'/);
   assert.doesNotMatch(inbox, /WHATSAPP_ACCESS_TOKEN|Authorization\s*:/);
 });

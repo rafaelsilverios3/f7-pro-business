@@ -62,6 +62,21 @@ async function logSafe(sb: any, companyId: string | null, event: string, status:
   } catch (error) { return error; }
 }
 
+async function enqueueAutomaticAssistant(sb: any, message: { companyId: string; conversationId: string; messageId: string; providerMessageId: string }) {
+  const settings = await sb.from('company_assistant_settings').select('mode,automatic_reply_enabled').eq('company_id', message.companyId).maybeSingle();
+  if (settings.error) stageError(settings.error, 'assistant_settings_lookup');
+  if (settings.data?.mode !== 'automatic' || settings.data?.automatic_reply_enabled !== true) return;
+  const queued = await sb.rpc('enqueue_assistant_job', { target_company: message.companyId, target_conversation: message.conversationId, target_message: message.messageId, target_provider_message: message.providerMessageId });
+  if (queued.error) stageError(queued.error, 'assistant_job_enqueue');
+  const job = Array.isArray(queued.data) ? queued.data[0] : queued.data;
+  if (!job?.id || job.status !== 'queued') return;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const dispatch = fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/assistant-worker`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: job.id }) }).catch(() => null);
+  if (typeof (globalThis as any).EdgeRuntime?.waitUntil === 'function') {
+    (globalThis as any).EdgeRuntime.waitUntil(dispatch);
+  }
+}
+
 async function processStatus(sb: any, companyId: string, status: any) {
   if (!status?.id) return;
   const update: Record<string, unknown> = { external_status: String(status.status || 'unknown'), external_status_at: timestamp(status.timestamp) };
@@ -107,7 +122,7 @@ async function processMessage(sb: any, value: any, message: any) {
   const storedMedia = media ? await downloadMedia(sb, companyId, conversation.id, message.id, media) : { path: null, size: null };
   const existing = await sb.from('messages').select('id').eq('company_id', companyId).eq('channel', 'whatsapp').eq('external_message_id', message.id).maybeSingle();
   if (existing.error) stageError(existing.error, 'message_lookup');
-  const inserted = await sb.from('messages').upsert({ company_id: companyId, conversation_id: conversation.id, sender_type: 'customer', content: media?.caption || parsed.content, message_type: parsed.type, channel: 'whatsapp', external_message_id: message.id, external_status: 'received', external_status_at: new Date().toISOString(), media_path: storedMedia.path, media_mime_type: media?.mime_type || null, media_filename: media?.filename || null, media_size: storedMedia.size, media_caption: media?.caption || null, media_type: media?.media_type || null }, { onConflict: 'company_id,channel,external_message_id' });
+  const inserted = await sb.from('messages').upsert({ company_id: companyId, conversation_id: conversation.id, sender_type: 'customer', content: media?.caption || parsed.content, message_type: parsed.type, channel: 'whatsapp', external_message_id: message.id, external_status: 'received', external_status_at: new Date().toISOString(), media_path: storedMedia.path, media_mime_type: media?.mime_type || null, media_filename: media?.filename || null, media_size: storedMedia.size, media_caption: media?.caption || null, media_type: media?.media_type || null }, { onConflict: 'company_id,channel,external_message_id' }).select('id').single();
   if (inserted.error) stageError(inserted.error, 'message_upsert');
   const nextStatus = conversation.status === 'finished' ? 'open' : conversation.status === 'opportunity' ? 'opportunity' : conversation.status || 'open';
   const conversationUpdate = await sb.from('conversations').update({ last_message_at: new Date().toISOString(), customer_id: customerId || undefined, lead_name: profile || undefined, status: nextStatus }).eq('id', conversation.id).eq('company_id', companyId);
@@ -118,6 +133,7 @@ async function processMessage(sb: any, value: any, message: any) {
   }
   const logError = await logSafe(sb, companyId, 'whatsapp_inbound', 'success', { external_id: message.id, message_type: parsed.type });
   if (logError) stageError(logError, 'success_log');
+  if (!existing.data && inserted.data?.id) await enqueueAutomaticAssistant(sb, { companyId, conversationId: conversation.id, messageId: inserted.data.id, providerMessageId: message.id });
 }
 
 Deno.serve(async (req) => {

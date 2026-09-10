@@ -7,7 +7,7 @@ import { AgriculturalPartsSpecialist } from './specialists/agriculturalParts.ts'
 export type F7AIOrchestratorInput = {
   trace_id: string;
   message: string;
-  company: { segment?: string; business_description?: string; specific_rules?: string; mode?: string };
+  company: { segment?: string; business_description?: string; specific_rules?: string; mode?: string; allow_web_research?: boolean };
   product_intelligence: any;
   automatic_policy?: { enabled?: boolean; min_confidence?: string };
 };
@@ -36,7 +36,7 @@ export const F7AIOrchestrator = Object.freeze({
     const conflicts = Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts : [];
     const domain = selectDomain(input);
     const specialist = DomainSpecialistRegistry.select({ ...input.company, message: input.message, domain });
-    const tools = F7ToolRegistry.select({ intent: /\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(input.message) ? 'part_research' : 'general_support', domain, allow_web_research: true });
+    const tools = F7ToolRegistry.select({ intent: /\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(input.message) ? 'part_research' : 'general_support', domain, allow_web_research: input.company.allow_web_research !== false });
     return createAssistantDecision({
       traceId: input.trace_id,
       text: input.message,

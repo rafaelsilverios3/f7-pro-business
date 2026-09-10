@@ -303,11 +303,17 @@ Deno.serve(async (req) => {
   try {
     const jwt = auth(req);
     const sb = admin();
-    const { data: { user } } = await sb.auth.getUser(jwt);
-    if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
-    stage = 'AUTH_OK';
     const body = await req.json().catch(() => ({}));
     const conversationId = typeof body?.conversation_id === 'string' ? body.conversation_id : '';
+    const jobId = typeof body?.job_id === 'string' ? body.job_id : '';
+    const internalJobRequest = Boolean(jobId) && jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    let user: any = null;
+    if (!internalJobRequest) {
+      const authResult = await sb.auth.getUser(jwt);
+      user = authResult.data.user;
+      if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
+    }
+    stage = internalJobRequest ? 'INTERNAL_AUTH_OK' : 'AUTH_OK';
     if (!conversationId) return json({ code: 'CONVERSATION_REQUIRED' }, 400);
 
     const { data: conversation, error: conversationError } = await sb.from('conversations').select('id,company_id,customer_id,channel').eq('id', conversationId).maybeSingle();
@@ -316,25 +322,34 @@ Deno.serve(async (req) => {
     diagnosticCompanyId = conversation.company_id;
     await logStage(sb, conversation.company_id, 'ASSISTANT_REQUEST_RECEIVED');
     await logStage(sb, conversation.company_id, stage);
-    const { data: member, error: memberError } = await sb.from('company_users').select('role,active').eq('company_id', conversation.company_id).eq('user_id', user.id).maybeSingle();
-    if (memberError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar a permissão da empresa.', stage: 'membership_lookup', internal_error_code: safeInternalCode(memberError) }, 500);
-    if (!member?.active || !ALLOWED_ROLES.includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    stage = 'MEMBERSHIP_OK';
-    await logStage(sb, conversation.company_id, stage);
-    if (!['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    stage = 'PERMISSION_OK';
-    await logStage(sb, conversation.company_id, stage);
+    if (internalJobRequest) {
+      const jobResult = await sb.from('assistant_jobs').select('id,company_id,conversation_id,status').eq('id', jobId).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
+      if (jobResult.error) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'job_lookup', internal_error_code: safeInternalCode(jobResult.error) }, 500);
+      if (!jobResult.data || jobResult.data.status !== 'processing') return json({ code: 'INVALID_ASSISTANT_JOB' }, 409);
+      stage = 'JOB_SCOPE_OK';
+      await logStage(sb, conversation.company_id, stage);
+    } else {
+      const { data: member, error: memberError } = await sb.from('company_users').select('role,active').eq('company_id', conversation.company_id).eq('user_id', user.id).maybeSingle();
+      if (memberError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar a permissão da empresa.', stage: 'membership_lookup', internal_error_code: safeInternalCode(memberError) }, 500);
+      if (!member?.active || !ALLOWED_ROLES.includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
+      stage = 'MEMBERSHIP_OK';
+      await logStage(sb, conversation.company_id, stage);
+      stage = 'PERMISSION_OK';
+      await logStage(sb, conversation.company_id, stage);
+    }
     const { data: allowed, error: featureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'ai' });
     if (featureError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o entitlement da empresa.', stage: 'feature_lookup', internal_error_code: safeInternalCode(featureError) }, 500);
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     stage = 'ENTITLEMENT_OK';
     await logStage(sb, conversation.company_id, stage);
-    const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: user.id, target_metric: 'assistant-suggest', max_count: 10, window_seconds: 60 });
+    const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: internalJobRequest ? conversation.company_id : user.id, target_metric: internalJobRequest ? 'assistant-auto-reply' : 'assistant-suggest', max_count: internalJobRequest ? 30 : 10, window_seconds: internalJobRequest ? 3600 : 60 });
     if (limited.error) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna no controle de uso.', stage: 'rate_limit', internal_error_code: safeInternalCode(limited.error) }, 500);
     if (limited.data === false) return json({ code: 'RATE_LIMITED' }, 429);
-    const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode').eq('company_id', conversation.company_id).maybeSingle();
+    const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode,automatic_reply_enabled,auto_reply_min_confidence,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,human_handoff_on_low_confidence').eq('company_id', conversation.company_id).maybeSingle();
     if (settingsError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao carregar a configuração do assistente.', stage: 'settings_lookup', internal_error_code: safeInternalCode(settingsError) }, 500);
-    if ((settings?.mode || 'manual') !== 'assisted') return json({ code: 'ASSISTED_MODE_REQUIRED' }, 403);
+    if (internalJobRequest) {
+      if (settings?.mode !== 'automatic' || settings?.automatic_reply_enabled !== true) return json({ code: 'AUTOMATIC_MODE_DISABLED' }, 403);
+    } else if ((settings?.mode || 'manual') !== 'assisted') return json({ code: 'ASSISTED_MODE_REQUIRED' }, 403);
     stage = 'MODE_OK';
     await logStage(sb, conversation.company_id, stage);
     const aiEnabled = (Deno.env.get('AI_ENABLED') || '').trim().toLocaleLowerCase() === 'true';
@@ -370,10 +385,11 @@ Deno.serve(async (req) => {
     await logStage(sb, conversation.company_id, stage);
     const latestText = bounded.map((item: any) => item.content || '').join(' ');
     const terms = normalizeTerms(latestText);
-    const relevantProducts = selectRelevantProducts(products || [], terms);
+    const productRows = settings?.allow_product_lookup === false ? [] : (products || []);
+    const relevantProducts = selectRelevantProducts(productRows, terms);
     stage = 'INTERNAL_PRODUCTS_RESOLVED';
     await logStage(sb, conversation.company_id, stage);
-    const productIntelligence = await resolveProductOrPart({ company_id: conversation.company_id, query: latestText, products: products || [], manufacturer: undefined });
+    const productIntelligence = await resolveProductOrPart({ company_id: conversation.company_id, query: latestText, products: productRows, manufacturer: undefined });
     stage = 'PRODUCT_INTELLIGENCE_INTERNAL_READY';
     await logStage(sb, conversation.company_id, stage);
     const relevantQuickReplies = selectRelevantRows(quickReplies || [], terms, MAX_QUICK_REPLIES_CONTEXT, ['reply_key', 'title', 'body', 'category']);
@@ -390,13 +406,13 @@ Deno.serve(async (req) => {
     stage = 'WEB_RESEARCH_INPUT_READY';
     await logStage(sb, conversation.company_id, stage);
     try {
-      technicalInput = inferTechnicalResearchInput(String(latestText || ''), Array.isArray(products) ? products : [], settings && typeof settings === 'object' ? settings : {});
+      technicalInput = inferTechnicalResearchInput(String(latestText || ''), productRows, settings && typeof settings === 'object' ? settings : {});
     } catch (error) {
       technicalInput = { manufacturer: undefined, model: undefined, part_description: String(latestText || '').slice(0, 180), user_text: String(latestText || '') };
       await logStage(sb, conversation.company_id, 'WEB_RESEARCH_INPUT_FALLBACK', { error_name: safeErrorDetails(error).error_name, internal_error_code: safeInternalCode(error) });
     }
     let researchNeeded = false;
-    try { researchNeeded = isTechnicalResearchNeeded({ text: String(latestText || ''), userAskedExternal: false, model: technicalInput?.model, manufacturer: technicalInput?.manufacturer, part_number: technicalInput?.old_part_number }) && productIntelligence?.need_external_research !== false; }
+    try { researchNeeded = settings?.allow_web_research !== false && isTechnicalResearchNeeded({ text: String(latestText || ''), userAskedExternal: false, model: technicalInput?.model, manufacturer: technicalInput?.manufacturer, part_number: technicalInput?.old_part_number }) && productIntelligence?.need_external_research !== false; }
     catch (error) { researchNeeded = true; const safe = safeErrorDetails(error); await logStage(sb, conversation.company_id, 'WEB_RESEARCH_INPUT_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) }); }
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_DECISION', { technical_research_needed: researchNeeded, feature_enabled: false, reason: researchNeeded ? 'technical_question_without_reliable_internal_candidate' : 'not_technical_or_internal_confidence_sufficient' });
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_INTENT_EXTRACTED', { research_trace_id: researchTraceId, technical_research_needed: researchNeeded, model: technicalInput?.model, requested_part: technicalInput?.part_description, reason: 'backend_intent_detection' });
@@ -442,7 +458,7 @@ Deno.serve(async (req) => {
     productIntelligenceContext.missing_for_search = researchNeeded ? [] : productIntelligenceContext.missing_information;
     productIntelligenceContext.missing_for_confirmation = missingForConfirmation;
     await logResearchEvent(sb, conversation.company_id, conversationId, 'AI_CONTEXT_READY', { research_trace_id: researchTraceId, candidate_count: productIntelligenceContext.candidates.length, top_candidate_pns: productIntelligenceContext.candidates.slice(0, 10).map((candidate: any) => candidate.part_number), source_domains: sourceMetadata.map((source: any) => source.domain || source.source_domain), source_types: sourceMetadata.map((source: any) => source.type || source.source_type), manufacturer: webResearch.discovered_machine?.manufacturer || technicalInput?.manufacturer, model: webResearch.discovered_machine?.model || technicalInput?.model, requested_part: technicalInput?.part_description, missing_for_confirmation: missingForConfirmation });
-    const assistantDecision = F7AIOrchestrator.orchestrate({ trace_id: researchTraceId, message: latestText, company: { segment: settings?.segment, business_description: settings?.business_description, specific_rules: settings?.specific_rules, mode: 'assisted' }, product_intelligence: productIntelligenceContext, automatic_policy: { enabled: false } });
+    const assistantDecision = F7AIOrchestrator.orchestrate({ trace_id: researchTraceId, message: latestText, company: { segment: settings?.segment, business_description: settings?.business_description, specific_rules: settings?.specific_rules, mode: internalJobRequest ? 'automatic' : 'assisted', allow_web_research: settings?.allow_web_research !== false }, product_intelligence: productIntelligenceContext, automatic_policy: { enabled: internalJobRequest && settings?.automatic_reply_enabled === true, min_confidence: settings?.auto_reply_min_confidence } });
     stage = 'AI_CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage, { candidate_count: productIntelligenceContext.candidates.length });
     // The provider receives only sanitized context and source metadata, never

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const page = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 const service = fs.readFileSync('src/services/conversationsService.js', 'utf8');
 const send = fs.readFileSync('supabase/functions/whatsapp-send/index.ts', 'utf8');
+const outbound = fs.readFileSync('supabase/functions/_shared/whatsappOutbound.ts', 'utf8');
 const permissions = fs.readFileSync('src/lib/permissions.js', 'utf8');
 
 test('inbox loads conversations and messages scoped to company_id', () => {
@@ -27,15 +28,16 @@ test('WhatsApp replies use the backend function and never call Meta from the bro
   assert.match(send, /company_users/);
   assert.match(send, /company_id.*companyId/);
   assert.match(send, /ALLOWED_ROLES/);
-  assert.match(send, /https:\/\/graph\.facebook\.com/);
+  assert.match(send, /sendWhatsAppText/);
+  assert.match(outbound, /https:\/\/graph\.facebook\.com/);
 });
 
 test('manual send persists real provider id and status, then updates conversation and usage', () => {
-  assert.match(send, /external_message_id: externalId/);
-  assert.match(send, /external_status: 'sent'/);
-  assert.match(send, /conversationUpdate/);
-  assert.match(send, /increment_usage/);
-  assert.match(send, /message_sent/);
+  assert.match(outbound, /external_message_id: externalId/);
+  assert.match(outbound, /external_status: 'sent'/);
+  assert.match(outbound, /conversationUpdate/);
+  assert.match(outbound, /increment_usage/);
+  assert.match(outbound, /message_sent/);
 });
 
 test('inbox renders real delivery statuses and keeps AI assisted with human sending', () => {

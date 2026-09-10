@@ -53,7 +53,9 @@ test('assisted endpoint uses the central orchestrator and never approves automat
   assert.match(orchestrator, /F7AIOrchestrator/);
   assert.match(orchestrator, /selectDomain/);
   assert.match(assistant, /F7AIOrchestrator\.orchestrate/);
-  assert.match(assistant, /automatic_policy: \{ enabled: false \}/);
+  assert.match(assistant, /enabled: internalJobRequest && settings\?\.automatic_reply_enabled === true/);
+  assert.match(assistant, /internalJobRequest \? 'automatic' : 'assisted'/);
+  assert.match(assistant, /if \(internalJobRequest\)[\s\S]*AUTOMATIC_MODE_DISABLED[\s\S]*else if[\s\S]*ASSISTED_MODE_REQUIRED/);
   assert.match(assistant, /decision: assistantDecision/);
   assert.doesNotMatch(assistant, /whatsapp-send/);
   assert.match(assistant, /Siga a ação selecionada em PRODUCT_INTELLIGENCE\.decision/);
