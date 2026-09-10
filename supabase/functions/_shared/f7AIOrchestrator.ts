@@ -3,11 +3,17 @@ import { F7ToolRegistry } from './toolRegistry.ts';
 import { DomainSpecialistRegistry } from './specialistRegistry.ts';
 import { ManufacturerAdapterRegistry } from './manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from './specialists/agriculturalParts.ts';
+import { detectAssistantIntent } from './assistantIntent.ts';
+import { filterToolsByCapabilities } from './assistantCapabilities.ts';
+
+// Explicit compatibility map keeps persisted/legacy intents interoperable with
+// the single canonical taxonomy used by AssistantDecision.
+export const LEGACY_INTENT_COMPATIBILITY = Object.freeze({ part_research: 'parts', catalog_lookup: 'product', pricing_analysis: 'price', crm_analysis: 'crm', supplier_research: 'supplier', opportunity_analysis: 'opportunity', market_research: 'market_research' });
 
 export type F7AIOrchestratorInput = {
   trace_id: string;
   message: string;
-  company: { segment?: string; business_description?: string; specific_rules?: string; mode?: string; allow_web_research?: boolean };
+  company: { segment?: string; business_description?: string; specific_rules?: string; mode?: string; allow_web_research?: boolean; [key: string]: unknown };
   product_intelligence: any;
   automatic_policy?: { enabled?: boolean; min_confidence?: string };
 };
@@ -27,16 +33,6 @@ function selectDomain(input: F7AIOrchestratorInput) {
   return 'general_business';
 }
 
-function selectIntent(message: string) {
-  if (/\b(pre[cç]o|precifica[cç][aã]o|margem|markup|custo real)\b/i.test(message)) return 'pricing_analysis';
-  if (/\b(lead|cliente inativo|follow.?up|recorr[eê]ncia|upsell|crm)\b/i.test(message)) return 'crm_analysis';
-  if (/\b(fornecedor|prazo de entrega|reputa[cç][aã]o|risco do fornecedor)\b/i.test(message)) return 'supplier_research';
-  if (/\b(mercado|demanda|tend[eê]ncia|concorr[eê]ncia|pre[cç]o m[eé]dio)\b/i.test(message)) return 'market_research';
-  if (/\b(oportunidade|potencial de venda|novo produto|viabilidade)\b/i.test(message)) return 'opportunity_analysis';
-  if (/\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(message)) return 'part_research';
-  return 'general_support';
-}
-
 export const F7AIOrchestrator = Object.freeze({
   orchestrate(input: F7AIOrchestratorInput): AssistantDecision {
     const intelligence = input.product_intelligence && typeof input.product_intelligence === 'object' ? input.product_intelligence : {};
@@ -46,8 +42,8 @@ export const F7AIOrchestrator = Object.freeze({
     const conflicts = Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts : [];
     const domain = selectDomain(input);
     const specialist = DomainSpecialistRegistry.select({ ...input.company, message: input.message, domain });
-    const intent = selectIntent(input.message);
-    const tools = F7ToolRegistry.select({ intent, domain, allow_web_research: input.company.allow_web_research !== false });
+    const intent = detectAssistantIntent(input.message);
+    const tools = filterToolsByCapabilities(F7ToolRegistry.select({ intent, domain, allow_web_research: input.company.allow_web_research !== false }), input.company);
     return createAssistantDecision({
       traceId: input.trace_id,
       text: input.message,

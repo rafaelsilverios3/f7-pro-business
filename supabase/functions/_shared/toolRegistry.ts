@@ -41,13 +41,15 @@ export const F7ToolRegistry = Object.freeze({
   get: (name: string) => tools.find((tool) => tool.name === name) || null,
   select(input: { intent: string; domain: string; allow_web_research?: boolean }) {
     const names = new Set(['ConversationTool', 'CompanyKnowledgeTool']);
-    if (input.intent === 'part_research' || input.intent === 'catalog_lookup') ['InternalCatalogTool', 'ProductTool', 'PartResearchTool'].forEach((name) => names.add(name));
-    if (input.intent === 'part_research' && input.allow_web_research !== false) ['WebSearchTool', 'OfficialSourceTool'].forEach((name) => names.add(name));
-    if (input.intent === 'supplier_research') ['SupplierTool', 'SupplierResearchTool', 'MarketResearchTool'].forEach((name) => names.add(name));
-    if (input.intent === 'market_research') ['MarketResearchTool', 'OpportunityTool'].forEach((name) => names.add(name));
-    if (input.intent === 'opportunity_analysis') ['OpportunityTool', 'MarketResearchTool', 'SupplierResearchTool'].forEach((name) => names.add(name));
-    if (input.intent === 'pricing_analysis') ['ProductTool', 'PricingTool'].forEach((name) => names.add(name));
-    if (input.intent === 'crm_analysis') ['CustomerTool', 'CRMTool'].forEach((name) => names.add(name));
+    if (['parts', 'compatibility', 'product'].includes(input.intent) || input.intent === 'part_research' || input.intent === 'catalog_lookup') ['InternalCatalogTool', 'ProductTool', 'PartResearchTool'].forEach((name) => names.add(name));
+    if (['parts', 'compatibility'].includes(input.intent) && input.allow_web_research !== false) ['WebSearchTool', 'OfficialSourceTool'].forEach((name) => names.add(name));
+    if (['supplier', 'supplier_research'].includes(input.intent)) ['SupplierTool', 'SupplierResearchTool', 'MarketResearchTool'].forEach((name) => names.add(name));
+    if (['market_research'].includes(input.intent)) ['MarketResearchTool', 'OpportunityTool'].forEach((name) => names.add(name));
+    if (['opportunity', 'opportunity_analysis'].includes(input.intent)) ['OpportunityTool', 'MarketResearchTool', 'SupplierResearchTool'].forEach((name) => names.add(name));
+    if (['price'].includes(input.intent) || input.intent === 'pricing_analysis') ['ProductTool', 'PricingTool'].forEach((name) => names.add(name));
+    if (input.intent === 'stock') ['ProductTool', 'StockTool'].forEach((name) => names.add(name));
+    if (input.intent === 'quote') ['ProductTool', 'PricingTool', 'QuoteTool'].forEach((name) => names.add(name));
+    if (['customer', 'crm'].includes(input.intent) || input.intent === 'crm_analysis') ['CustomerTool', 'CRMTool'].forEach((name) => names.add(name));
     return tools.filter((tool) => names.has(tool.name) && tool.enabled);
   },
 });

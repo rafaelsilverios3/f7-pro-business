@@ -35,6 +35,29 @@ export async function sendWhatsAppText(input: {
     if (previous.data) return { ok: true, message: previous.data, provider_status: 200, deduplicated: true };
   }
 
+  if (input.client_request_id) {
+    const outbox = await sb.from('whatsapp_outbox').select('id,status,provider_message_id,message_id,conversation_id,content,sender_type,sender_user_id').eq('company_id', companyId).eq('client_request_id', input.client_request_id).maybeSingle();
+    if (outbox.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_lookup', 500, safeCode(outbox.error));
+    if (outbox.data) {
+      if (outbox.data.status === 'sent' && outbox.data.message_id) {
+        const stored = await sb.from('messages').select('*').eq('id', outbox.data.message_id).maybeSingle();
+        if (!stored.error && stored.data) return { ok: true, message: stored.data, provider_status: 200, deduplicated: true };
+      }
+      // A pending/provider_accepted request may already have reached Meta. Never
+      // send it again; retry only reconciles the local message row.
+      if (outbox.data.status === 'pending' || outbox.data.status === 'provider_accepted') {
+        if (outbox.data.provider_message_id) {
+          const reconciled = await sb.from('messages').insert({ company_id: companyId, conversation_id: conversation.id, sender_type: outbox.data.sender_type || input.sender_type, sender_user_id: outbox.data.sender_user_id || input.sender_user_id || null, content: outbox.data.content || content, message_type: 'text', channel: 'whatsapp', external_message_id: outbox.data.provider_message_id, external_status: 'sent', external_status_at: new Date().toISOString(), client_request_id: input.client_request_id }).select().single();
+          if (!reconciled.error && reconciled.data) {
+            await sb.from('whatsapp_outbox').update({ status: 'sent', message_id: reconciled.data.id, updated_at: new Date().toISOString() }).eq('id', outbox.data.id).eq('company_id', companyId);
+            return { ok: true, message: reconciled.data, provider_status: 200, deduplicated: true };
+          }
+        }
+        return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, outbox.data.status);
+      }
+    }
+  }
+
   const integrationResult = await sb.from('company_integrations').select('external_phone_id,status').eq('company_id', companyId).eq('provider', 'whatsapp').maybeSingle();
   if (integrationResult.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'integration_lookup', 500, safeCode(integrationResult.error));
   const integration = integrationResult.data;
@@ -45,6 +68,15 @@ export async function sendWhatsAppText(input: {
 
   const to = normalizePhone(conversation.lead_phone || '');
   if (to.length < 8) return failure(sb, companyId, requestId, 'INVALID_PAYLOAD', 'recipient_validation', 400);
+  let outboxId: string | null = null;
+  if (input.client_request_id) {
+    const created = await sb.from('whatsapp_outbox').insert({ company_id: companyId, conversation_id: conversation.id, client_request_id: input.client_request_id, content, sender_type: input.sender_type, sender_user_id: input.sender_user_id || null, status: 'pending', attempts: 1 }).select('id').single();
+    if (created.error) {
+      if (safeCode(created.error) === '23505') return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_lookup', 409, safeCode(created.error));
+      return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_insert', 500, safeCode(created.error));
+    }
+    outboxId = created.data?.id || null;
+  }
   const version = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v20.0';
   let response: Response;
   try {
@@ -57,13 +89,27 @@ export async function sendWhatsAppText(input: {
     return failure(sb, companyId, requestId, 'PROVIDER_UNAVAILABLE', 'meta_send', 503);
   }
   const providerPayload = await response.json().catch(() => ({}));
-  if (!response.ok) return failure(sb, companyId, requestId, 'PROVIDER_ERROR', 'meta_send', response.status >= 400 && response.status <= 599 ? response.status : 502, null, response.status);
+  if (!response.ok) {
+    if (outboxId) await sb.from('whatsapp_outbox').update({ status: 'failed', provider_status: response.status, last_error_code: 'PROVIDER_ERROR', updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId);
+    return failure(sb, companyId, requestId, 'PROVIDER_ERROR', 'meta_send', response.status >= 400 && response.status <= 599 ? response.status : 502, null, response.status);
+  }
   const externalId = providerPayload?.messages?.[0]?.id;
-  if (!externalId) return failure(sb, companyId, requestId, 'PROVIDER_ERROR', 'meta_send', 502, null, response.status);
+  if (!externalId) {
+    if (outboxId) await sb.from('whatsapp_outbox').update({ status: 'failed', provider_status: response.status, last_error_code: 'PROVIDER_ERROR', updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId);
+    return failure(sb, companyId, requestId, 'PROVIDER_ERROR', 'meta_send', 502, null, response.status);
+  }
+  if (outboxId) {
+    const accepted = await sb.from('whatsapp_outbox').update({ status: 'provider_accepted', provider_message_id: externalId, provider_status: response.status, updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId);
+    if (accepted.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_acceptance', 500, safeCode(accepted.error), response.status);
+  }
 
   const now = new Date().toISOString();
   const inserted = await sb.from('messages').insert({ company_id: companyId, conversation_id: conversation.id, sender_type: input.sender_type, sender_user_id: input.sender_user_id || null, content, message_type: 'text', channel: 'whatsapp', external_message_id: externalId, external_status: 'sent', external_status_at: now, client_request_id: input.client_request_id || null }).select().single();
-  if (inserted.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'message_insert', 500, safeCode(inserted.error));
+  if (inserted.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'message_insert', 500, safeCode(inserted.error), response.status);
+  if (outboxId) {
+    const finalized = await sb.from('whatsapp_outbox').update({ status: 'sent', message_id: inserted.data?.id || null, updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId);
+    if (finalized.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_finalize', 500, safeCode(finalized.error), response.status);
+  }
   const conversationUpdate = await sb.from('conversations').update({ last_message_at: now, status: 'in_progress' }).eq('id', conversation.id).eq('company_id', companyId);
   if (conversationUpdate.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'conversation_update', 500, safeCode(conversationUpdate.error));
   const usage = await sb.rpc('increment_usage', { target_company: companyId, target_metric: 'whatsapp_messages_sent', target_period: now.slice(0, 10), amount: 1 });

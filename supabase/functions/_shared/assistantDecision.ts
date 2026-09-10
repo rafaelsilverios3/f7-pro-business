@@ -1,7 +1,9 @@
 export type AssistantNextAction = 'SEARCH_MORE' | 'ASK_CUSTOMER' | 'ANSWER_WITH_OPTIONS' | 'ANSWER_CONFIDENTLY' | 'CHECK_STOCK' | 'PREPARE_QUOTE' | 'HANDOFF_HUMAN' | 'STOP';
+import { detectAssistantIntent, normalizeAssistantIntent, type AssistantIntent } from './assistantIntent.ts';
+
 export type AssistantDecision = {
   trace_id: string;
-  intent: 'part_research' | 'catalog_lookup' | 'general_support' | 'commercial_action';
+  intent: AssistantIntent;
   domain: string;
   objective: string;
   investigation_state: 'researching' | 'candidates_found' | 'confirmed' | 'blocked';
@@ -58,7 +60,7 @@ export function createAssistantDecision(input: {
   const normalized = candidates.map((candidate) => ({ part_number: String(candidate?.part_number || '').slice(0, 80), confidence: normalizedConfidence(candidate?.confidence_level), source_type: typeof candidate?.source_type === 'string' ? candidate.source_type.slice(0, 80) : undefined, score: Number.isFinite(Number(candidate?.score)) ? Number(candidate.score) : undefined })).filter((candidate) => candidate.part_number);
   const best = normalized.reduce((current, candidate) => (rank[candidate.confidence as keyof typeof rank] || 0) > (rank[current as keyof typeof rank] || 0) ? candidate.confidence : current, 'INSUFFICIENT');
   const unresolved = Array.isArray(input.unresolvedQuestions) ? input.unresolvedQuestions.slice(0, 10).map((item) => String(item).slice(0, 120)) : [];
-  const intent = /\b(pn|p\/?n|c[oó]digo|filtro|correia|rolamento|pe[cç]a|compatibilidade)\b/i.test(String(input.text || '')) ? 'part_research' : 'general_support';
+  const intent = detectAssistantIntent(String(input.text || ''));
   const min = String(input.minConfidence || 'HIGH').toUpperCase() as keyof typeof rank;
   const confidencePasses = (rank[best as keyof typeof rank] || 0) >= (rank[min] ?? rank.HIGH);
   const eligible = Boolean(input.automaticReplyEnabled) && !input.graveConflict && confidencePasses;

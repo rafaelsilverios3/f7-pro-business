@@ -30,3 +30,10 @@ test('manual sending disables duplicate clicks and preserves text on safe errors
   assert.match(outbound, /'message_insert'/);
   assert.doesNotMatch(inbox, /WHATSAPP_ACCESS_TOKEN|Authorization\s*:/);
 });
+
+test('outbound persistence uses a pre-send outbox and never resends provider-accepted requests', () => {
+  assert.match(outbound, /whatsapp_outbox/);
+  assert.match(outbound, /status: 'provider_accepted'/);
+  assert.match(outbound, /OUTBOUND_RECONCILIATION_REQUIRED/);
+  assert.match(outbound, /Never[\s\S]*send it again/);
+});
