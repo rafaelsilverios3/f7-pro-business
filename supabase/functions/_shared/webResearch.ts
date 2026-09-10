@@ -296,13 +296,23 @@ export function resolveMachineIdentity(results: WebSearchResult[], input: Techni
 
 export function inferTechnicalResearchInput(text: string, products: any[] = [], settings: Record<string, unknown> = {}): TechnicalResearchQueryInput {
   const value = safeText(text, 1000);
-  const model = value.match(/\b(?:[A-Z]{1,3}\s*)?\d{3,5}[A-Z]?\b/i)?.[0] || undefined;
-  const catalogManufacturer = products.find((product) => product?.brand)?.brand;
-  const contextualManufacturer = value.match(/\b([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+){0,2})\s+\d{3,5}[A-Z]?\b/i)?.[1];
-  const manufacturer = safeText(catalogManufacturer || contextualManufacturer, 120) || undefined;
-  const specificPart = value.match(/\b(filtro\s+(?:de\s+)?(?:combust[ií]vel|[oó]leo|ar)|correia(?:\s+do?\s+motor)?|rolamento|bomba|alternador|radiador)\b/i)?.[1];
-  const partDescription = specificPart || value.match(/(?:c[oó]digo|pn|p\/?n|part.?number|pe[cç]a)\s+(?:de\s+)?([\wÀ-ÿ -]{3,50})/i)?.[1] || safeText(settings.segment, 80) || value;
   const year = value.match(/\b(?:19|20)\d{2}\b/)?.[0];
+  const codedModel = value.match(/\b(?=[A-Z0-9 -]{3,12}\b)(?=[A-Z0-9 -]*[A-Z])(?=[A-Z0-9 -]*\d)[A-Z]{0,3}\s*\d{2,5}[A-Z]?\b/i)?.[0];
+  const namedModel = value.match(/\b([\p{L}][\p{L}-]{2,})\s+(?:19|20)\d{2}\b/iu)?.[1];
+  const model = safeText(codedModel || namedModel, 80) || undefined;
+  const specificPart = value.match(/\b(filtro\s+(?:de\s+)?(?:combust[ií]vel|[oó]leo|ar)|correia(?:\s+(?:(?:do|da|de)\s+)?[\p{L}-]+){0,2}|corrente(?:\s+(?:(?:do|da|de)\s+)?[\p{L}-]+){0,2}|rolamento(?:\s+(?:(?:do|da|de)\s+)?[\p{L}-]+){0,2}|bomba|alternador|radiador)\b/iu)?.[1];
+  const escapedModel = model?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const titleCaseManufacturer = escapedModel
+    ? value.match(new RegExp(`\\b([\\p{Lu}][\\p{L}-]+(?:\\s+[\\p{Lu}][\\p{L}-]+){0,2})\\s+${escapedModel}\\b`, 'u'))?.[1]
+    : undefined;
+  const explicitManufacturer = value.match(/\b(?:fabricante|marca)\s*[:=-]?\s*([\p{L}][\p{L}-]+(?:\s+[\p{L}][\p{L}-]+){0,2})/iu)?.[1];
+  const adapterManufacturer = ManufacturerAdapterRegistry.select({ text: value })?.manufacturer;
+  const relevantCatalogProduct = products.find((product) => {
+    const productText = safeText(`${product?.name || ''} ${product?.description || ''} ${product?.sku || ''} ${product?.part_number || ''}`, 600).toLocaleLowerCase('pt-BR');
+    return Boolean(product?.brand && ((model && productText.includes(model.toLocaleLowerCase('pt-BR'))) || (specificPart && productText.includes(specificPart.toLocaleLowerCase('pt-BR')))));
+  });
+  const manufacturer = safeText(explicitManufacturer || adapterManufacturer || titleCaseManufacturer || relevantCatalogProduct?.brand, 120) || undefined;
+  const partDescription = specificPart || value.match(/(?:c[oó]digo|pn|p\/?n|part.?number|pe[cç]a)\s+(?:de\s+)?([\wÀ-ÿ -]{3,50})/i)?.[1] || safeText(settings.segment, 80) || value;
   return { manufacturer, model, year, part_description: safeText(partDescription, 180), user_text: value };
 }
 
@@ -348,7 +358,7 @@ function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageRes
   const score = (isOfficial ? 100 : 40) + (contextualMatch ? 35 : 0) + (hasPartContext ? 20 : 0);
   const trust = evaluateSourceTrust({ source_type: result.source_type, domain: result.domain, evidence_count: 1, retrieved_at: result.retrieved_at });
   return numbers.map((partNumber) => {
-    const candidate = { part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, model: safeText(context.model, 120) || null, system: null, position: null, serial_range: null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score: score + Math.round(trust.score * 20), is_official, trust_score: trust.score, trust_level: trust.level, confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate;
+    const candidate = { part_number: partNumber, description: safeText(result.title, 240) || null, manufacturer: safeText(context.manufacturer, 120) || null, model: safeText(context.model, 120) || null, system: null, position: null, serial_range: null, application: safeText(`${context.model || ''} ${result.title} ${result.snippet}`, 400) || null, source_url: result.url, source_domain: result.domain, source_type: result.source_type, evidence_text: safeText(result.snippet, 600), evidence: [safeText(`${result.title} ${result.snippet}`, 700)], evidence_count: 1, score: score + Math.round(trust.score * 20), is_official: isOfficial, trust_score: trust.score, trust_level: trust.level, confidence, confidence_level: candidateLevel(confidence), supporting_sources: [result.url] } satisfies TechnicalPartCandidate;
     if (AgriculturalPartsSpecialist.matches({ text: `${context.manufacturer || ''} ${context.model || ''} ${context.part_description || ''}` })) candidate.score = AgriculturalPartsSpecialist.rankCandidate(candidate, context);
     return candidate;
   });
@@ -380,12 +390,13 @@ export function extractTechnicalEvidence(results: WebSearchResult[], pages: Page
 export function isTechnicalResearchNeeded(input: { text: string; manufacturer?: string; model?: string; part_number?: string; userAskedExternal?: boolean }) {
   if (input.userAskedExternal) return true;
   const value = `${input.text} ${input.manufacturer || ''} ${input.model || ''} ${input.part_number || ''}`.toLocaleLowerCase('pt-BR');
-  return Boolean(input.manufacturer || input.model || input.part_number || detectPartResearchIntent(value));
+  const hasSearchIdentity = Boolean(input.manufacturer || input.model || input.part_number);
+  return hasSearchIdentity && detectPartResearchIntent(value);
 }
 
 /** PART_RESEARCH_REQUIRED: dispatch research from technical intent, without waiting for the model. */
 export function detectPartResearchIntent(text: string) {
-  return /\b(pn|p\/?n|part.?number|c[oó]digo|compatibilidade|aplica[cç][aã]o|modelo|serial|chassi|pin|equivalente|fabricante|filtro|correia|rolamento|bomba|sensor|radiador|pe[cç]a)\b/i.test(safeText(text, MAX_QUERY));
+  return /\b(pn|p\/?n|part.?number|c[oó]digo|compatibilidade|aplica[cç][aã]o|modelo|serial|chassi|pin|equivalente|fabricante|filtro|correia|corrente|rolamento|bomba|sensor|radiador|pe[cç]a)\b/i.test(safeText(text, MAX_QUERY));
 }
 
 export function manufacturerDomains(manufacturer?: string) {

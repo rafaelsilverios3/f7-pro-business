@@ -450,7 +450,6 @@ Deno.serve(async (req) => {
     const startedAt = Date.now();
     const model = Deno.env.get('AI_MODEL') || DEFAULT_MODEL;
     stage = 'AI_REQUEST_STARTED';
-    stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
     const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: sourceMetadata, productIntelligence: { ...productIntelligenceContext, decision: assistantDecision } });
     await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
