@@ -9,17 +9,18 @@ import PricingDialog from '@/components/pricing/PricingDialog';
 import ProductCatalogPanel from '@/components/pricing/ProductCatalogPanel';
 
 export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing }) {
-  const [form, setForm] = useState({
+  const emptyForm = {
     sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
     cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
-  });
+  };
+  const [form, setForm] = useState(emptyForm);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
-    if (initial) setForm({ ...form, ...initial });
-    else setForm({ sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false, cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true });
+    if (initial) setForm({ ...emptyForm, ...initial, cost_price: initial.cost_price ?? initial.cost ?? 0, sale_price: initial.sale_price ?? initial.price ?? 0, min_stock: initial.min_stock ?? initial.minimum_stock ?? 0, commission: initial.commission ?? initial.commission_rate ?? 0 });
+    else setForm(emptyForm);
   }, [initial, open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
