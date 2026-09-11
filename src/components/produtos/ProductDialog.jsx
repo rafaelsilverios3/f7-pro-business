@@ -32,10 +32,10 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="flex max-w-3xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>{initial ? 'Editar produto' : 'Novo produto'}</DialogTitle></DialogHeader>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={submit} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">SKU / Código</Label>
               <Input value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="SKU" />
@@ -57,7 +57,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
             <Label className="text-xs">Nome *</Label>
             <Input value={form.name} onChange={(e) => set('name', e.target.value)} required />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Marca</Label>
               <Input value={form.brand} onChange={(e) => set('brand', e.target.value)} />
@@ -67,7 +67,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
               <Input value={form.unit} onChange={(e) => set('unit', e.target.value)} placeholder="un, kg, l" />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Custo</Label>
               <Input type="number" step="0.01" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} />
@@ -82,7 +82,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
             </div>
           </div>
           <Button type="button" variant="outline" className="w-full" onClick={() => setPricingOpen(true)}>Calcular preço de venda</Button>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Estoque</Label>
               <Input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
@@ -106,7 +106,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Tags</Label><Input value={(form.tags || []).join(', ')} onChange={(e) => set('tags', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} placeholder="ex.: promoção, lançamento" /></div><div className="space-y-1.5"><Label className="text-xs">Palavras-chave</Label><Input value={(form.keywords || []).join(', ')} onChange={(e) => set('keywords', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} /></div></div>
           <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={Boolean(form.featured)} onChange={(e) => set('featured', e.target.checked)} /> Produto em destaque</label>
           <ProductCatalogPanel companyId={companyId} productId={initial?.id} canManage={canManageCatalog} />
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-1 border-t border-slate-700/70 bg-background px-1 pt-3">
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button type="submit">{initial ? 'Salvar' : 'Adicionar'}</Button>
           </DialogFooter>
