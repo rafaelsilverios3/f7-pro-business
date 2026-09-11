@@ -9,9 +9,11 @@ const stateFrom = (row: any, maxAgeMinutes: number) => {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
-  const user = await auth(req); if (!user) return json({ code: 'AUTH_REQUIRED' }, 401);
-  const body = await req.json().catch(() => ({})); const companyId = typeof body?.company_id === 'string' ? body.company_id : '';
+  const token = auth(req);
   const sb = admin();
+  const { data: { user }, error: userError } = await sb.auth.getUser(token);
+  if (userError || !user) return json({ code: 'AUTH_REQUIRED' }, 401);
+  const body = await req.json().catch(() => ({})); const companyId = typeof body?.company_id === 'string' ? body.company_id : '';
   const membership = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
   if (membership.error || membership.data?.active === false || !roles.has(String(membership.data?.role || '').toLowerCase())) return json({ code: 'FORBIDDEN' }, 403);
   const events = await sb.from('integration_logs').select('provider,event,status,created_at').eq('company_id', companyId).in('provider', ['assistant','product_intelligence','whatsapp']).order('created_at', { ascending: false }).limit(200);

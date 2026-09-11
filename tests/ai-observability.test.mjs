@@ -44,7 +44,14 @@ test('health distinguishes evidence states without paid probes', () => {
 
 test('inspector requires authenticated admin or manager and returns no content fields', () => {
   assert.match(inspector, /AUTH_REQUIRED/);
+  assert.match(inspector, /auth\.getUser\(token\)/);
   assert.match(inspector, /admin.*gestor/);
   assert.match(inspector, /\.eq\('company_id', companyId\)/);
   assert.doesNotMatch(inspector, /message_content|prompt|authorization|api_key|secret/i);
+});
+
+test('observability functions resolve the authenticated user before checking membership', () => {
+  assert.match(health, /auth\.getUser\(token\)/);
+  assert.match(inspector, /const token = auth\(req\)/);
+  assert.match(health, /const token = auth\(req\)/);
 });
