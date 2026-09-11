@@ -41,6 +41,7 @@ test('capital contribution is a confirmed non-operating cash entry', () => {
   assert.match(capitalMigration, /is_operating.*false/);
   assert.match(capitalMigration, /due_date.*null/);
   assert.match(capitalMigration, /is_company_member/);
+  assert.match(capitalMigration, /security definer/);
   assert.match(financePage, /Aporte \/ investimento/);
   assert.match(financePage, /CAPITAL_TYPES/);
 });

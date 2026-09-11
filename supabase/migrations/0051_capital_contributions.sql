@@ -48,7 +48,7 @@ create or replace function public.record_capital_contribution(
   description_input text default null,
   notes_input text default null,
   idempotency_key_input text default null
-) returns public.financial_entries language plpgsql security invoker set search_path = public as $$
+) returns public.financial_entries language plpgsql security definer set search_path = public as $$
 declare company uuid; entry_row public.financial_entries; movement_id uuid; value numeric(14,2) := round(amount_input,2);
 begin
   if not public.is_company_member(target_company) then raise exception 'Empresa não encontrada'; end if;

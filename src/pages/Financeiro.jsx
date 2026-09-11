@@ -36,6 +36,7 @@ export default function Financeiro() {
   const [paymentEntry, setPaymentEntry] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Pix');
+  const [formError, setFormError] = useState('');
   const [nature, setNature] = useState(FINANCE_NATURES.REVENUE);
   const [form, setForm] = useState({ description: '', category: REVENUE_CATEGORIES[0], amount: '', due_date: todayISO(), occurred_at: new Date().toISOString().slice(0, 16), capital_type: CAPITAL_TYPES[0].value, source_detail: '', notes: '', payment_method: 'A combinar', account: 'Caixa' });
 
@@ -56,14 +57,20 @@ export default function Financeiro() {
     setNature(FINANCE_NATURES.REVENUE);
     setForm({ description: '', category: REVENUE_CATEGORIES[0], amount: '', due_date: todayISO(), occurred_at: new Date().toISOString().slice(0, 16), capital_type: CAPITAL_TYPES[0].value, source_detail: '', notes: '', payment_method: 'A combinar', account: 'Caixa' });
     setDialogOpen(true);
+    setFormError('');
   };
   const changeNature = (value) => { setNature(value); setForm((current) => ({ ...current, category: value === FINANCE_NATURES.REVENUE ? REVENUE_CATEGORIES[0] : EXPENSE_CATEGORIES[0] })); };
   const handleAdd = async (event) => {
     event.preventDefault();
-    if (nature === FINANCE_NATURES.CAPITAL) await financeService.createCapital(company.id, { ...form, capital_type: form.capital_type, occurred_at: form.occurred_at, source_detail: form.source_detail, notes: form.notes });
-    else await financeService.create(company.id, { ...form, nature, type: nature === FINANCE_NATURES.REVENUE ? 'receivable' : 'payable', amount: Number(form.amount) || 0, status: 'pending' });
-    setDialogOpen(false);
-    await load();
+    setFormError('');
+    try {
+      if (nature === FINANCE_NATURES.CAPITAL) await financeService.createCapital(company.id, { ...form, capital_type: form.capital_type, occurred_at: form.occurred_at, source_detail: form.source_detail, notes: form.notes });
+      else await financeService.create(company.id, { ...form, nature, type: nature === FINANCE_NATURES.REVENUE ? 'receivable' : 'payable', amount: Number(form.amount) || 0, status: 'pending' });
+      setDialogOpen(false);
+      await load();
+    } catch (error) {
+      setFormError(error?.message || 'Não foi possível salvar o lançamento. Verifique se a configuração financeira foi aplicada.');
+    }
   };
   const openPayment = (entry) => { setPaymentEntry(entry); setPaymentAmount(String(entry.balance_amount)); setPaymentMethod(entry.payment_method || 'Pix'); };
   const handlePayment = async (event) => {
@@ -99,6 +106,7 @@ export default function Financeiro() {
           <form onSubmit={handleAdd} className="space-y-4">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><button type="button" onClick={() => changeNature(FINANCE_NATURES.REVENUE)} className={`rounded-lg border px-3 py-2.5 text-sm font-semibold ${nature === FINANCE_NATURES.REVENUE ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}>Receita</button><button type="button" onClick={() => changeNature(FINANCE_NATURES.EXPENSE)} className={`rounded-lg border px-3 py-2.5 text-sm font-semibold ${nature === FINANCE_NATURES.EXPENSE ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-slate-200 text-slate-500'}`}>Despesa</button><button type="button" onClick={() => changeNature(FINANCE_NATURES.CAPITAL)} className={`rounded-lg border px-3 py-2.5 text-sm font-semibold ${nature === FINANCE_NATURES.CAPITAL ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500'}`}>Aporte / investimento</button></div>
             <div className="space-y-1.5"><Label className="text-xs">Descrição *</Label><Input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} required /></div>
+            {formError && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{formError}</p>}
             {nature === FINANCE_NATURES.CAPITAL ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Tipo de aporte</Label><select value={form.capital_type} onChange={(event) => setForm({ ...form, capital_type: event.target.value })} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">{CAPITAL_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div><div className="space-y-1.5"><Label className="text-xs">Valor (R$)</Label><Input type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} required /></div></div> : <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Categoria</Label><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">{(nature === FINANCE_NATURES.REVENUE ? REVENUE_CATEGORIES : EXPENSE_CATEGORIES).map((category) => <option key={category}>{category}</option>)}</select></div><div className="space-y-1.5"><Label className="text-xs">Valor total (R$)</Label><Input type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} required /></div></div>}
             {nature === FINANCE_NATURES.CAPITAL ? <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Data da entrada</Label><Input type="datetime-local" value={form.occurred_at} onChange={(event) => setForm({ ...form, occurred_at: event.target.value })} required /></div><div className="space-y-1.5"><Label className="text-xs">Conta / Caixa</Label><Input value={form.account} onChange={(event) => setForm({ ...form, account: event.target.value })} /></div></div><div className="space-y-1.5"><Label className="text-xs">Origem do recurso / sócio</Label><Input value={form.source_detail} onChange={(event) => setForm({ ...form, source_detail: event.target.value })} placeholder="Opcional" /></div><div className="space-y-1.5"><Label className="text-xs">Observação</Label><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Opcional" /></div><p className="text-xs text-slate-500">A entrada de capital é confirmada imediatamente, não cria Conta a Receber e não exige vencimento.</p></> : <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Vencimento</Label><Input type="date" value={form.due_date} onChange={(event) => setForm({ ...form, due_date: event.target.value })} /></div><div className="space-y-1.5"><Label className="text-xs">Forma prevista</Label><select value={form.payment_method} onChange={(event) => setForm({ ...form, payment_method: event.target.value })} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">{PAYMENT_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></div></div><p className="text-xs text-slate-500">{nature === FINANCE_NATURES.REVENUE ? 'A receita cria uma conta a receber. O caixa só muda quando houver recebimento.' : 'A despesa cria uma conta a pagar. O caixa só muda quando houver pagamento.'}</p></>}
             <DialogFooter><Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit">Criar {nature === FINANCE_NATURES.REVENUE ? 'receita' : nature === FINANCE_NATURES.CAPITAL ? 'aporte' : 'despesa'}</Button></DialogFooter>
