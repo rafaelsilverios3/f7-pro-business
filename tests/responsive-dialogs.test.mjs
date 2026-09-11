@@ -15,6 +15,8 @@ test('shared dialogs stay inside the viewport without CSS zoom or scale', () => 
   assert.match(dialog, /max-h-\[calc\(100dvh-1rem\)\]/);
   assert.match(dialog, /overflow-x-hidden/);
   assert.match(dialog, /overflow-y-auto/);
+  assert.match(dialog, /flex min-h-0/);
+  assert.match(dialog, /flex-col/);
   assert.doesNotMatch(dialog, /\bzoom\s*:/);
   assert.doesNotMatch(dialog, /transform:\s*scale/);
 });
@@ -25,6 +27,7 @@ test('alerts, sheets and drawers constrain long content to the viewport', () => 
   assert.match(sheet, /max-h-\[90dvh\]/);
   assert.match(sheet, /w-\[min\(24rem,calc\(100vw-1rem\)\)\]/);
   assert.match(sheet, /overflow-y-auto/);
+  assert.match(sheet, /flex min-h-0 flex-col/);
   assert.match(drawer, /max-h-\[90dvh\]/);
   assert.match(drawer, /overflow-y-auto/);
 });
