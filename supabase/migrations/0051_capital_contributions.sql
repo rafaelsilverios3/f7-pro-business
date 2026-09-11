@@ -25,6 +25,9 @@ create index if not exists idx_financial_entries_company_class on public.financi
 create or replace function public.prepare_financial_entry() returns trigger
 language plpgsql set search_path = public as $$
 begin
+  if tg_op = 'UPDATE' and new.status in ('paid','received') and old.status not in ('paid','received') then
+    new.paid_by := auth.uid();
+  end if;
   if new.type = 'capital' or new.nature = 'capital' or new.entry_class = 'capital' then
     new.type := 'capital'; new.nature := 'capital'; new.entry_class := 'capital'; new.is_operating := false; new.due_date := null;
     new.total_amount := coalesce(new.total_amount, new.amount); new.amount := new.total_amount;

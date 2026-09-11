@@ -40,6 +40,7 @@ test('capital contribution is a confirmed non-operating cash entry', () => {
   assert.match(capitalMigration, /record_capital_contribution/);
   assert.match(capitalMigration, /entry_class.*capital/);
   assert.match(capitalMigration, /is_operating.*false/);
+  assert.match(capitalMigration, /tg_op = 'UPDATE'.*new\.paid_by := auth\.uid\(\)/s);
   assert.match(capitalMigration, /due_date.*null/);
   assert.match(capitalMigration, /is_company_member/);
   assert.match(capitalMigration, /security definer/);
