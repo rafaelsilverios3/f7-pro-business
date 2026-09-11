@@ -211,3 +211,10 @@ test('John Deere behavior lives in a manufacturer adapter without hardcoded part
   assert.match(provider, /ManufacturerAdapterRegistry/);
   assert.doesNotMatch(provider, /john\s*deere|partscatalog\.deere\.com/i);
 });
+
+
+test('technical intent cannot be suppressed by the preliminary internal resolver', () => {
+  assert.match(assistant, /Technical intent comes from the customer message/);
+  assert.doesNotMatch(assistant, /isTechnicalResearchNeeded[\\s\\S]*productIntelligence\\?\\.need_external_research/);
+});
+

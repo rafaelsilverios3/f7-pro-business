@@ -434,7 +434,12 @@ Deno.serve(async (req) => {
     }
     const researchRegion = resolveResearchRegion({ language: settings?.language, locale: settings?.language, country: settings?.country, market: settings?.market, region: settings?.region });
     let researchNeeded = false;
-    try { researchNeeded = settings?.allow_web_research !== false && isTechnicalResearchNeeded({ text: String(latestText || ''), userAskedExternal: false, model: technicalInput?.model, manufacturer: technicalInput?.manufacturer, part_number: technicalInput?.old_part_number }) && productIntelligence?.need_external_research !== false; }
+    try {
+      // Technical intent comes from the customer message. The preliminary
+      // internal resolver runs before machine identity is known and must not
+      // suppress research for a model-specific parts request.
+      researchNeeded = settings?.allow_web_research !== false && isTechnicalResearchNeeded({ text: String(latestText || ''), userAskedExternal: false, model: technicalInput?.model, manufacturer: technicalInput?.manufacturer, part_number: technicalInput?.old_part_number });
+    }
     catch (error) { researchNeeded = true; const safe = safeErrorDetails(error); await logStage(sb, conversation.company_id, 'WEB_RESEARCH_INPUT_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) }); }
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_DECISION', { technical_research_needed: researchNeeded, feature_enabled: null, reason: researchNeeded ? 'technical_question_without_reliable_internal_candidate' : 'not_technical_or_internal_confidence_sufficient' });
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_INTENT_EXTRACTED', { research_trace_id: researchTraceId, technical_research_needed: researchNeeded, model: technicalInput?.model, requested_part: technicalInput?.part_description, reason: 'backend_intent_detection' });
