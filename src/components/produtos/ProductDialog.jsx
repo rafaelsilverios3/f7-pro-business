@@ -12,7 +12,8 @@ function productSaveMessage(error) {
   const code = String(error?.code || '').trim();
   if (code === '23505') return 'Já existe um produto com este SKU nesta empresa.';
   if (code === '42501') return 'Você não tem permissão para alterar produtos desta empresa.';
-  if (code === '42703') return 'O banco ainda não possui todos os campos do catálogo. Aplique a migration do catálogo de produtos.';
+  if (code === '42703' || code === 'PGRST204' || code === 'PGRST205') return 'O banco ainda não possui todos os campos do catálogo. Aplique a migration 0021 do catálogo de produtos.';
+  if (code === 'PGRST116') return 'O produto não foi encontrado nesta empresa. Atualize a página e tente novamente.';
   return 'Não foi possível salvar as alterações do produto.';
 }
 

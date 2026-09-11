@@ -25,7 +25,7 @@ test('product update is tenant scoped and records only stock differences', () =>
 
 test('product dialog keeps the modal open on save errors and prevents duplicate saves', () => {
   assert.match(dialog, /Não foi possível salvar as alterações do produto/);
-  assert.match(dialog, /migration do catálogo de produtos/);
+  assert.match(dialog, /migration 0021 do catálogo de produtos/);
   assert.match(dialog, /Você não tem permissão para alterar produtos/);
   assert.match(dialog, /Salvando\.\.\./);
   assert.match(dialog, /disabled=\{saving\}/);
