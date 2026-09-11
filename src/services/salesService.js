@@ -5,7 +5,7 @@ import { getDataProvider } from '@/data/providerSelector';
 export const salesService = {
   finalize: async (companyId, payload) => {
     saleSchema.parse({ ...payload, company_id: companyId });
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') return getDataProvider().rpc('finalize_sale', { sale_payload: { ...payload, company_id: companyId } });
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') return getDataProvider().rpc('finalize_sale_financial', { sale_payload: { ...payload, company_id: companyId } });
     return salesService.create(companyId, payload);
   },
   create: async (companyId, data) => {

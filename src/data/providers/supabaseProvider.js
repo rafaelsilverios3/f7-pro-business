@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 let client;
-const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', SupplierIntelligence: 'supplier_intelligence_profiles', SupplierReview: 'supplier_reviews', SupplierRiskSignal: 'supplier_risk_signals', MarketSource: 'market_sources', MarketSignal: 'market_signals', MarketOpportunity: 'market_opportunities', SalesChannel: 'sales_channels', ProductChannel: 'product_channel_links', ChannelMetric: 'channel_metrics', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
+const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', FinancialMovement: 'financial_movements', FinancialInstallment: 'financial_installments', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', SupplierIntelligence: 'supplier_intelligence_profiles', SupplierReview: 'supplier_reviews', SupplierRiskSignal: 'supplier_risk_signals', MarketSource: 'market_sources', MarketSignal: 'market_signals', MarketOpportunity: 'market_opportunities', SalesChannel: 'sales_channels', ProductChannel: 'product_channel_links', ChannelMetric: 'channel_metrics', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
 const sortColumns = { created_date: 'created_at', updated_date: 'updated_at' };
 const normalizeSort = (sort, fallback = 'created_at') => {
   const value = typeof sort === 'string' && sort.trim() ? sort.trim() : fallback;
@@ -17,6 +17,7 @@ const normalize = (name, row) => {
   if (name === 'Message') return { ...row, sender: row.sender_type === 'user' ? 'agent' : row.sender_type, text: row.content, timestamp: row.created_at, created_date: row.created_at };
   if (name === 'Automation') return { ...row, trigger: row.trigger_type, created_date: row.created_at, updated_date: row.updated_at };
   if (name === 'AutomationRun') return { ...row, trigger: row.trigger_data?.trigger, created_date: row.created_at };
+  if (name === 'FinancialEntry') return { ...row, amount: row.total_amount ?? row.amount, created_date: row.created_at, updated_date: row.updated_at };
   return { ...row, created_date: row.created_at, updated_date: row.updated_at };
 };
 const columns = {
@@ -26,6 +27,9 @@ const columns = {
   PurchaseOrder: ['company_id', 'supplier_id', 'status', 'total', 'expected_date'],
   PurchaseItem: ['company_id', 'purchase_id', 'product_id', 'quantity', 'cost'],
   Commission: ['company_id', 'sale_id', 'seller', 'rate', 'amount', 'status'],
+  FinancialEntry: ['company_id', 'sale_id', 'purchase_id', 'type', 'nature', 'status', 'description', 'category', 'amount', 'total_amount', 'received_amount', 'paid_amount', 'due_date', 'paid_date', 'paid_at', 'paid_by', 'source_type', 'account', 'payment_method', 'cancelled_at'],
+  FinancialMovement: ['company_id', 'financial_entry_id', 'installment_id', 'direction', 'amount', 'payment_method', 'account', 'occurred_at', 'idempotency_key'],
+  FinancialInstallment: ['company_id', 'financial_entry_id', 'installment_number', 'amount', 'received_amount', 'paid_amount', 'due_date', 'status'],
   Goal: ['company_id', 'name', 'type', 'target_value', 'period', 'start_date', 'end_date', 'user_id', 'status'],
   Conversation: ['company_id', 'customer_id', 'lead_name', 'lead_phone', 'lead_email', 'channel', 'status', 'assigned_user_id', 'subject', 'last_message_at'],
   Message: ['company_id', 'conversation_id', 'sender_type', 'sender_user_id', 'content', 'message_type', 'created_at'],
