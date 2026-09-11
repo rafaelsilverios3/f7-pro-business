@@ -28,11 +28,11 @@ export default function CustomerDialog({ open, onClose, onSave, initial }) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="flex max-w-2xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{initial ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={submit} className="max-h-[78vh] space-y-5 overflow-y-auto pr-1">
+        <form onSubmit={submit} className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden pr-1">
           <section className="space-y-3">
             <p className="f7-form-section-title">Identificação</p>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -75,7 +75,7 @@ export default function CustomerDialog({ open, onClose, onSave, initial }) {
             <div className="space-y-1.5"><Label className="text-xs">Endereço</Label><Input value={form.address} onChange={(e) => set('address', e.target.value)} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Observações</Label><Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} className="resize-none" /></div>
           </section>
-          <DialogFooter className="border-t border-slate-700/70 pt-4">
+          <DialogFooter className="sticky bottom-0 border-t border-slate-700/70 bg-background pt-4">
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button type="submit">{initial ? 'Salvar' : 'Adicionar'}</Button>
           </DialogFooter>
