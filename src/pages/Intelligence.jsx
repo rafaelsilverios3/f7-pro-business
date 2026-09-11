@@ -145,6 +145,11 @@ export default function Intelligence() {
           </div>
         ) : insights.map((ins, i) => {
           const Icon = TYPE_ICONS[ins.type] || AlertTriangle;
+          // Older or partially populated insight records may not include a
+          // variation percentage. Keep the card renderable without changing
+          // the deterministic insight engine or its autonomy boundaries.
+          const variationPctValue = Number(ins.variation_pct);
+          const variationPct = Number.isFinite(variationPctValue) ? variationPctValue : 0;
           return (
             <div key={i} className={`rounded-2xl border bg-white p-5 shadow-sm ${INSIGHT_PRIORITY_COLORS[ins.priority]}`}>
               <div className="mb-3 flex items-start justify-between">
@@ -173,8 +178,8 @@ export default function Intelligence() {
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400">Variação</p>
-                  <p className={`text-sm font-semibold ${ins.variation_pct > 0 ? 'text-emerald-600' : ins.variation_pct < 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                    {ins.variation_pct > 0 ? '+' : ''}{ins.variation_pct.toFixed(1)}%
+                  <p className={`text-sm font-semibold ${variationPct > 0 ? 'text-emerald-600' : variationPct < 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                    {variationPct > 0 ? '+' : ''}{variationPct.toFixed(1)}%
                   </p>
                 </div>
               </div>
