@@ -28,7 +28,7 @@ export default function CustomerDialog({ open, onClose, onSave, initial }) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="flex max-w-2xl flex-col overflow-hidden">
+      <DialogContent className="flex min-h-0 max-w-2xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{initial ? 'Editar cliente' : 'Novo cliente'}</DialogTitle>
         </DialogHeader>
