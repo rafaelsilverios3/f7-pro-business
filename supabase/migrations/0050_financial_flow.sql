@@ -182,7 +182,7 @@ begin
   update public.financial_entries set nature = 'revenue', total_amount = sale_row.total, amount = sale_row.total, received_amount = 0, paid_amount = 0, status = 'pending', paid_date = null, paid_at = null where id = entry_row.id returning * into entry_row;
   installment_amount := round(sale_row.total / installment_count, 2);
   for installment_number in 1..installment_count loop
-    insert into public.financial_installments(company_id, financial_entry_id, installment_number, amount, due_date) values(entry_row.company_id, entry_row.id, installment_number, case when installment_number = installment_count then sale_row.total - installment_amount * (installment_count - 1) else installment_amount end, due_date + ((installment_number - 1) * interval '1 month'));
+    insert into public.financial_installments(company_id, financial_entry_id, installment_number, amount, due_date) values(entry_row.company_id, entry_row.id, installment_number, case when installment_number = installment_count then sale_row.total - installment_amount * (installment_count - 1) else installment_amount end, (due_date + ((installment_number - 1) * interval '1 month'))::date);
   end loop;
   for payment in select * from jsonb_array_elements(case when jsonb_typeof(sale_payload->'payments') = 'array' then sale_payload->'payments' else '[]'::jsonb end) loop
     payment_index := payment_index + 1;
