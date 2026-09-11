@@ -54,6 +54,13 @@ test('context lookup isolates resources and returns a safe failing resource', ()
   assert.match(edge, /`CONTEXT_\$\{resource\}_OK`/);
 });
 
+test('advanced context sources are optional when their manual migration is absent', () => {
+  assert.match(resolver, /function isMissingOptionalResource/);
+  for (const resource of ['knowledge', 'memory', 'verified_applications', 'cross_references']) assert.match(resolver, new RegExp(`key: '${resource}', optional: true`));
+  assert.match(resolver, /resources\[index\].*optional/);
+  assert.match(resolver, /results\[index\]\.error \? \[\] :/);
+});
+
 test('multisegment official source registry selects John Deere only for related context', () => {
   assert.match(sources, /OfficialSourcesRegistry/);
   assert.match(sources, /JohnDeereOfficialSource/);
