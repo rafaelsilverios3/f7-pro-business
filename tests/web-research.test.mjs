@@ -20,6 +20,11 @@ test('web research provider is server-side and disabled without backend configur
   assert.match(provider, /BLOCKED_HOSTS/);
 });
 
+test('research feature diagnostics reflect the real company gate', () => {
+  assert.match(assistant, /PRODUCT_RESEARCH_FEATURE_CHECK/);
+  assert.doesNotMatch(assistant, /PRODUCT_RESEARCH_DECISION'.*feature_enabled: false/);
+});
+
 test('web research validates public URLs and does not follow redirects or expose page content', () => {
   assert.match(provider, /username \|\| parsed\.password/);
   assert.match(provider, /WEB_PAGE_REDIRECT_NOT_FOLLOWED/);
