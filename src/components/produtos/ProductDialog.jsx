@@ -8,6 +8,14 @@ import { Textarea } from '@/components/ui/textarea';
 import PricingDialog from '@/components/pricing/PricingDialog';
 import ProductCatalogPanel from '@/components/pricing/ProductCatalogPanel';
 
+function productSaveMessage(error) {
+  const code = String(error?.code || '').trim();
+  if (code === '23505') return 'Já existe um produto com este SKU nesta empresa.';
+  if (code === '42501') return 'Você não tem permissão para alterar produtos desta empresa.';
+  if (code === '42703') return 'O banco ainda não possui todos os campos do catálogo. Aplique a migration do catálogo de produtos.';
+  return 'Não foi possível salvar as alterações do produto.';
+}
+
 export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing }) {
   const emptyForm = {
     sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
@@ -35,7 +43,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
       await onSave({ ...form, cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.stock === '' ? 0 : Number(form.stock), min_stock: form.min_stock === '' ? 0 : Number(form.min_stock), commission: form.commission === '' ? 0 : Number(form.commission) });
       onClose();
     } catch (error) {
-      setSaveError('Não foi possível salvar as alterações do produto.');
+      setSaveError(productSaveMessage(error));
     } finally {
       setSaving(false);
     }
