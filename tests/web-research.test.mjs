@@ -25,6 +25,12 @@ test('research feature diagnostics reflect the real company gate', () => {
   assert.doesNotMatch(assistant, /PRODUCT_RESEARCH_DECISION'.*feature_enabled: false/);
 });
 
+test('an explicit external research override is recognized even with an older feature RPC', () => {
+  assert.match(assistant, /company_feature_overrides/);
+  assert.match(assistant, /external_product_intelligence/);
+  assert.match(assistant, /override\.data\?\.enabled === true/);
+});
+
 test('web research validates public URLs and does not follow redirects or expose page content', () => {
   assert.match(provider, /username \|\| parsed\.password/);
   assert.match(provider, /WEB_PAGE_REDIRECT_NOT_FOLLOWED/);

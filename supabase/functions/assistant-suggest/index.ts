@@ -440,10 +440,19 @@ Deno.serve(async (req) => {
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_INTENT_EXTRACTED', { research_trace_id: researchTraceId, technical_research_needed: researchNeeded, model: technicalInput?.model, requested_part: technicalInput?.part_description, reason: 'backend_intent_detection' });
     if (researchNeeded) await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_RESEARCH_REQUIRED', { research_trace_id: researchTraceId, technical_research_needed: true, model: technicalInput?.model, requested_part: technicalInput?.part_description, reason: 'technical_intent' });
     if (researchNeeded) {
-      const { data: researchAllowed, error: researchFeatureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'external_product_intelligence' });
-      await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_FEATURE_CHECK', { technical_research_needed: true, feature_enabled: researchFeatureError ? null : Boolean(researchAllowed), reason: researchFeatureError ? 'feature_lookup_failed' : researchAllowed ? 'feature_enabled' : 'feature_denied' });
+      const { data: rpcResearchAllowed, error: researchFeatureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'external_product_intelligence' });
+      // Keep the database feature gate authoritative, but recognize an
+      // explicit beta override when the hosted RPC predates migration 0040.
+      let researchAllowed = rpcResearchAllowed === true;
+      let overrideLookupError = false;
+      if (!researchAllowed) {
+        const override = await sb.from('company_feature_overrides').select('enabled').eq('company_id', conversation.company_id).eq('feature', 'external_product_intelligence').maybeSingle();
+        overrideLookupError = Boolean(override.error);
+        researchAllowed = override.data?.enabled === true;
+      }
+      await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_FEATURE_CHECK', { technical_research_needed: true, feature_enabled: researchAllowed, reason: researchAllowed ? 'feature_enabled' : researchFeatureError || overrideLookupError ? 'feature_lookup_failed' : 'feature_denied' });
       await logResearchEvent(sb, conversation.company_id, conversationId, researchAllowed ? 'WEB_RESEARCH_STARTED' : 'WEB_RESEARCH_SKIPPED', { technical_research_needed: true, feature_enabled: Boolean(researchAllowed), reason: researchFeatureError ? 'feature_lookup_failed' : researchAllowed ? 'feature_enabled' : 'feature_denied' });
-      if (!researchFeatureError && researchAllowed) {
+      if (researchAllowed) {
         try {
           const maxWebQueriesPerRun = Math.min(3, Math.max(1, Number(settings?.max_daily_web_queries || 3)));
           const maxResearchRounds = Math.min(2, Math.max(1, Number(settings?.max_research_rounds || 2)));
