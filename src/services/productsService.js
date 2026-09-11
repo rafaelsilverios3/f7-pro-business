@@ -6,8 +6,9 @@ const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
 const numberField = (value, fallback = 0) => value === '' || value == null ? fallback : Number(value);
 const productPayload = (companyId, data = {}) => {
   const payload = { company_id: companyId };
-  const textFields = ['name', 'sku', 'barcode', 'category', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'unit', 'dimensions', 'tags', 'keywords', 'featured', 'active'];
+  const textFields = ['name', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'unit', 'dimensions', 'tags', 'keywords', 'featured', 'active'];
   for (const field of textFields) if (Object.prototype.hasOwnProperty.call(data, field)) payload[field] = data[field];
+  if (!payload.subcategory && Object.prototype.hasOwnProperty.call(data, 'category')) payload.subcategory = data.category || null;
   const aliases = { cost: 'cost_price', price: 'sale_price', minimum_stock: 'min_stock', commission_rate: 'commission' };
   for (const [field, alias] of Object.entries(aliases)) if (Object.prototype.hasOwnProperty.call(data, field) || Object.prototype.hasOwnProperty.call(data, alias)) payload[field] = numberField(data[field] ?? data[alias]);
   if (Object.prototype.hasOwnProperty.call(data, 'stock')) payload.stock = numberField(data.stock);
@@ -19,7 +20,7 @@ export const productsService = {
   list: (companyId) => productsRepository.list(companyId),
   create: (companyId, data) => {
     const parsed = productSchema.parse({ ...data, company_id: companyId, price: data.price ?? data.sale_price, cost: data.cost ?? data.cost_price, minimum_stock: data.minimum_stock ?? data.min_stock });
-    const payload = isSupabase() ? { ...parsed, commission_rate: parsed.commission ?? parsed.commission_rate } : {
+    const payload = isSupabase() ? { ...parsed, subcategory: parsed.subcategory || parsed.category || undefined, commission_rate: parsed.commission ?? parsed.commission_rate } : {
       ...parsed,
       sale_price: parsed.price,
       cost_price: parsed.cost,
