@@ -142,7 +142,7 @@ test('assistant isolates post-context stages and sanitizes product intelligence 
 test('web research input failures fall back safely and do not prevent an assistant suggestion', () => {
   assert.match(edge, /WEB_RESEARCH_INPUT_FALLBACK/);
   assert.match(edge, /technicalInput = inferTechnicalResearchInput/);
-  assert.match(edge, /productIntelligence\?\.need_external_research !== false/);
+  assert.match(edge, /isTechnicalResearchNeeded\(/);
   assert.match(edge, /WEB_RESEARCH_FALLBACK/);
 });
 

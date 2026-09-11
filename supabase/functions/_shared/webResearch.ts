@@ -68,7 +68,7 @@ const MAX_RESULTS = 10;
 const DEFAULT_SEARCH_TIMEOUT = 8000;
 const DEFAULT_PAGE_TIMEOUT = 8000;
 const MAX_PAGE_BYTES = 1_000_000;
-export const RESEARCH_STRATEGY_VERSION = 4;
+export const RESEARCH_STRATEGY_VERSION = 5;
 export const MAX_RESEARCH_ROUNDS = 2;
 export const MAX_QUERIES_PER_ROUND = 3;
 export const MAX_WEB_QUERIES = 5;
@@ -594,17 +594,45 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   if (!stopReason && queriesExecuted >= maxCost) stopReason = 'cost_budget_reached';
   if (!stopReason && !pendingQueries.length) stopReason = 'sources_exhausted';
   const uniqueResults = [...new Map(allResults.map((result) => [result.url, result])).values()].slice(0, maxTotalResults);
+  // Regional validation is a second, bounded pass. Initial candidates remain
+  // rejected as REGION_UNVERIFIED until a Brazil/South America source
+  // explicitly confirms the same model and part number.
+  const initialEvidence = extractTechnicalEvidence(uniqueResults, [], initialInput);
+  const regionalTarget = resolveResearchRegion(initialInput).region
+    ? resolveResearchRegion(initialInput)
+    : { country: 'BR', market: 'brazil', region: 'south_america', locale: 'pt-BR' };
+  const regionalCandidates = initialEvidence.rejected_candidates
+    .filter((candidate) => candidate.rejection_reason === 'REGION_UNVERIFIED' && candidate.part_number)
+    .slice(0, 2);
+  const officialDomain = manufacturerDomains(initialInput.manufacturer)[0];
+  for (const candidate of regionalCandidates) {
+    if (!queriesDiagnosticsWithinBudget(queryDiagnostics, maxQueries) || Date.now() - startedAt > maxDurationMs) break;
+    const regionalQuery = `${initialInput.manufacturer || ''} ${initialInput.model || ''} ${candidate.part_number} ${initialInput.part_description || ''} Brasil América do Sul`.trim();
+    const queryStarted = Date.now();
+    const queryIndex = queryDiagnostics.length + 1;
+    const queryContext = { query_index: queryIndex, query_length: regionalQuery.length, manufacturer_present: Boolean(initialInput.manufacturer), model_present: Boolean(initialInput.model), part_description_present: Boolean(initialInput.part_description), parameter_names: ['q', 'count', 'country'], results_count: 0, duration_ms: 0 };
+    await input.onQuery?.('WEB_SEARCH_QUERY_STARTED', queryContext);
+    const response = await provider.search({ ...input.query, query: regionalQuery, country: 'BR', market: 'brazil', region: 'south_america', locale: 'pt-BR', domains: officialDomain ? [officialDomain] : [], max_results: input.query.max_results || 5 });
+    allResults.push(...response.results);
+    const diagnostic = { ...queryContext, code: response.code, http_status: response.http_status ?? null, provider_code: response.provider_code ?? null, provider_error_message: response.provider_error_message ?? null, parameter_names: response.parameter_names || queryContext.parameter_names, results_count: response.results.length, duration_ms: Date.now() - queryStarted };
+    queryDiagnostics.push(diagnostic);
+    queriesExecuted += response.queries_executed || 1;
+    researchState.queries_executed.push(regionalQuery);
+    researchState.sources.push(...response.results.map((result) => result.url));
+    await input.onQuery?.(response.code && response.code !== 'WEB_SEARCH_NO_RESULTS' && response.code !== undefined ? 'WEB_SEARCH_QUERY_FAILED' : 'WEB_SEARCH_QUERY_COMPLETED', diagnostic);
+  }
+  const validatedResults = [...new Map(allResults.map((result) => [result.url, result])).values()].slice(0, maxTotalResults);
   const pages: PageResponse[] = [];
-  for (const result of uniqueResults.slice(0, Math.min(input.max_pages || 2, maxPageFetches))) {
+  for (const result of validatedResults.slice(0, Math.min(input.max_pages || 2, maxPageFetches))) {
     if (result.source_type === 'manufacturer_official' || input.query.domains?.length) pages.push(await fetchPublicPage(result.url));
   }
-  const resolvedIdentity = resolveMachineIdentity(uniqueResults, initialInput);
-  const evidence = extractTechnicalEvidence(uniqueResults, pages, { ...initialInput, manufacturer: resolvedIdentity.manufacturer || input.query.manufacturer, model: resolvedIdentity.model || input.query.model, part_description: input.query.application });
+  const resolvedIdentity = resolveMachineIdentity(validatedResults, initialInput);
+  const evidence = extractTechnicalEvidence(validatedResults, pages, { ...initialInput, ...regionalTarget, manufacturer: resolvedIdentity.manufacturer || input.query.manufacturer, model: resolvedIdentity.model || input.query.model, part_description: input.query.application });
   const failedQueries = queryDiagnostics.filter((item) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
   const noResultQueries = queryDiagnostics.filter((item) => item.code === 'WEB_SEARCH_NO_RESULTS');
   const successfulQueries = queryDiagnostics.length - failedQueries.length;
-  const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : uniqueResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
-  const result = { provider: provider.name, status, region_context: resolveResearchRegion(initialInput), results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.eligible_candidates || [], eligible_candidates: evidence.eligible_candidates || [], rejected_candidates: evidence.rejected_candidates || [], research_state: { ...researchState, candidates: evidence.eligible_candidates || [], discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : validatedResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
+  const result = { provider: provider.name, status, region_context: regionalTarget, results: validatedResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.eligible_candidates || [], eligible_candidates: evidence.eligible_candidates || [], rejected_candidates: evidence.rejected_candidates || [], research_state: { ...researchState, candidates: evidence.eligible_candidates || [], discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: validatedResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {

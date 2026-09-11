@@ -104,7 +104,7 @@ test('technical research plans discovery before serial confirmation and creates 
   assert.match(provider, /site:\$\{manufacturerDomains/);
   assert.match(provider, /confidence_level: 'DISCOVERED' \| 'LIKELY' \| 'VERIFIED'/);
   assert.match(provider, /supporting_sources/);
-  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 4/);
+  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 5/);
   assert.match(assistant, /pesquise e apresente PNs candidatos/);
   assert.match(assistant, /PART_CANDIDATES_READY/);
   assert.match(assistant, /productIntelligence\.candidates =/);
@@ -216,5 +216,14 @@ test('John Deere behavior lives in a manufacturer adapter without hardcoded part
 test('technical intent cannot be suppressed by the preliminary internal resolver', () => {
   assert.match(assistant, /Technical intent comes from the customer message/);
   assert.doesNotMatch(assistant, /isTechnicalResearchNeeded[\\s\\S]*productIntelligence\\?\\.need_external_research/);
+});
+
+test('regional validation is a bounded second pass and keeps unverified candidates rejected', () => {
+  assert.match(provider, /Regional validation is a second, bounded pass/);
+  assert.match(provider, /REGION_UNVERIFIED/);
+  assert.match(provider, /country: 'BR'/);
+  assert.match(provider, /market: 'brazil'/);
+  assert.match(provider, /region: 'south_america'/);
+  assert.match(provider, /rejection_reason === 'REGION_UNVERIFIED'/);
 });
 
