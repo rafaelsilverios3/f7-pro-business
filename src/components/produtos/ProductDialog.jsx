@@ -14,6 +14,8 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
   });
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     if (initial) setForm({ ...form, ...initial });
@@ -26,8 +28,16 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    await onSave({ ...form, cost_price: Number(form.cost_price) || 0, sale_price: Number(form.sale_price) || 0, stock: Number(form.stock) || 0, min_stock: Number(form.min_stock) || 0, commission: Number(form.commission) || 0 });
-    onClose();
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave({ ...form, cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.stock === '' ? 0 : Number(form.stock), min_stock: form.min_stock === '' ? 0 : Number(form.min_stock), commission: form.commission === '' ? 0 : Number(form.commission) });
+      onClose();
+    } catch (error) {
+      setSaveError('Não foi possível salvar as alterações do produto.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -35,6 +45,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>{initial ? 'Editar produto' : 'Novo produto'}</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="space-y-3">
+          {saveError && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</p>}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">SKU / Código</Label>
@@ -107,8 +118,8 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={Boolean(form.featured)} onChange={(e) => set('featured', e.target.checked)} /> Produto em destaque</label>
           <ProductCatalogPanel companyId={companyId} productId={initial?.id} canManage={canManageCatalog} />
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-            <Button type="submit">{initial ? 'Salvar' : 'Adicionar'}</Button>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : initial ? 'Salvar' : 'Adicionar'}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

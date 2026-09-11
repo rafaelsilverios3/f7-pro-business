@@ -40,7 +40,7 @@ export default function Produtos() {
   const handleSave = async (form) => {
     if (editing) await productsService.update(company.id, editing.id, form);
     else await productsService.create(company.id, form);
-    load();
+    await load();
   };
   const handleDelete = async (id) => { await productsRepository.remove(id, company.id); load(); };
 

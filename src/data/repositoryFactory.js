@@ -22,7 +22,9 @@ export function createRepository(entityName) {
     async update(id, data, companyId) {
       const current = await this.get(id, companyId);
       const { company_id: _ignored, ...safeData } = data || {};
-      return getDataProvider().entity(entityName).update(current.id, safeData);
+      // Keep tenant scoping in the write itself; the pre-read is not enough to
+      // protect against a row changing between the read and update.
+      return getDataProvider().entity(entityName).update(current.id, { ...safeData, company_id: companyId });
     },
     async remove(id, companyId) {
       const current = await this.get(id, companyId);

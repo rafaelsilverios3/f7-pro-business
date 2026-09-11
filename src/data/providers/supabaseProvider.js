@@ -72,7 +72,7 @@ function entity(name) {
     async filter(filters = {}, sort = '-created_at', limit = 500) { let query = getSupabaseClient().from(table).select('*'); for (const [key, value] of Object.entries(filters)) query = query.eq(key, value); const ordering = normalizeSort(sort, '-created_at'); const { data, error } = await query.order(ordering.column, { ascending: !ordering.descending }).limit(limit); if (error) throw error; return (data || []).map((row) => normalize(name, row)); },
     async get(id) { const { data, error } = await getSupabaseClient().from(table).select('*').eq('id', id).single(); if (error && error.code !== 'PGRST116') throw error; return normalize(name, data); },
     async create(payload) { const { data, error } = await getSupabaseClient().from(table).insert(payloadFor(name, payload)).select().single(); if (error) throw error; return normalize(name, data); },
-    async update(id, payload) { const { data, error } = await getSupabaseClient().from(table).update(payloadFor(name, payload)).eq('id', id).select().single(); if (error) throw error; return normalize(name, data); },
+    async update(id, payload) { const scopedPayload = payloadFor(name, payload); let query = getSupabaseClient().from(table).update(scopedPayload).eq('id', id); if (payload?.company_id) query = query.eq('company_id', payload.company_id); const { data, error } = await query.select().single(); if (error) throw error; return normalize(name, data); },
     async delete(id) { const { error } = await getSupabaseClient().from(table).delete().eq('id', id); if (error) throw error; },
   };
 }
