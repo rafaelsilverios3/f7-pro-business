@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/0050_financial_flow.sql', 'utf8');
+const capitalMigration = fs.readFileSync('supabase/migrations/0051_capital_contributions.sql', 'utf8');
 const financePage = fs.readFileSync('src/pages/Financeiro.jsx', 'utf8');
 const salesService = fs.readFileSync('src/services/salesService.js', 'utf8');
 
@@ -31,4 +32,15 @@ test('frontend chooses revenue or expense before exposing categories', () => {
 test('sales call the financial wrapper instead of creating a paid title blindly', () => {
   assert.match(salesService, /finalize_sale_financial/);
   assert.doesNotMatch(salesService, /rpc\('finalize_sale'/);
+});
+
+test('capital contribution is a confirmed non-operating cash entry', () => {
+  assert.match(capitalMigration, /nature in \('revenue','expense','capital'\)/);
+  assert.match(capitalMigration, /record_capital_contribution/);
+  assert.match(capitalMigration, /entry_class.*capital/);
+  assert.match(capitalMigration, /is_operating.*false/);
+  assert.match(capitalMigration, /due_date.*null/);
+  assert.match(capitalMigration, /is_company_member/);
+  assert.match(financePage, /Aporte \/ investimento/);
+  assert.match(financePage, /CAPITAL_TYPES/);
 });
