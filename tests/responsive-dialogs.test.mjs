@@ -8,6 +8,8 @@ const sheet = fs.readFileSync('src/components/ui/sheet.jsx', 'utf8');
 const drawer = fs.readFileSync('src/components/ui/drawer.jsx', 'utf8');
 const product = fs.readFileSync('src/components/produtos/ProductDialog.jsx', 'utf8');
 const customer = fs.readFileSync('src/components/clients/CustomerDialog.jsx', 'utf8');
+const sale = fs.readFileSync('src/components/vendas/SaleDialog.jsx', 'utf8');
+const quote = fs.readFileSync('src/components/orcamentos/QuoteDialog.jsx', 'utf8');
 const marketIntelligence = fs.readFileSync('src/pages/MarketIntelligence.jsx', 'utf8');
 
 test('shared dialogs stay inside the viewport without CSS zoom or scale', () => {
@@ -32,9 +34,9 @@ test('alerts, sheets and drawers constrain long content to the viewport', () => 
   assert.match(drawer, /overflow-y-auto/);
 });
 
-test('product and customer forms scroll internally with reachable actions', () => {
-  for (const source of [product, customer]) {
-    assert.match(source, /DialogContent className="flex max-w-/);
+test('long product, customer, sale and quote forms scroll internally with reachable actions', () => {
+  for (const source of [product, customer, sale, quote]) {
+    assert.match(source, /DialogContent className="flex min-h-0 max-w-/);
     assert.match(source, /min-h-0/);
     assert.match(source, /flex-1/);
     assert.match(source, /overflow-y-auto/);

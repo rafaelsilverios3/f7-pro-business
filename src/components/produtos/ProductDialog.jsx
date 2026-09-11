@@ -43,7 +43,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="flex max-w-3xl flex-col overflow-hidden">
+      <DialogContent className="flex min-h-0 max-w-3xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>{initial ? 'Editar produto' : 'Novo produto'}</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1">
           {saveError && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</p>}

@@ -86,9 +86,9 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="flex min-h-0 max-w-2xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>Nova venda</DialogTitle></DialogHeader>
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pr-1">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Cliente</Label>
@@ -175,7 +175,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
             <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900"><span>Total</span><span>{fmtMoney(total)}</span></div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-1 border-t border-slate-200 bg-background px-1 pt-3">
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button type="submit" disabled={items.length === 0 || submitting}>{submitting ? 'Salvando...' : 'Registrar venda'}</Button>
           </DialogFooter>
