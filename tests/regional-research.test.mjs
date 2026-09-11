@@ -30,6 +30,25 @@ test('US context favors North America and unknown context preserves both regiona
   assert.deepEqual(new Set(unknown.candidates.map((item) => item.part_number)), new Set(['RE541922', 'RE524723']));
 });
 
+test('official catalog technical South America path is regional evidence without Brazil text', () => {
+  const catalog = {
+    title: '7230J primary fuel filter AT433554',
+    url: 'https://partscatalog.deere.com/jdrc/south_america/7230J/AT433554',
+    domain: 'partscatalog.deere.com',
+    snippet: 'John Deere 7230J primary fuel filter AT433554',
+    retrieved_at: now,
+    source_type: 'manufacturer_official',
+  };
+  const evidence = research.extractTechnicalEvidence([catalog], [], {
+    manufacturer: 'John Deere', model: '7230J', part_description: 'primary fuel filter',
+    country: 'BR', market: 'brazil', region: 'south_america', locale: 'pt-BR',
+  });
+  assert.equal(evidence.candidates.length, 1);
+  assert.equal(evidence.candidates[0].part_number, 'AT433554');
+  assert.equal(evidence.candidates[0].region, 'south_america');
+  assert.equal(evidence.rejected_candidates.length, 0);
+});
+
 test('regional planner is explicit but adapter remains extensible', () => {
   const brQueries = research.planTechnicalResearchQueries({ manufacturer: 'John Deere', model: '7230J', part_description: 'filtro de combustível', region: 'south_america', country: 'BR', market: 'brazil', locale: 'pt-BR' });
   const usQueries = research.planTechnicalResearchQueries({ manufacturer: 'John Deere', model: '7230J', part_description: 'fuel filter', region: 'north_america', country: 'US', market: 'united_states', locale: 'en-US' });

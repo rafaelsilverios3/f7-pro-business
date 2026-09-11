@@ -96,10 +96,13 @@ function sourceType(url: URL, domains: string[] = []) {
   return 'public_web' as const;
 }
 
-function regionalEvidence(text: string): Pick<ResearchRegionContext, 'country' | 'market' | 'region'> & { catalog_id?: string; catalog_edition?: string } {
-  const value = safeText(text, 2400);
+function regionalEvidence(text: string, source?: Pick<WebSearchResult, 'url' | 'domain' | 'source_type'>): Pick<ResearchRegionContext, 'country' | 'market' | 'region'> & { catalog_id?: string; catalog_edition?: string } {
+  const value = safeText(`${text} ${source?.url || ''}`, 3000);
   const catalog_id = value.match(/\bPC\d{4,}\b/i)?.[0]?.toUpperCase();
-  const southAmerica = /south\s+america|sul[- ]americana?|brasil|brazil|latam|am[eé]rica\s+do\s+sul/i.test(value);
+  // Official catalog paths and technical application sections can encode the
+  // South American market without spelling out "Brazil" in the snippet.
+  const technicalSouthAmerica = /partscatalog\.deere\.com\/[^\s]*\b(?:br|south[_-]?america|sa)\b|shop\.deere\.com\/br(?:\/|\b)|deere\.com\/assets\/pdfs\/region-3\b|(?:south[_-]?america|sul[-_ ]americana?)\/[^\s]*/i.test(value);
+  const southAmerica = technicalSouthAmerica || /south\s+america|sul[- ]americana?|brasil|brazil|latam|am[eé]rica\s+do\s+sul/i.test(value);
   const northAmerica = /north\s+america|norte[- ]americana?|united\s+states|\bUSA\b|\bUS\s+edition\b/i.test(value);
   const result: Pick<ResearchRegionContext, 'country' | 'market' | 'region'> & { catalog_id?: string; catalog_edition?: string } = {};
   if (southAmerica && !northAmerica) Object.assign(result, { country: /brasil|brazil/i.test(value) ? 'BR' : undefined, market: /brasil|brazil/i.test(value) ? 'brazil' : 'south_america', region: 'south_america', catalog_id });
@@ -415,7 +418,7 @@ function extractPartCandidatesFromResult(result: WebSearchResult, pages: PageRes
   const contextualMatch = Boolean(context.model && haystack.includes(String(context.model).toLocaleLowerCase('pt-BR'))) || Boolean(context.part_description && haystack.includes(String(context.part_description).toLocaleLowerCase('pt-BR')));
   const isOfficial = result.source_type === 'manufacturer_official';
   const targetRegion = resolveResearchRegion(context);
-  const regional = regionalEvidence(evidenceText);
+  const regional = regionalEvidence(evidenceText, result);
   const regionalBonus = regionalScore(targetRegion, regional);
   const confidence = Math.min(0.98, (isOfficial ? 0.78 : result.source_type === 'distributor' || result.source_type === 'approved_catalog' ? 0.5 : 0.3) + (contextualMatch ? 0.17 : 0));
   // Keep source authority dominant: an official catalog from another market is
