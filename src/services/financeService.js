@@ -25,6 +25,12 @@ export const financeService = {
     const parsed = financeSchema.parse({ ...data, company_id: companyId, nature, type: nature === 'expense' ? 'payable' : 'receivable', amount: Number(data.amount) || 0 });
     return financeRepository.create({ ...parsed, total_amount: parsed.amount, received_amount: 0, paid_amount: 0, status: 'pending' }, companyId);
   },
+  async createCapital(companyId, data) {
+    const amount = Number(data.amount) || 0;
+    if (amount <= 0) throw new Error('Informe um valor válido.');
+    if (isSupabase()) return normalizeFinancialEntry(await getDataProvider().rpc('record_capital_contribution', { target_company: companyId, amount_input: amount, capital_type_input: data.capital_type || 'working_capital', occurred_at_input: data.occurred_at || new Date().toISOString(), account_input: data.account || 'Caixa', source_detail_input: data.source_detail || null, description_input: data.description || null, notes_input: data.notes || null, idempotency_key_input: data.idempotency_key || crypto.randomUUID() }));
+    return financeRepository.create({ company_id: companyId, type: 'capital', nature: 'capital', entry_class: 'capital', capital_type: data.capital_type || 'working_capital', is_operating: false, amount, total_amount: amount, received_amount: amount, paid_amount: 0, status: 'received', description: data.description, source_type: 'capital', source_detail: data.source_detail, due_date: null }, companyId);
+  },
   async recordPayment(companyId, entry, amount, options = {}) {
     const value = Number(amount) || 0;
     if (value <= 0 || value > entry.balance_amount) throw new Error('Pagamento maior que o saldo pendente.');

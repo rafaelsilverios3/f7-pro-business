@@ -1,7 +1,8 @@
-export const FINANCE_NATURES = Object.freeze({ REVENUE: 'revenue', EXPENSE: 'expense' });
+export const FINANCE_NATURES = Object.freeze({ REVENUE: 'revenue', EXPENSE: 'expense', CAPITAL: 'capital' });
 
 export const REVENUE_CATEGORIES = ['Venda', 'Serviço', 'Comissão recebida', 'Receita financeira', 'Outras receitas'];
 export const EXPENSE_CATEGORIES = ['Aluguel', 'Salários', 'Encargos', 'Impostos', 'Marketing', 'Fornecedor', 'Compras', 'Frete', 'Energia', 'Água', 'Internet', 'Taxas', 'Manutenção', 'Combustível', 'Outras despesas'];
+export const CAPITAL_TYPES = [{ value: 'working_capital', label: 'Capital de giro' }, { value: 'partner_contribution', label: 'Aporte de sócio' }, { value: 'owner_investment', label: 'Investimento do proprietário' }, { value: 'partner_loan', label: 'Empréstimo de sócio' }, { value: 'cash_reserve', label: 'Reserva de caixa' }, { value: 'other_contribution', label: 'Outro aporte' }];
 
 const money = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -14,12 +15,12 @@ export function deriveFinanceStatus({ nature, total, settled, dueDate, today = n
 }
 
 export function normalizeFinancialEntry(entry = {}) {
-  const nature = entry.nature || (entry.type === 'payable' ? FINANCE_NATURES.EXPENSE : FINANCE_NATURES.REVENUE);
+  const nature = entry.nature || (entry.type === 'capital' ? FINANCE_NATURES.CAPITAL : entry.type === 'payable' ? FINANCE_NATURES.EXPENSE : FINANCE_NATURES.REVENUE);
   const total = money(entry.total_amount ?? entry.amount);
-  const settled = money(entry.settled_amount ?? (nature === FINANCE_NATURES.REVENUE ? entry.received_amount : entry.paid_amount) ?? (entry.status === 'paid' || entry.status === 'received' ? total : 0));
+  const settled = money(entry.settled_amount ?? (nature === FINANCE_NATURES.CAPITAL ? total : nature === FINANCE_NATURES.REVENUE ? entry.received_amount : entry.paid_amount) ?? (entry.status === 'paid' || entry.status === 'received' ? total : 0));
   const balance = money(Math.max(0, total - settled));
   const status = deriveFinanceStatus({ nature, total, settled, dueDate: entry.due_date, cancelled: entry.status === 'cancelled' });
-  return { ...entry, nature, type: nature === FINANCE_NATURES.REVENUE ? 'receivable' : 'payable', total_amount: total, received_amount: nature === FINANCE_NATURES.REVENUE ? settled : 0, paid_amount: nature === FINANCE_NATURES.EXPENSE ? settled : 0, settled_amount: settled, balance_amount: balance, status };
+  return { ...entry, nature, type: nature === FINANCE_NATURES.CAPITAL ? 'capital' : nature === FINANCE_NATURES.REVENUE ? 'receivable' : 'payable', total_amount: total, received_amount: nature === FINANCE_NATURES.REVENUE || nature === FINANCE_NATURES.CAPITAL ? settled : 0, paid_amount: nature === FINANCE_NATURES.EXPENSE ? settled : 0, settled_amount: settled, balance_amount: nature === FINANCE_NATURES.CAPITAL ? 0 : balance, status: nature === FINANCE_NATURES.CAPITAL ? 'received' : status };
 }
 
 export function splitInstallments(total, quantity, firstDueDate) {
@@ -51,5 +52,7 @@ export function summarizeFinance(entries = [], movements = [], period) {
     if (movement.direction === 'out') summary.outflows += amount;
     return summary;
   }, { inflows: 0, outflows: 0 });
-  return { receivable: money(normalized.filter((entry) => entry.nature === FINANCE_NATURES.REVENUE).reduce((sum, entry) => sum + entry.balance_amount, 0)), payable: money(normalized.filter((entry) => entry.nature === FINANCE_NATURES.EXPENSE).reduce((sum, entry) => sum + entry.balance_amount, 0)), inflows: money(realized.inflows), outflows: money(realized.outflows), cash: money(realized.inflows - realized.outflows), result: money(realized.inflows - realized.outflows) };
+  const capitalInflows = realized.inflows - movements.filter((movement) => movement.direction === 'in' && movement.entry_class === 'capital').reduce((sum, movement) => sum + money(movement.amount), 0);
+  const capital = movements.filter((movement) => movement.direction === 'in' && movement.entry_class === 'capital').reduce((sum, movement) => sum + money(movement.amount), 0);
+  return { receivable: money(normalized.filter((entry) => entry.nature === FINANCE_NATURES.REVENUE).reduce((sum, entry) => sum + entry.balance_amount, 0)), payable: money(normalized.filter((entry) => entry.nature === FINANCE_NATURES.EXPENSE).reduce((sum, entry) => sum + entry.balance_amount, 0)), inflows: money(realized.inflows), outflows: money(realized.outflows), capital: money(capital), operating_inflows: money(capitalInflows), operating_result: money(capitalInflows - realized.outflows), cash: money(realized.inflows - realized.outflows), result: money(realized.inflows - realized.outflows) };
 }

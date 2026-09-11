@@ -4,6 +4,20 @@ import { applyFinancialMovement, normalizeFinancialEntry, splitInstallments, sum
 
 const expense = (category, amount = 1500) => normalizeFinancialEntry({ nature: 'expense', type: 'payable', category, amount, due_date: '2099-01-01' });
 const revenue = (amount = 500) => normalizeFinancialEntry({ nature: 'revenue', type: 'receivable', category: 'Venda', amount, due_date: '2099-01-01' });
+const capital = (amount = 10000) => normalizeFinancialEntry({ nature: 'capital', type: 'capital', entry_class: 'capital', capital_type: 'working_capital', amount, due_date: null });
+
+test('aporte aumenta caixa sem criar a receber ou faturamento operacional', () => {
+  const entry = capital();
+  const movements = [{ direction: 'in', amount: 10000, entry_class: 'capital', occurred_at: '2026-09-11' }];
+  const summary = summarizeFinance([entry], movements, { start: '2026-01-01', end: '2026-12-31' });
+  assert.equal(entry.status, 'received');
+  assert.equal(entry.balance_amount, 0);
+  assert.equal(summary.receivable, 0);
+  assert.equal(summary.capital, 10000);
+  assert.equal(summary.operating_inflows, 0);
+  assert.equal(summary.operating_result, 0);
+  assert.equal(summary.cash, 10000);
+});
 
 test('despesas operacionais geram somente conta a pagar', () => {
   for (const category of ['Aluguel', 'Salários', 'Impostos', 'Marketing', 'Fornecedor']) {

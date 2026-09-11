@@ -1,5 +1,7 @@
 -- F7 PRO BUSINESS — fluxo financeiro explícito, títulos, parcelas e caixa.
 -- Aplicar manualmente após a revisão. Esta migration não executa db push.
+-- Rollback conceitual: exportar títulos/movimentos e remover apenas os objetos
+-- novos desta migration; preservar dados financeiros legados.
 
 alter table public.financial_entries
   add column if not exists nature text,
