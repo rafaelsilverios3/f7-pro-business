@@ -479,8 +479,8 @@ export function manufacturerDomains(manufacturer?: string) {
 
 export { safeText };
 
-function queryHash(input: WebSearchInput) {
-  const normalized = JSON.stringify({ strategy: RESEARCH_STRATEGY_VERSION, query: safeText(input.query, MAX_QUERY).toLocaleLowerCase('pt-BR'), manufacturer: safeText(input.manufacturer, 160).toLocaleLowerCase('pt-BR'), part_number: safeText(input.part_number, 120).toLocaleUpperCase('pt-BR'), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), country: safeText(input.country, 40).toUpperCase(), market: safeText(input.market, 60).toLowerCase(), region: safeText(input.region, 60).toLowerCase(), locale: safeText(input.locale, 20), domains: (input.domains || []).slice().sort() });
+function queryHash(input: WebSearchInput & { company_id?: string; strategy_version?: string }) {
+  const normalized = JSON.stringify({ company_id: safeText(input.company_id, 100), strategy_version: safeText(input.strategy_version || RESEARCH_STRATEGY_VERSION, 80), normalized_requested_part: safeText(input.application || input.query, 240).toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(), query: safeText(input.query, MAX_QUERY).toLocaleLowerCase('pt-BR'), manufacturer: safeText(input.manufacturer, 160).toLocaleLowerCase('pt-BR'), part_number: safeText(input.part_number, 120).toLocaleUpperCase('pt-BR'), model: safeText(input.model, 120), year: safeText(input.year, 30), application: safeText(input.application, 240), country: safeText(input.country, 40).toUpperCase(), market: safeText(input.market, 60).toLowerCase(), region: safeText(input.region, 60).toLowerCase(), locale: safeText(input.locale, 20), domains: (input.domains || []).slice().sort() });
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized)).then((buffer) => [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join(''));
 }
 
@@ -504,7 +504,7 @@ function boundedInteger(value: unknown, fallback: number, ceiling: number) {
 
 export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number; limits?: ResearchLimits; onQuery?: (event: 'WEB_SEARCH_QUERY_STARTED' | 'WEB_SEARCH_QUERY_COMPLETED' | 'WEB_SEARCH_QUERY_FAILED', details: ResearchQueryDiagnostic) => Promise<void> | void }) {
   const started = Date.now();
-  const hash = await queryHash(input.query);
+  const hash = await queryHash({ ...input.query, company_id: input.company_id, strategy_version: RESEARCH_STRATEGY_VERSION });
   const now = new Date().toISOString();
   try {
     const cached = await input.sb.from('product_research_runs').select('id,status,result,expires_at').eq('company_id', input.company_id).eq('query_hash', hash).eq('status', 'completed').gt('expires_at', now).order('completed_at', { ascending: false }).limit(1).maybeSingle();
