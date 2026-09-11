@@ -56,9 +56,11 @@ export const F7AIOrchestrator = Object.freeze({
       unresolvedQuestions: intelligence.missing_for_confirmation || intelligence.missing_information,
       researchPending: web.searched !== true && intelligence.need_external_research === true,
       graveConflict: conflicts.length > 1,
-      automaticReplyEnabled: input.company.mode === 'automatic' && input.automatic_policy?.enabled === true,
+      // Level 1 never authorizes external delivery. The worker may create a
+      // human-review proposal, but the decision itself is never auto-send eligible.
+      automaticReplyEnabled: false,
       minConfidence: input.automatic_policy?.min_confidence,
-      specialist: specialist?.name || null,
+      specialist: specialist?.id || null,
       tools: tools.map((tool) => tool.name),
     });
   },

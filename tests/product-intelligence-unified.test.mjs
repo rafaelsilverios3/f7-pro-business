@@ -10,6 +10,7 @@ async function loadModule() {
 }
 const intelligence = await loadModule();
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
+const resolver = fs.readFileSync('supabase/functions/_shared/companyContextResolver.ts', 'utf8');
 
 test('unified resolver prioritizes a verified application above duplicate web and internal candidates', async () => {
   const result = await intelligence.resolveProductOrPart({
@@ -30,7 +31,7 @@ test('unified resolver includes verified cross references and product knowledge'
 });
 
 test('assistant sends one ranked product intelligence context from all canonical sources', () => {
-  for (const resource of ['verified_product_applications', 'part_cross_references', 'company_knowledge']) assert.match(assistant, new RegExp(`resource: '${resource}'`));
+  for (const resource of ['verified_product_applications', 'part_cross_references', 'company_knowledge']) assert.match(resolver, new RegExp(`from\\('${resource}'\\)`));
   assert.match(assistant, /mergeProductIntelligenceCandidates/);
   assert.doesNotMatch(assistant, /productIntelligence\.candidates = \[\.\.\.\(productIntelligence\.candidates/);
 });

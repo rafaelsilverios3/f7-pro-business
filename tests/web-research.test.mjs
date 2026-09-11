@@ -93,7 +93,7 @@ test('technical research plans discovery before serial confirmation and creates 
   assert.match(provider, /site:\$\{manufacturerDomains/);
   assert.match(provider, /confidence_level: 'DISCOVERED' \| 'LIKELY' \| 'VERIFIED'/);
   assert.match(provider, /supporting_sources/);
-  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 3/);
+  assert.match(provider, /RESEARCH_STRATEGY_VERSION = 4/);
   assert.match(assistant, /pesquise e apresente PNs candidatos/);
   assert.match(assistant, /PART_CANDIDATES_READY/);
   assert.match(assistant, /productIntelligence\.candidates =/);

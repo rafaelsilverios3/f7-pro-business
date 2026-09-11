@@ -20,7 +20,7 @@ test('PDV calculates discount and change', () => {
 
 test('PDV permission is limited to commercial roles', () => {
   const matrix = permissions.match(/export const ROLE_PERMISSIONS = \{([\s\S]*?)\n\};/)[1];
-  const roleLine = (role) => matrix.match(new RegExp(`\\n  ${role}: \\[(.*?)\\n`))?.[1] || '';
+  const roleLine = (role) => matrix.match(new RegExp(`\\n  ${role}: \\[([^\\]]*)\\]`, 's'))?.[1] || '';
   assert.match(roleLine('comercial'), /pdv\.use/);
   assert.match(roleLine('vendedor'), /pdv\.use/);
   assert.match(roleLine('gestor'), /pdv\.use/);

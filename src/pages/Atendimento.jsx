@@ -20,6 +20,7 @@ import { getAssistantSettings } from '@/services/assistantSettingsService';
 import { suggestConversationReply } from '@/services/assistantSuggestService';
 import { assistantHandoffService } from '@/services/assistantHandoffService';
 import { assistantFeedbackService } from '@/services/assistantFeedbackService';
+import { actionProposalService } from '@/services/actionProposalService';
 import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 const STATUS_STYLE = {
@@ -102,6 +103,10 @@ export default function Atendimento() {
   const [activeHandoff, setActiveHandoff] = useState(null);
   const [handoffLoading, setHandoffLoading] = useState(false);
   const [handoffError, setHandoffError] = useState('');
+  const [activeProposal, setActiveProposal] = useState(null);
+  const [proposalDraft, setProposalDraft] = useState('');
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalError, setProposalError] = useState('');
   const [products, setProducts] = useState([]);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [catalogOptions, setCatalogOptions] = useState([]);
@@ -118,10 +123,28 @@ export default function Atendimento() {
   const loadRef = useRef(null);
   const selectedRef = useRef(selected);
   const conversationsRef = useRef(conversations);
-  const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
+  const activeProposalIdRef = useRef(null);
+  const assistantCanSuggest = Boolean(selected && !membership.loading && membership.active && assistantSettings.autonomy_mode !== 'OFF' && assistantSettings.mode === 'assisted' && can({ role: membership.role }, 'assistant.suggest'));
   const handoffCanManage = Boolean(!membership.loading && membership.active && can({ role: membership.role }, 'assistant_handoff.manage'));
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { setAssistantSuggestion(null); setAssistantDraft(null); setAssistantError(''); setShowAssistantInvestigation(false); }, [selected?.id]);
+  useEffect(() => {
+    if (!company?.id || !selected?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { activeProposalIdRef.current = null; setActiveProposal(null); return undefined; }
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const proposal = await actionProposalService.active(company.id, selected.id);
+        if (!cancelled) {
+          if (activeProposalIdRef.current !== proposal?.id) setProposalDraft(proposal?.payload?.proposed_text || '');
+          activeProposalIdRef.current = proposal?.id || null;
+          setActiveProposal(proposal); setProposalError('');
+        }
+      } catch { if (!cancelled) setProposalError('Não foi possível consultar as propostas autônomas.'); }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [company?.id, selected?.id]);
   useEffect(() => {
     let cancelled = false;
     if (!company?.id || !selected?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setActiveHandoff(null); return undefined; }
@@ -391,6 +414,20 @@ export default function Atendimento() {
     catch { /* feedback failure must not block human service */ }
   };
 
+  const reviewAutonomousProposal = async (decision) => {
+    if (!activeProposal || proposalLoading) return;
+    setProposalLoading(true); setProposalError('');
+    try {
+      const original = activeProposal.payload?.proposed_text || activeProposal.description || '';
+      const editedPayload = decision === 'EDIT' ? { ...(activeProposal.payload || {}), proposed_text: proposalDraft.trim() } : null;
+      await actionProposalService.review({ companyId: company.id, proposalId: activeProposal.id, decision, payload: editedPayload, rejectionReason: decision === 'REJECT' ? 'Rejeitada pelo operador no Smart Atendimento.' : null, feedbackType: decision === 'REJECT' ? 'REJECTED_OTHER' : null });
+      if (decision === 'APPROVE' || decision === 'EDIT') setMessage(decision === 'EDIT' ? proposalDraft.trim() : original);
+      activeProposalIdRef.current = null; setActiveProposal(null); setProposalDraft(''); setShowAssistantInvestigation(false);
+      await load(true);
+    } catch (error) { setProposalError(error?.message || 'Não foi possível revisar a proposta.'); }
+    finally { setProposalLoading(false); }
+  };
+
   const claimHandoff = async () => {
     if (!activeHandoff || !handoffCanManage) return;
     setHandoffLoading(true); setHandoffError('');
@@ -531,6 +568,30 @@ export default function Atendimento() {
                 {activeHandoff && <><span className="font-semibold">Handoff: {activeHandoff.status === 'assigned' ? 'em atendimento humano' : 'aguardando responsável'}</span><span>Motivo: {activeHandoff.reason_code}</span>{activeHandoff.trace_id && <span>Trace: {activeHandoff.trace_id}</span>}</>}
                 {handoffError && <span>{handoffError}</span>}
                 <span className="ml-auto flex gap-2">{activeHandoff?.status === 'pending' && handoffCanManage && <Button size="sm" variant="outline" onClick={claimHandoff} disabled={handoffLoading}>Assumir atendimento</Button>}{activeHandoff?.status === 'assigned' && handoffCanManage && <Button size="sm" variant="outline" onClick={resolveHandoff} disabled={handoffLoading}>Concluir handoff</Button>}</span>
+              </div>}
+
+              {(activeProposal || proposalError) && <div className="border-b border-blue-200 bg-blue-50 px-5 py-3 text-sm text-slate-800">
+                {activeProposal && <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-semibold text-blue-800">F7 IA · analisado automaticamente</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">Especialista: {activeProposal.payload?.specialist || 'geral'}</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">Confiança: {ASSISTANT_CONFIDENCE_LABEL[activeProposal.confidence] || activeProposal.confidence || 'não calculada'}</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">Risco: {activeProposal.risk_level || 'não classificado'}</span>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-slate-600">Ação proposta: {activeProposal.title || activeProposal.action_type}</p>
+                    <Textarea value={proposalDraft} onChange={(event) => setProposalDraft(event.target.value)} className="min-h-20 bg-white" placeholder="Proposta preparada pela F7 para revisão humana" />
+                  </div>
+                  <p className="text-xs text-slate-500">Aprovar ou editar apenas leva o texto ao campo de mensagem. O envio continua sendo uma ação humana separada.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => reviewAutonomousProposal('APPROVE')} disabled={proposalLoading}>Aprovar e usar</Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => reviewAutonomousProposal('EDIT')} disabled={proposalLoading || !proposalDraft.trim()}>Editar e usar</Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowAssistantInvestigation((visible) => !visible)}>{showAssistantInvestigation ? 'Ocultar investigação' : 'Ver investigação'}</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => reviewAutonomousProposal('REJECT')} disabled={proposalLoading}>Rejeitar</Button>
+                  </div>
+                  {showAssistantInvestigation && <AssistantInvestigation suggestion={{ decision: activeProposal.payload?.decision || {}, product_intelligence: activeProposal.payload?.product_intelligence || {}, sources: activeProposal.payload?.sources || [] }} />}
+                </div>}
+                {proposalError && <p className="text-xs text-rose-700">{proposalError}</p>}
               </div>}
 
               {/* Messages */}

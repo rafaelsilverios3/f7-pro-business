@@ -1,6 +1,7 @@
 import { evaluateSourceTrust } from './sourceTrust.ts';
 import { ManufacturerAdapterRegistry } from './manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from './specialists/agriculturalParts.ts';
+import { partitionCandidatesByEligibility, type RejectedCandidateReason } from './evidencePolicy.ts';
 
 export type WebSearchInput = {
   query: string;
@@ -67,7 +68,7 @@ const MAX_RESULTS = 10;
 const DEFAULT_SEARCH_TIMEOUT = 8000;
 const DEFAULT_PAGE_TIMEOUT = 8000;
 const MAX_PAGE_BYTES = 1_000_000;
-export const RESEARCH_STRATEGY_VERSION = 3;
+export const RESEARCH_STRATEGY_VERSION = 4;
 export const MAX_RESEARCH_ROUNDS = 2;
 export const MAX_QUERIES_PER_ROUND = 3;
 export const MAX_WEB_QUERIES = 5;
@@ -250,7 +251,8 @@ export async function fetchPublicPage(url: string, signal?: AbortSignal): Promis
   finally { clearTimeout(timeout); }
 }
 
-export type TechnicalEvidence = { part_numbers: string[]; manufacturers: string[]; applications: string[]; models: string[]; specifications: string[]; source_urls: string[]; confidence: number; conflicts: string[]; candidates: TechnicalPartCandidate[] };
+export type RejectedTechnicalPartCandidate = TechnicalPartCandidate & { rejection_reason: RejectedCandidateReason; rejection_reasons: RejectedCandidateReason[] };
+export type TechnicalEvidence = { part_numbers: string[]; manufacturers: string[]; applications: string[]; models: string[]; specifications: string[]; source_urls: string[]; confidence: number; conflicts: string[]; candidates: TechnicalPartCandidate[]; eligible_candidates: TechnicalPartCandidate[]; rejected_candidates: RejectedTechnicalPartCandidate[] };
 
 export type TechnicalPartCandidate = {
   part_number: string;
@@ -445,16 +447,18 @@ export function extractTechnicalEvidence(results: WebSearchResult[], pages: Page
       candidatesByPart.set(key, { ...current, ...preferred, confidence, confidence_level: candidateLevel(confidence), score: Math.max(current.score || 0, candidate.score || 0) + Math.min(20, sources.length * 5), is_official: Boolean(current.is_official || candidate.is_official), trust_score: trust.score, trust_level: trust.level, evidence_count: sources.length, supporting_sources: sources, evidence: [...new Set([...(current.evidence || []), ...(candidate.evidence || [])])].slice(0, 10), evidence_text: safeText(`${current.evidence_text} ${candidate.evidence_text}`, 1000) });
     }
   }
-  const candidates = [...candidatesByPart.values()].sort((a, b) => (b.score || 0) - (a.score || 0) || b.confidence - a.confidence);
+  const rankedCandidates = [...candidatesByPart.values()].sort((a, b) => (b.score || 0) - (a.score || 0) || b.confidence - a.confidence);
+  const { eligible_candidates: candidates, rejected_candidates } = partitionCandidatesByEligibility(rankedCandidates, context);
   const partNumbers = candidates.map((candidate) => candidate.part_number).slice(0, 30);
-  const manufacturers = [...new Set(results.filter((item) => item.source_type === 'manufacturer_official').map((item) => item.domain).slice(0, 10))];
-  const urls = [...new Set([...results.map((item) => item.url), ...pages.map((item) => item.url)])].slice(0, 20);
+  const manufacturers = [...new Set(candidates.filter((item) => item.source_type === 'manufacturer_official').map((item) => item.source_domain).slice(0, 10))];
+  const urls = [...new Set(candidates.flatMap((item) => [item.source_url, ...(item.supporting_sources || [])]).filter(Boolean))].slice(0, 20);
   const unique = new Set(results.map((item) => item.snippet.toLocaleLowerCase('pt-BR')).filter(Boolean));
-  const regionalCandidates = candidates.filter((candidate) => candidate.region || candidate.country || candidate.market);
+  const regionalCandidates = rankedCandidates.filter((candidate) => candidate.region || candidate.country || candidate.market);
   const regionalConflict = new Set(regionalCandidates.map((candidate) => `${candidate.region || ''}:${candidate.country || ''}:${candidate.market || ''}`)).size > 1;
   const conflicts = candidates.length > 1 ? ['Mais de um PN candidato foi encontrado; confirmar aplicação.'] : [];
   if (regionalConflict) conflicts.push('Conflito regional: foram encontradas aplicações em catálogos de mercados diferentes; não tratar os PNs como equivalentes.');
-  return { part_numbers: partNumbers, manufacturers, applications: [], models: [], specifications: [], source_urls: urls, confidence: candidates.length > 1 ? 0.65 : candidates.length ? candidates[0].confidence : results.length >= 2 && unique.size >= 2 ? 0.35 : 0, conflicts, candidates };
+  if (rejected_candidates.length) conflicts.push(`${rejected_candidates.length} candidato(s) rejeitado(s) pela política de evidência.`);
+  return { part_numbers: partNumbers, manufacturers, applications: [], models: [], specifications: [], source_urls: urls, confidence: candidates.length > 1 ? 0.65 : candidates.length ? candidates[0].confidence : results.length >= 2 && unique.size >= 2 ? 0.35 : 0, conflicts, candidates, eligible_candidates: candidates, rejected_candidates };
 }
 
 export function isTechnicalResearchNeeded(input: { text: string; manufacturer?: string; model?: string; part_number?: string; userAskedExternal?: boolean }) {
@@ -600,7 +604,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   const noResultQueries = queryDiagnostics.filter((item) => item.code === 'WEB_SEARCH_NO_RESULTS');
   const successfulQueries = queryDiagnostics.length - failedQueries.length;
   const status = failedQueries.length === queryDiagnostics.length && queryDiagnostics.length > 0 ? 'FAILED' : failedQueries.length ? 'PARTIAL' : uniqueResults.length ? 'COMPLETED' : 'INSUFFICIENT_DATA';
-  const result = { provider: provider.name, status, region_context: resolveResearchRegion(initialInput), results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.candidates || [], research_state: { ...researchState, discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
+  const result = { provider: provider.name, status, region_context: resolveResearchRegion(initialInput), results: uniqueResults, pages: pages.map((page) => ({ url: page.url, title: page.title, retrieved_at: page.retrieved_at, code: page.code || null })), evidence, candidates: evidence.eligible_candidates || [], eligible_candidates: evidence.eligible_candidates || [], rejected_candidates: evidence.rejected_candidates || [], research_state: { ...researchState, candidates: evidence.eligible_candidates || [], discovered_facts: [...researchState.discovered_facts, ...resolvedIdentity.facts.filter((fact) => fact.provenance !== 'customer')], sources: [...new Set(researchState.sources)], unresolved_facts: ['serial_or_chassis'].filter((field) => !initialInput.serial && evidence.candidates.length > 1), next_research_step: evidence.candidates.length ? 'PRESENT_RESULTS' : status === 'FAILED' ? 'HUMAN_HANDOFF' : 'ASK_CUSTOMER' }, discovered_machine: { manufacturer: resolvedIdentity.manufacturer || null, model: resolvedIdentity.model || initialInput.model || null, equipment_type: resolvedIdentity.equipment_type || null }, research_strategy_version: RESEARCH_STRATEGY_VERSION, stop_reason: stopReason, research_limits: { max_rounds: maxRounds, max_web_queries: maxQueries, max_total_results: maxTotalResults, max_page_fetches: maxPageFetches, max_duration_ms: maxDurationMs, max_cost: maxCost }, query_diagnostics: queryDiagnostics, failure_codes: [...new Set(failedQueries.map((item) => item.code).filter(Boolean))], failed_queries: failedQueries.map((item) => item.query_index), successful_queries: successfulQueries, no_result_queries: noResultQueries.map((item) => item.query_index), cache_hit: false, cache_miss: true, queries_planned: Math.max(queries.length, researchState.queries_executed.length), queries_executed: queriesExecuted, results_count: uniqueResults.length, query_hash: hash, retrieved_at: now, duration_ms: Date.now() - started };
   try {
     const run = await input.sb.from('product_research_runs').insert({ company_id: input.company_id, query: safeText(input.query.query, MAX_QUERY), query_hash: hash, manufacturer: safeText(input.query.manufacturer, 160) || null, status: uniqueResults.length ? 'completed' : 'insufficient_data', result, started_at: new Date(started).toISOString(), completed_at: now, expires_at: new Date(Date.now() + (input.ttl_hours || 24) * 3600_000).toISOString() }).select('id').maybeSingle();
     if (!run.error && run.data?.id && uniqueResults.length) {

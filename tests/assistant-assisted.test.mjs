@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const edge = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
+const resolver = fs.readFileSync('supabase/functions/_shared/companyContextResolver.ts', 'utf8');
 const sources = fs.readFileSync('supabase/functions/_shared/officialSources.ts', 'utf8');
 const page = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 const permissions = fs.readFileSync('src/lib/permissions.js', 'utf8');
@@ -30,8 +31,8 @@ test('assistant resolves the company server-side and keeps context scoped', () =
   assert.match(edge, /company_assistant_settings/);
   assert.match(edge, /eq\('company_id', conversation\.company_id\)/);
   assert.match(edge, /specific_rules/);
-  assert.match(edge, /company_quick_replies/);
-  assert.match(edge, /company_handoff_rules/);
+  assert.match(resolver, /company_quick_replies/);
+  assert.match(resolver, /company_handoff_rules/);
   assert.match(edge, /segmentGuidance/);
   assert.match(edge, /ManufacturerAdapterRegistry/);
   assert.match(edge, /products/);
@@ -40,17 +41,17 @@ test('assistant resolves the company server-side and keeps context scoped', () =
 });
 
 test('assistant context does not require optional catalog or media columns', () => {
-  assert.match(edge, /messages'\)\.select\('id,sender_type,content,message_type,created_at'/);
-  assert.match(edge, /products'\)\.select\('id,name,sku,price,stock,active'/);
-  assert.doesNotMatch(edge, /messages'\)\.select\('[^']*media_type/);
-  assert.doesNotMatch(edge, /products'\)\.select\('[^']*(?:brand|category|subcategory|short_description)/);
+  assert.match(resolver, /messages'\)\.select\('id,sender_type,content,message_type,created_at'/);
+  assert.match(resolver, /products'\)\.select\('id,name,sku,price,stock,active'/);
+  assert.doesNotMatch(resolver, /messages'\)\.select\('[^']*media_type/);
+  assert.doesNotMatch(resolver, /products'\)\.select\('[^']*(?:brand|category|subcategory|short_description)/);
 });
 
 test('context lookup isolates resources and returns a safe failing resource', () => {
-  for (const resource of ['messages', 'products', 'company_quick_replies', 'company_handoff_rules']) assert.match(edge, new RegExp(`resource: '${resource}'`));
-  assert.match(edge, /resource: failedResource\.resource/);
-  assert.match(edge, /CONTEXT_MESSAGES_OK/);
-  assert.match(edge, /CONTEXT_PRODUCTS_OK/);
+  for (const resource of ['messages', 'products', 'quick_replies', 'handoff_rules']) assert.match(resolver, new RegExp(`key: '${resource}'`));
+  assert.match(edge, /resource: failedResource/);
+  assert.match(edge, /for \(const resource of \['MESSAGES','PRODUCTS','QUICK_REPLIES','HANDOFF_RULES'/);
+  assert.match(edge, /`CONTEXT_\$\{resource\}_OK`/);
 });
 
 test('multisegment official source registry selects John Deere only for related context', () => {

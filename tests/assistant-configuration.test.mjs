@@ -32,11 +32,12 @@ test('assistant service whitelists fields and validates controlled placeholders'
   assert.doesNotMatch(service, /graph\.facebook\.com|WHATSAPP_ACCESS_TOKEN|AI_ENABLED/);
 });
 
-test('assistant UI keeps automatic modes unavailable and preview is local', () => {
-  assert.match(page, /Manual/);
-  assert.match(page, /Assistido/);
-  assert.match(page, /Automático · bloqueado/);
-  assert.match(page, /A IA apenas sugere; a equipe revisa e envia/);
+test('assistant UI exposes supervised autonomy and keeps unsupervised mode unavailable', () => {
+  assert.match(page, /Desativada/);
+  assert.match(page, /Assistida/);
+  assert.match(page, /Autônoma supervisionada/);
+  assert.match(page, /Autônoma · reservada/);
+  assert.match(page, /Aprovação humana não dispara o envio/);
   assert.match(page, /Preview do atendimento/);
   assert.doesNotMatch(page, /invokeEdgeFunction|graph\.facebook\.com|VITE_AI_ENABLED/);
 });

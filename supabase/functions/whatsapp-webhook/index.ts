@@ -62,16 +62,31 @@ async function logSafe(sb: any, companyId: string | null, event: string, status:
   } catch (error) { return error; }
 }
 
-async function enqueueAutomaticAssistant(sb: any, message: { companyId: string; conversationId: string; messageId: string; providerMessageId: string }) {
-  const settings = await sb.from('company_assistant_settings').select('mode,automatic_reply_enabled').eq('company_id', message.companyId).maybeSingle();
+async function enqueueSupervisedIntelligence(sb: any, message: { companyId: string; conversationId: string; messageId: string; providerMessageId: string; occurredAt: string }) {
+  const settings = await sb.from('company_assistant_settings').select('autonomy_mode').eq('company_id', message.companyId).maybeSingle();
   if (settings.error) stageError(settings.error, 'assistant_settings_lookup');
-  if (settings.data?.mode !== 'automatic' || settings.data?.automatic_reply_enabled !== true) return;
-  const queued = await sb.rpc('enqueue_assistant_job', { target_company: message.companyId, target_conversation: message.conversationId, target_message: message.messageId, target_provider_message: message.providerMessageId });
+  if (settings.data?.autonomy_mode !== 'SUPERVISED_AUTONOMOUS') return;
+  const queued = await sb.rpc('enqueue_intelligence_event', {
+    target_company: message.companyId,
+    target_event_type: 'CUSTOMER_MESSAGE_RECEIVED',
+    target_source_type: 'WHATSAPP_MESSAGE',
+    target_source_id: message.providerMessageId,
+    target_conversation: message.conversationId,
+    target_message: message.messageId,
+    target_actor_type: 'CUSTOMER',
+    target_actor_id: null,
+    target_payload: { channel: 'whatsapp', message_id: message.messageId },
+    target_occurred_at: message.occurredAt,
+    target_correlation_id: crypto.randomUUID(),
+    target_causation_id: null,
+    target_depth: 0,
+    target_idempotency_key: `whatsapp:customer_message:${message.providerMessageId}`,
+  });
   if (queued.error) stageError(queued.error, 'assistant_job_enqueue');
-  const job = Array.isArray(queued.data) ? queued.data[0] : queued.data;
-  if (!job?.id || job.status !== 'queued') return;
+  const jobId = queued.data?.job_id;
+  if (!jobId || queued.data?.status !== 'QUEUED') return;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const dispatch = fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/assistant-worker`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: job.id }) }).catch(() => null);
+  const dispatch = fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/assistant-worker`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: jobId }) }).catch(() => null);
   if (typeof (globalThis as any).EdgeRuntime?.waitUntil === 'function') {
     (globalThis as any).EdgeRuntime.waitUntil(dispatch);
   }
@@ -133,7 +148,7 @@ async function processMessage(sb: any, value: any, message: any) {
   }
   const logError = await logSafe(sb, companyId, 'whatsapp_inbound', 'success', { external_id: message.id, message_type: parsed.type });
   if (logError) stageError(logError, 'success_log');
-  if (!existing.data && inserted.data?.id) await enqueueAutomaticAssistant(sb, { companyId, conversationId: conversation.id, messageId: inserted.data.id, providerMessageId: message.id });
+  if (!existing.data && inserted.data?.id) await enqueueSupervisedIntelligence(sb, { companyId, conversationId: conversation.id, messageId: inserted.data.id, providerMessageId: message.id, occurredAt: timestamp(message.timestamp) });
 }
 
 Deno.serve(async (req) => {

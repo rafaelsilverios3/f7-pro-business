@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/0044_company_knowledge_feedback.sql', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
+const resolver = fs.readFileSync('supabase/functions/_shared/companyContextResolver.ts', 'utf8');
 const inbox = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 const service = fs.readFileSync('src/services/assistantFeedbackService.js', 'utf8');
 
@@ -31,8 +32,8 @@ test('feedback is immutable, company scoped and promotes knowledge only after ex
 });
 
 test('assistant consumes only active verified company knowledge in its company context', () => {
-  assert.match(assistant, /resource: 'company_knowledge'/);
-  assert.match(assistant, /eq\('status', 'active'\)/);
+  assert.match(resolver, /key: 'knowledge'/);
+  assert.match(resolver, /eq\('status', 'active'\)/);
   assert.match(assistant, /VERIFIED_COMPANY_KNOWLEDGE/);
   assert.match(assistant, /knowledge: verifiedKnowledge/);
 });

@@ -5,7 +5,7 @@ export const QUICK_REPLY_PLACEHOLDERS = Object.freeze([
 ]);
 
 export const ASSISTANT_DEFAULTS = Object.freeze({
-  tone: 'professional', language: 'pt-BR', mode: 'manual', business_hours: {},
+  tone: 'professional', language: 'pt-BR', mode: 'manual', autonomy_mode: 'ASSISTED', business_hours: {},
 });
 
 export const SEGMENT_PRESETS = Object.freeze({
@@ -17,7 +17,7 @@ export const SEGMENT_PRESETS = Object.freeze({
 const SETTINGS_FIELDS = [
   'commercial_name', 'segment', 'business_description', 'tone', 'language', 'business_hours',
   'welcome_message', 'out_of_hours_message', 'closing_message', 'payment_methods',
-  'delivery_policy', 'return_policy', 'important_information', 'specific_rules', 'mode',
+  'delivery_policy', 'return_policy', 'important_information', 'specific_rules', 'mode', 'autonomy_mode',
 ];
 
 function client() { return getSupabaseClient(); }
@@ -38,7 +38,8 @@ export async function getAssistantSettings(companyId) {
 export async function saveAssistantSettings(companyId, values) {
   /** @type {Record<string, any>} */
   const payload = SETTINGS_FIELDS.reduce((acc, field) => { if (values[field] !== undefined) acc[field] = values[field]; return acc; }, { company_id: companyId });
-  if (!['manual', 'assisted', 'automatic'].includes(payload.mode)) payload.mode = 'manual';
+  if (!['OFF', 'ASSISTED', 'SUPERVISED_AUTONOMOUS'].includes(payload.autonomy_mode)) payload.autonomy_mode = 'ASSISTED';
+  payload.mode = payload.autonomy_mode === 'OFF' ? 'manual' : 'assisted';
   const { data, error } = await client().from('company_assistant_settings').upsert(payload, { onConflict: 'company_id' }).select('*').single();
   if (error) throw error;
   return data;

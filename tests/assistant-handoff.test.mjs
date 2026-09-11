@@ -27,10 +27,10 @@ test('handoff RLS and RPCs preserve company isolation and keep anon out', () => 
   assert.doesNotMatch(migration, /grant all|grant .* to anon/i);
 });
 
-test('automatic handoff persists the decision before finishing the job', () => {
+test('supervised worker fails closed into a handoff before completing a failed job', () => {
   assert.match(worker, /createAssistantHandoff/);
-  assert.ok(worker.indexOf('const handoff = await createAssistantHandoff') < worker.indexOf("await finish(sb, job.id, policy.status"));
-  assert.match(worker, /HANDOFF_CREATE_FAILED/);
+  assert.ok(worker.indexOf('await createAssistantHandoff') < worker.indexOf("await finish(sb, job.id, retry ? 'queued' : 'handed_off'"));
+  assert.match(worker, /análise autônoma falhou de modo seguro/);
 });
 
 test('Smart Atendimento creates, claims and resolves resumable handoffs', () => {

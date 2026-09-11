@@ -2,11 +2,15 @@ import { corsHeaders, json, auth, admin } from '../_shared/core.ts';
 import { CompanyInternalSource } from '../_shared/officialSources.ts';
 import { mergeProductIntelligenceCandidates, resolveProductOrPart } from '../_shared/productIntelligence.ts';
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains, resolveResearchRegion } from '../_shared/webResearch.ts';
-import { F7AIOrchestrator } from '../_shared/f7AIOrchestrator.ts';
 import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from '../_shared/specialists/agriculturalParts.ts';
 import { recordAIStage, reserveAIBudget } from '../_shared/aiObservability.ts';
 import { filterProductsForAssistant, filterSourcesForAssistant, filterSourcesForCustomer } from '../_shared/assistantCapabilities.ts';
+import { resolveCompanyContext } from '../_shared/companyContextResolver.ts';
+import { F7IntelligenceEngine } from '../_shared/f7IntelligenceEngine.ts';
+import { DomainSpecialistRegistry } from '../_shared/specialistRegistry.ts';
+import { F7ToolRegistry } from '../_shared/toolRegistry.ts';
+import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -78,12 +82,14 @@ function normalizeCandidateForContext(candidate: any) {
 }
 function sanitizeProductIntelligence(input: any) {
   const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
+  const rejected = Array.isArray(input?.rejected_candidates) ? input.rejected_candidates : [];
   const web = input?.web_research && typeof input.web_research === 'object' ? input.web_research : {};
   return {
     query: safeText(input?.query, 1000),
     need_external_research: input?.need_external_research === true,
     missing_information: Array.isArray(input?.missing_information) ? input.missing_information.slice(0, 20).map((item: unknown) => safeText(item, 120)) : [],
     candidates: candidates.slice(0, 30).map(normalizeCandidateForContext),
+    rejected_candidates: rejected.slice(0, 30).map((candidate: any) => ({ ...normalizeCandidateForContext(candidate), rejection_reason: safeText(candidate?.rejection_reason, 80), rejection_reasons: Array.isArray(candidate?.rejection_reasons) ? candidate.rejection_reasons.slice(0, 5).map((reason: unknown) => safeText(reason, 80)) : [] })),
     discovered_machine: input?.discovered_machine && typeof input.discovered_machine === 'object' ? { manufacturer: safeText(input.discovered_machine.manufacturer, 120) || null, model: safeText(input.discovered_machine.model, 80) || null, equipment_type: safeText(input.discovered_machine.equipment_type, 80) || null } : null,
     research_state: input?.research_state && typeof input.research_state === 'object' ? { current_objective: safeText(input.research_state.current_objective, 500), known_facts: Array.isArray(input.research_state.known_facts) ? input.research_state.known_facts.slice(0, 12) : [], discovered_facts: Array.isArray(input.research_state.discovered_facts) ? input.research_state.discovered_facts.slice(0, 12) : [], queries_executed: Array.isArray(input.research_state.queries_executed) ? input.research_state.queries_executed.slice(0, 5).map((item: unknown) => safeText(item, 300)) : [], evidence: Array.isArray(input.research_state.evidence) ? input.research_state.evidence.slice(0, 30).map((item: unknown) => safeText(item, 700)) : [], confidence: Number(input.research_state.confidence) || 0, next_research_step: safeText(input.research_state.next_research_step, 40) } : null,
     web_research: { searched: web.searched === true, search_provider: safeText(web.search_provider, 100), cache_hit: web.cache_hit === true, code: safeText(web.code, 100) || null, region_context: web.region_context && typeof web.region_context === 'object' ? { country: safeText(web.region_context.country, 40) || null, market: safeText(web.region_context.market, 60) || null, region: safeText(web.region_context.region, 60) || null, locale: safeText(web.region_context.locale, 20) || null } : null, candidate_count: Array.isArray(web.candidates) ? web.candidates.length : 0, evidence: { part_numbers: Array.isArray(web.evidence?.part_numbers) ? web.evidence.part_numbers.slice(0, 30).map((item: unknown) => safeText(item, 80)) : [], source_urls: Array.isArray(web.evidence?.source_urls) ? web.evidence.source_urls.slice(0, 20).map((item: unknown) => safeText(item, 300)) : [], confidence: Number(web.evidence?.confidence) || 0, conflicts: Array.isArray(web.evidence?.conflicts) ? web.evidence.conflicts.slice(0, 10).map((item: unknown) => safeText(item, 240)) : [] } },
@@ -266,7 +272,7 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     VERIFIED_COMPANY_KNOWLEDGE: Array.isArray(input.knowledge) ? input.knowledge.slice(0, 30) : [],
     CUSTOMER_CONVERSATION: input.messages,
     INTERNAL_CATALOG: visibleProducts.map((item: any) => ({ product_name: safeText(item.name, 160), sku: safeText(item.sku, 100), manufacturer: safeText(item.brand, 120), description: safeText(item.short_description, 400), ...(Object.prototype.hasOwnProperty.call(item, 'price') ? { sale_price: item.price } : {}), ...(Object.prototype.hasOwnProperty.call(item, 'stock') ? { stock_quantity: item.stock } : {}) })),
-    PRODUCT_INTELLIGENCE: input.productIntelligence || { candidates: [], missing_information: ['Pesquisa interna sem candidatos'] },
+    PRODUCT_INTELLIGENCE: input.productIntelligence ? { ...input.productIntelligence, rejected_candidates: undefined } : { candidates: [], missing_information: ['Pesquisa interna sem candidatos'] },
     OFFICIAL_SOURCES: filterSourcesForAssistant(input.sources, input.settings),
     SOURCE_DISCLOSURE_POLICY: { allow_external_source_disclosure: input.settings.allow_external_source_disclosure === true },
   };
@@ -306,6 +312,10 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
   } catch { return { ok: false, code: 'AI_PROVIDER_UNAVAILABLE' as const }; }
 }
 
+const modelRouter = new ModelRouter([
+  new FunctionModelProvider('openai_compatible', async (input) => generateWithProvider(input as any)),
+]);
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   let stage = 'ASSISTANT_REQUEST_RECEIVED';
@@ -320,6 +330,7 @@ Deno.serve(async (req) => {
     const jobId = typeof body?.job_id === 'string' ? body.job_id : '';
     const internalJobRequest = Boolean(jobId) && jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     let user: any = null;
+    let intelligenceEvent: any = null;
     if (!internalJobRequest) {
       const authResult = await sb.auth.getUser(jwt);
       user = authResult.data.user;
@@ -335,9 +346,13 @@ Deno.serve(async (req) => {
     await logStage(sb, conversation.company_id, 'ASSISTANT_REQUEST_RECEIVED');
     await logStage(sb, conversation.company_id, stage);
     if (internalJobRequest) {
-      const jobResult = await sb.from('assistant_jobs').select('id,company_id,conversation_id,status').eq('id', jobId).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
+      const jobResult = await sb.from('assistant_jobs').select('id,company_id,conversation_id,status,intelligence_event_id').eq('id', jobId).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
       if (jobResult.error) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'job_lookup', internal_error_code: safeInternalCode(jobResult.error) }, 500);
       if (!jobResult.data || jobResult.data.status !== 'processing') return json({ code: 'INVALID_ASSISTANT_JOB' }, 409);
+      if (!jobResult.data.intelligence_event_id) return json({ code: 'INTELLIGENCE_EVENT_REQUIRED' }, 409);
+      const eventResult = await sb.from('intelligence_events').select('*').eq('id', jobResult.data.intelligence_event_id).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
+      if (eventResult.error || !eventResult.data) return json({ code: 'INVALID_INTELLIGENCE_EVENT' }, 409);
+      intelligenceEvent = eventResult.data;
       stage = 'JOB_SCOPE_OK';
       await logStage(sb, conversation.company_id, stage);
     } else {
@@ -354,13 +369,14 @@ Deno.serve(async (req) => {
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     stage = 'ENTITLEMENT_OK';
     await logStage(sb, conversation.company_id, stage);
-    const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: internalJobRequest ? conversation.company_id : user.id, target_metric: internalJobRequest ? 'assistant-auto-reply' : 'assistant-suggest', max_count: internalJobRequest ? 30 : 10, window_seconds: internalJobRequest ? 3600 : 60 });
+    const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: internalJobRequest ? conversation.company_id : user.id, target_metric: internalJobRequest ? 'intelligence-supervised' : 'assistant-suggest', max_count: internalJobRequest ? 30 : 10, window_seconds: internalJobRequest ? 3600 : 60 });
     if (limited.error) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna no controle de uso.', stage: 'rate_limit', internal_error_code: safeInternalCode(limited.error) }, 500);
     if (limited.data === false) return json({ code: 'RATE_LIMITED' }, 429);
-    const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode,automatic_reply_enabled,auto_reply_min_confidence,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,allow_customer_lookup,allow_quote_draft,allow_official_sources,allow_external_source_disclosure,human_handoff_on_low_confidence,max_daily_ai_calls,max_daily_web_queries,max_research_rounds,max_tokens_per_request,max_daily_ai_cost,estimated_cost_per_1k_tokens').eq('company_id', conversation.company_id).maybeSingle();
+    const { data: settings, error: settingsError } = await sb.from('company_assistant_settings').select('commercial_name,segment,business_description,tone,language,business_hours,payment_methods,delivery_policy,return_policy,important_information,specific_rules,mode,autonomy_mode,auto_reply_min_confidence,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,allow_customer_lookup,allow_quote_draft,allow_official_sources,allow_external_source_disclosure,human_handoff_on_low_confidence,max_daily_ai_calls,max_daily_web_queries,max_research_rounds,max_tokens_per_request,max_daily_ai_cost,estimated_cost_per_1k_tokens,max_autonomous_jobs_per_day,max_autonomous_jobs_per_hour,max_tool_calls_per_job,max_model_calls_per_job,max_job_runtime_ms,max_event_depth').eq('company_id', conversation.company_id).maybeSingle();
     if (settingsError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao carregar a configuração do assistente.', stage: 'settings_lookup', internal_error_code: safeInternalCode(settingsError) }, 500);
     if (internalJobRequest) {
-      if (settings?.mode !== 'automatic' || settings?.automatic_reply_enabled !== true) return json({ code: 'AUTOMATIC_MODE_DISABLED' }, 403);
+      if (settings?.autonomy_mode !== 'SUPERVISED_AUTONOMOUS') return json({ code: 'SUPERVISED_AUTONOMY_DISABLED' }, 403);
+      if (Number(settings?.max_model_calls_per_job || 0) < 1) return json({ code: 'MAX_MODEL_CALLS_REACHED' }, 429);
     } else if ((settings?.mode || 'manual') !== 'assisted') return json({ code: 'ASSISTED_MODE_REQUIRED' }, 403);
     stage = 'MODE_OK';
     await logStage(sb, conversation.company_id, stage);
@@ -369,38 +385,21 @@ Deno.serve(async (req) => {
     if (!aiEnabled) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_DISABLED', provider_config: providerConfig, model: providerConfig.model, http_status: 403 }); return json({ success: false, error: 'AI_DISABLED', code: 'AI_DISABLED', message: 'A IA está desativada neste ambiente.', suggestion: null, requires_human: true, sources: [] }, 403); }
     if (!providerConfig.api_key_configured) { await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: 'AI_PROVIDER_NOT_CONFIGURED', provider_config: providerConfig, model: providerConfig.model, http_status: 503 }); return json({ success: false, error: 'AI_PROVIDER_NOT_CONFIGURED', code: 'AI_PROVIDER_NOT_CONFIGURED', message: 'O provedor de IA ainda não está configurado.', suggestion: null, requires_human: true, sources: [] }, 503); }
 
-    const contextResources = [
-      { resource: 'messages', okStage: 'CONTEXT_MESSAGES_OK', query: sb.from('messages').select('id,sender_type,content,message_type,created_at').eq('company_id', conversation.company_id).eq('conversation_id', conversationId).order('created_at', { ascending: false }).limit(MAX_CONTEXT_MESSAGES) },
-      { resource: 'products', okStage: 'CONTEXT_PRODUCTS_OK', query: sb.from('products').select('id,name,sku,price,stock,active').eq('company_id', conversation.company_id).eq('active', true).limit(200) },
-      { resource: 'company_quick_replies', okStage: 'CONTEXT_QUICK_REPLIES_OK', query: sb.from('company_quick_replies').select('reply_key,title,body,category,active').eq('company_id', conversation.company_id).eq('active', true).limit(100) },
-      { resource: 'company_handoff_rules', okStage: 'CONTEXT_HANDOFF_RULES_OK', query: sb.from('company_handoff_rules').select('trigger_key,label,enabled,priority').eq('company_id', conversation.company_id).eq('enabled', true).order('priority').limit(100) },
-      { resource: 'company_knowledge', okStage: 'CONTEXT_KNOWLEDGE_OK', query: sb.from('company_knowledge').select('knowledge_type,subject_key,fact_key,fact_value,source_type,confidence,scope,verified_at').eq('company_id', conversation.company_id).eq('status', 'active').order('verified_at', { ascending: false }).limit(100) },
-      { resource: 'verified_product_applications', okStage: 'CONTEXT_VERIFIED_APPLICATIONS_OK', query: sb.from('verified_product_applications').select('manufacturer,machine_model,machine_year,serial_range,system,assembly,position,part_number,source_refs,verification_state,verified_at').eq('company_id', conversation.company_id).in('verification_state', ['candidate', 'verified']).limit(100) },
-      { resource: 'part_cross_references', okStage: 'CONTEXT_CROSS_REFERENCES_OK', query: sb.from('part_cross_references').select('original_part_number,equivalent_part_number,original_manufacturer,equivalent_manufacturer,relation_type,evidence,confidence').eq('company_id', conversation.company_id).limit(100) },
-    ];
-    const contextResults = await Promise.all(contextResources.map(({ query }) => query));
-    const [messagesResult, productsResult, quickRepliesResult, handoffRulesResult, knowledgeResult, verifiedApplicationsResult, crossReferencesResult] = contextResults;
-    const contextFailureIndex = contextResults.findIndex((result) => result.error);
-    if (contextFailureIndex >= 0) {
-      const failedResource = contextResources[contextFailureIndex];
-      const contextError = contextResults[contextFailureIndex].error;
-      await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { resource: failedResource.resource, internal_error_code: safeInternalCode(contextError), http_status: 500, duration_ms: Date.now() - requestStartedAt });
-      return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao preparar o contexto da sugestão.', stage: 'context_lookup', resource: failedResource.resource, internal_error_code: safeInternalCode(contextError) }, 500);
+    let companyContext;
+    try { companyContext = await resolveCompanyContext({ sb, company_id: conversation.company_id, conversation_id: conversationId, max_messages: MAX_CONTEXT_MESSAGES }); }
+    catch (contextError) {
+      const failedResource = safeText((contextError as any)?.resource, 80) || 'unknown';
+      await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { resource: failedResource, internal_error_code: safeInternalCode((contextError as any)?.cause), http_status: 500, duration_ms: Date.now() - requestStartedAt });
+      return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao preparar o contexto da sugestão.', stage: 'context_lookup', resource: failedResource, internal_error_code: safeInternalCode((contextError as any)?.cause) }, 500);
     }
-    for (const resource of contextResources) await logStage(sb, conversation.company_id, resource.okStage);
-    const { data: messages } = messagesResult;
-    const { data: products } = productsResult;
-    const { data: quickReplies } = quickRepliesResult;
-    const { data: handoffRules } = handoffRulesResult;
-    const { data: knowledge } = knowledgeResult;
-    const { data: verifiedApplications } = verifiedApplicationsResult;
-    const { data: crossReferences } = crossReferencesResult;
+    for (const resource of ['MESSAGES','PRODUCTS','QUICK_REPLIES','HANDOFF_RULES','KNOWLEDGE','MEMORY','VERIFIED_APPLICATIONS','CROSS_REFERENCES']) await logStage(sb, conversation.company_id, `CONTEXT_${resource}_OK`);
+    const { messages, products, quick_replies: quickReplies, handoff_rules: handoffRules, knowledge, memory, verified_applications: verifiedApplications, cross_references: crossReferences } = companyContext;
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
     const bounded = boundedMessages(messages || []);
     const researchTraceId = traceId;
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'REQUEST_RECEIVED' });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'CONTEXT_READY' });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'REQUEST_RECEIVED' });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'CONTEXT_READY' });
     stage = 'CONTEXT_MESSAGES_READY';
     await logStage(sb, conversation.company_id, stage);
     const latestText = bounded.map((item: any) => item.content || '').join(' ');
@@ -449,11 +448,11 @@ Deno.serve(async (req) => {
           const maxResearchRounds = Math.min(2, Math.max(1, Number(settings?.max_research_rounds || 2)));
           const webBudget = await reserveAIBudget(sb, { company_id: conversation.company_id, web_queries: maxWebQueriesPerRun });
           if (!webBudget.allowed) throw Object.assign(new Error('AI_WEB_BUDGET_EXCEEDED'), { code: 'AI_WEB_BUDGET_EXCEEDED' });
-          await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'RESEARCH_STARTED', provider: 'brave', query_count: maxWebQueriesPerRun });
+          await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESEARCH_STARTED', provider: 'brave', query_count: maxWebQueriesPerRun });
           const safeResearchQuery = [...new Set([...terms, safeText(settings?.segment, 80)].filter(Boolean))].join(' ').slice(0, 500);
           await logResearchEvent(sb, conversation.company_id, conversationId, 'MACHINE_IDENTITY_DISCOVERY_STARTED', { research_trace_id: researchTraceId, model: technicalInput?.model, requested_part: technicalInput?.part_description });
           webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, manufacturer: technicalInput?.manufacturer, model: technicalInput?.model, year: technicalInput?.year, application: technicalInput?.part_description, part_number: technicalInput?.old_part_number, domains: [], ...researchRegion, max_results: 5 }, ttl_hours: 24, max_pages: 2, limits: { max_rounds: maxResearchRounds, max_web_queries: maxWebQueriesPerRun }, onQuery: (event, details) => logResearchEvent(sb, conversation.company_id, conversationId, event, { research_trace_id: researchTraceId, provider: 'BraveWebSearchProvider', ...details }) });
-          await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'RESEARCH_COMPLETED', provider: 'brave', query_count: webResearch.queries_executed || 0, source_domains: (webResearch.results || []).map((item: any) => item.domain), candidate_count: (webResearch.candidates || []).length, duration_ms: webResearch.duration_ms });
+          await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESEARCH_COMPLETED', provider: 'brave', query_count: webResearch.queries_executed || 0, source_domains: (webResearch.results || []).map((item: any) => item.domain), candidate_count: (webResearch.candidates || []).length, duration_ms: webResearch.duration_ms });
           stage = 'WEB_RESEARCH_READY';
           await logStage(sb, conversation.company_id, stage);
         } catch (error) {
@@ -461,10 +460,12 @@ Deno.serve(async (req) => {
           const safe = safeErrorDetails(error);
           await logStage(sb, conversation.company_id, 'WEB_RESEARCH_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) });
         }
-        for (const result of webResearch.results || []) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, manufacturer: webResearch.discovered_machine?.manufacturer, retrieved_at: result.retrieved_at });
+        const eligibleSourceUrls = new Set((webResearch.eligible_candidates || webResearch.candidates || []).flatMap((candidate: any) => [candidate.source_url, ...(candidate.supporting_sources || [])]).filter(Boolean));
+        for (const result of webResearch.results || []) if (eligibleSourceUrls.has(result.url)) addSourceMetadata({ type: result.source_type, domain: result.domain, url: result.url, title: result.title, manufacturer: webResearch.discovered_machine?.manufacturer, retrieved_at: result.retrieved_at });
         productIntelligence.web_research = { searched: true, search_provider: webResearch.provider, evidence: webResearch.evidence, candidates: webResearch.candidates || webResearch.evidence?.candidates || [], conflicts: webResearch.evidence?.conflicts || [], cache_hit: Boolean(webResearch.cache_hit), retrieved_at: webResearch.retrieved_at, code: webResearch.code || null };
         productIntelligence.research_state = webResearch.research_state || null;
         productIntelligence.discovered_machine = webResearch.discovered_machine || null;
+        productIntelligence.rejected_candidates = webResearch.rejected_candidates || webResearch.evidence?.rejected_candidates || [];
         productIntelligence.candidates = mergeProductIntelligenceCandidates(productIntelligence.candidates || [], webResearch.candidates || webResearch.evidence?.candidates || []);
         const researchEvent = webResearch.status === 'PARTIAL' ? 'WEB_RESEARCH_PARTIAL' : webResearch.status === 'FAILED' ? 'WEB_RESEARCH_FAILED' : 'WEB_RESEARCH_COMPLETED';
         const failedDiagnostic = webResearch.query_diagnostics?.find((item: any) => item.code && item.code !== 'WEB_SEARCH_NO_RESULTS');
@@ -487,10 +488,16 @@ Deno.serve(async (req) => {
     productIntelligenceContext.missing_for_search = researchNeeded ? [] : productIntelligenceContext.missing_information;
     productIntelligenceContext.missing_for_confirmation = missingForConfirmation;
     await logResearchEvent(sb, conversation.company_id, conversationId, 'AI_CONTEXT_READY', { research_trace_id: researchTraceId, candidate_count: productIntelligenceContext.candidates.length, top_candidate_pns: productIntelligenceContext.candidates.slice(0, 10).map((candidate: any) => candidate.part_number), source_domains: sourceMetadata.map((source: any) => source.domain || source.source_domain), source_types: sourceMetadata.map((source: any) => source.type || source.source_type), manufacturer: webResearch.discovered_machine?.manufacturer || technicalInput?.manufacturer, model: webResearch.discovered_machine?.model || technicalInput?.model, requested_part: technicalInput?.part_description, missing_for_confirmation: missingForConfirmation });
-    const assistantDecision = F7AIOrchestrator.orchestrate({ trace_id: researchTraceId, message: latestText, company: { ...(settings || {}), segment: settings?.segment, business_description: settings?.business_description, specific_rules: settings?.specific_rules, mode: internalJobRequest ? 'automatic' : 'assisted', allow_web_research: settings?.allow_web_research !== false }, product_intelligence: productIntelligenceContext, automatic_policy: { enabled: internalJobRequest && settings?.automatic_reply_enabled === true, min_confidence: settings?.auto_reply_min_confidence } });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'TOOLS_SELECTED', tool_names: assistantDecision.tools });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'DECISION_READY', tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: assistantDecision.confidence });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'POLICY_CHECKED', confidence: assistantDecision.confidence });
+    const enginePermissions = ['conversation.view','assistant_settings.view','assistant.suggest'];
+    if (settings?.allow_product_lookup !== false) enginePermissions.push('products.view');
+    if (settings?.allow_stock_lookup === true) enginePermissions.push('inventory.view');
+    if (settings?.allow_price_lookup === true) enginePermissions.push('pricing.view');
+    if (settings?.allow_customer_lookup === true) enginePermissions.push('customers.view');
+    const engineResult = F7IntelligenceEngine.decide({ company_context: { ...(settings || {}), company_id: conversation.company_id, autonomy_mode: internalJobRequest ? 'SUPERVISED_AUTONOMOUS' : 'ASSISTED' }, actor: { type: internalJobRequest ? 'SYSTEM' : 'USER', id: user?.id || null }, event: intelligenceEvent || { id: traceId, company_id: conversation.company_id, event_type: 'MANUAL_AI_REQUEST', source_type: 'CONVERSATION', source_id: conversationId, actor_type: 'USER', actor_id: user?.id || null, payload: {}, occurred_at: new Date().toISOString(), correlation_id: traceId, causation_id: null, depth: 0, max_depth: 0, idempotency_key: traceId }, conversation_context: { latest_message: latestText }, available_tools: F7ToolRegistry.all(), available_specialists: DomainSpecialistRegistry.all(), policies: { supervised_only: true }, knowledge: verifiedKnowledge, memory, budget: settings || {}, permissions: enginePermissions, product_intelligence: productIntelligenceContext });
+    const assistantDecision = engineResult.decision;
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'TOOLS_SELECTED', tool_names: assistantDecision.tools });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'DECISION_READY', tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: assistantDecision.confidence });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'POLICY_CHECKED', confidence: assistantDecision.confidence });
     stage = 'AI_CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage, { candidate_count: productIntelligenceContext.candidates.length });
     // The provider receives only sanitized context and source metadata, never
@@ -501,27 +508,27 @@ Deno.serve(async (req) => {
     const estimatedCost = Number(settings?.estimated_cost_per_1k_tokens || 0) * estimatedTokens / 1000;
     const aiBudget = await reserveAIBudget(sb, { company_id: conversation.company_id, ai_calls: 1, tokens: estimatedTokens, estimated_cost: estimatedCost });
     if (!aiBudget.allowed) {
-      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'FAILED', safe_error_code: aiBudget.reason, duration_ms: Date.now() - requestStartedAt });
+      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', safe_error_code: aiBudget.reason, duration_ms: Date.now() - requestStartedAt });
       return json({ success: false, code: 'AI_BUDGET_EXCEEDED', error: 'AI_BUDGET_EXCEEDED', message: 'Limite de uso da IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
     }
     stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
-    const providerSuggestion = await generateWithProvider({ settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: filterSourcesForAssistant(sourceMetadata, settings || {}), knowledge: verifiedKnowledge, productIntelligence: { ...productIntelligenceContext, decision: assistantDecision } });
+    const providerSuggestion: any = await modelRouter.generateStructured('openai_compatible', { settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules }, messages: bounded, products: relevantProducts, sources: filterSourcesForAssistant(sourceMetadata, settings || {}), knowledge: verifiedKnowledge, productIntelligence: { ...productIntelligenceContext, decision: assistantDecision } });
     await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
     const missingInformation = missingForConfirmation;
     if (!providerSuggestion.ok) {
       await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'failure', providerSuggestion.code, bounded.length, relevantProducts.length, sourceMetadata.length);
       const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_EXCEEDED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_PROVIDER_MODEL_NOT_FOUND' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_STRUCTURED_OUTPUT_UNSUPPORTED' || providerSuggestion.code === 'AI_PROVIDER_CONFIG_INVALID' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
       await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: providerSuggestion.code, provider_code: providerSuggestion.provider_code, provider_type: providerSuggestion.provider_type, provider_param: providerSuggestion.provider_param, provider_request_id: providerSuggestion.request_id, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model }, http_status: status, model });
-      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'FAILED', provider: 'openai', model, tool_names: assistantDecision.tools, candidate_count: productIntelligenceContext.candidates.length, input_tokens: estimatedTokens, estimated_cost: estimatedCost, safe_error_code: providerSuggestion.code, duration_ms: Date.now() - requestStartedAt });
+      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', provider: 'openai', model, tool_names: assistantDecision.tools, candidate_count: productIntelligenceContext.candidates.length, input_tokens: estimatedTokens, estimated_cost: estimatedCost, safe_error_code: providerSuggestion.code, duration_ms: Date.now() - requestStartedAt });
       return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: filterSourcesForCustomer(sourceMetadata, settings || {}), missing_information: missingInformation, decision: assistantDecision }, status);
     }
     await logStage(sb, conversation.company_id, 'AI_RESPONSE_PARSED', { duration_ms: Date.now() - requestStartedAt, model });
     await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'success', null, bounded.length, relevantProducts.length, sourceMetadata.length);
     await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'RESPONSE_CREATED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'automatic' : 'assisted', stage: 'COMPLETED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
-    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: providerSuggestion.requires_human, confidence: providerSuggestion.confidence, decision: assistantDecision, sources: filterSourcesForCustomer(sourceMetadata, settings || {}), product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, ...(Object.prototype.hasOwnProperty.call(product, 'price') ? { sale_price: product.price } : {}), ...(Object.prototype.hasOwnProperty.call(product, 'stock') ? { stock_quantity: product.stock } : {}) })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESPONSE_CREATED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'COMPLETED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
+    return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: true, confidence: providerSuggestion.confidence, decision: assistantDecision, intelligence: engineResult, sources: filterSourcesForCustomer(sourceMetadata, settings || {}), product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, ...(Object.prototype.hasOwnProperty.call(product, 'price') ? { sale_price: product.price } : {}), ...(Object.prototype.hasOwnProperty.call(product, 'stock') ? { stock_quantity: product.stock } : {}) })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
   } catch (error) {
     const safeCode = safeInternalCode(error) || 'INTERNAL_PROVIDER_ERROR';
     const safeDetails = safeErrorDetails(error);

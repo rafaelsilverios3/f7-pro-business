@@ -8,6 +8,7 @@ const tools = fs.readFileSync('supabase/functions/_shared/toolRegistry.ts', 'utf
 const specialists = fs.readFileSync('supabase/functions/_shared/specialistRegistry.ts', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/0041_autonomous_assistant.sql', 'utf8');
 const assistant = fs.readFileSync('supabase/functions/assistant-suggest/index.ts', 'utf8');
+const engine = fs.readFileSync('supabase/functions/_shared/f7IntelligenceEngine.ts', 'utf8');
 const page = fs.readFileSync('src/pages/Atendimento.jsx', 'utf8');
 
 test('autonomous decision engine is confidence and guardrail based', () => {
@@ -49,13 +50,14 @@ test('autonomous assistant configuration defaults to disabled and separates auto
   assert.doesNotMatch(migration, /automatic.*sale|auto_sale/i);
 });
 
-test('assisted endpoint uses the central orchestrator and never approves automatic reply', () => {
+test('assistant endpoint uses the intelligence engine and never approves automatic reply', () => {
   assert.match(orchestrator, /F7AIOrchestrator/);
   assert.match(orchestrator, /selectDomain/);
-  assert.match(assistant, /F7AIOrchestrator\.orchestrate/);
-  assert.match(assistant, /enabled: internalJobRequest && settings\?\.automatic_reply_enabled === true/);
-  assert.match(assistant, /internalJobRequest \? 'automatic' : 'assisted'/);
-  assert.match(assistant, /if \(internalJobRequest\)[\s\S]*AUTOMATIC_MODE_DISABLED[\s\S]*else if[\s\S]*ASSISTED_MODE_REQUIRED/);
+  assert.match(assistant, /F7IntelligenceEngine\.decide/);
+  assert.match(engine, /F7AIOrchestrator\.orchestrate/);
+  assert.match(engine, /automatic_policy: \{ enabled: false \}/);
+  assert.match(assistant, /SUPERVISED_AUTONOMOUS/);
+  assert.match(assistant, /ASSISTED_MODE_REQUIRED/);
   assert.match(assistant, /decision: assistantDecision/);
   assert.doesNotMatch(assistant, /whatsapp-send/);
   assert.match(assistant, /Siga a ação selecionada em PRODUCT_INTELLIGENCE\.decision/);
