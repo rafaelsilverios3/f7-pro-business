@@ -90,6 +90,9 @@ export async function createSale(companyId, data) {
   const discount = Number(data.discount) || 0;
   const addition = Number(data.addition) || 0;
   const { subtotal, costTotal, total, profit } = calculateSaleTotals(items, discount, addition);
+  const paymentDrafts = Array.isArray(data.payments) ? data.payments.map((payment) => ({ amount: roundMoney(Number(payment.amount) || 0), payment_method: payment.payment_method || data.payment_method || 'A combinar' })).filter((payment) => payment.amount > 0) : [];
+  const receivedAmountDraft = roundMoney(paymentDrafts.reduce((sum, payment) => sum + payment.amount, 0));
+  if (receivedAmountDraft > total) throw new Error('Os recebimentos não podem superar o total da venda.');
 
   const sale = await base44.entities.Sale.create({
     company_id: companyId,
@@ -131,20 +134,30 @@ export async function createSale(companyId, data) {
     });
   }
 
-  // Conta a receber
-  await base44.entities.FinancialEntry.create({
+  // Receita: o título nasce pendente. Somente pagamentos efetivamente informados geram caixa.
+  const payments = paymentDrafts;
+  const receivedAmount = receivedAmountDraft;
+  const financialStatus = receivedAmount >= total ? 'received' : receivedAmount > 0 ? 'partial' : 'pending';
+  const financialEntry = await base44.entities.FinancialEntry.create({
     company_id: companyId,
     type: 'receivable',
+    nature: 'revenue',
     description: `Venda #${sale.id.slice(-6).toUpperCase()} — ${data.customer_name}`,
-    category: 'Vendas',
+    category: 'Venda',
     amount: total,
+    total_amount: total,
+    received_amount: receivedAmount,
+    paid_amount: 0,
     due_date: todayISO(),
-    paid_date: todayISO(),
-    status: 'paid',
+    paid_date: receivedAmount >= total ? todayISO() : null,
+    status: financialStatus,
     sale_id: sale.id,
     payment_method: data.payment_method || 'Dinheiro',
     account: 'Caixa',
   });
+  for (const [index, payment] of payments.entries()) {
+    try { await base44.entities.FinancialMovement.create({ company_id: companyId, financial_entry_id: financialEntry.id, direction: 'in', amount: payment.amount, payment_method: payment.payment_method, account: 'Caixa', occurred_at: new Date().toISOString(), idempotency_key: `sale:${sale.id}:${index + 1}` }); } catch {}
+  }
 
   // Atualiza cliente
   if (data.customer_id) {

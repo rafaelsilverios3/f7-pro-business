@@ -50,9 +50,13 @@ export async function receivePurchase(po) {
   const fin = await base44.entities.FinancialEntry.create({
     company_id: po.company_id,
     type: 'payable',
+    nature: 'expense',
     description: `Compra #${po.id.slice(-6).toUpperCase()} — ${po.supplier_name}`,
     category: 'Fornecedores',
     amount: po.total,
+    total_amount: po.total,
+    paid_amount: 0,
+    received_amount: 0,
     due_date: po.expected_date || todayISO(),
     status: 'pending',
     purchase_id: po.id,
