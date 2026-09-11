@@ -38,3 +38,24 @@ test('assistant-suggest keeps compatible history without allowing it to replace 
   assert.equal(result.intentChanged, false);
   assert.equal(result.conversationHistory[0].content, 'Filtro de óleo para o John Deere 7230J');
 });
+
+test('normalizes production message shapes and always selects newest inbound request', () => {
+  const result = intent.resolveConversationIntent([
+    { id: 'm1', role: 'user', direction: 'inbound', body: 'filtro combustível 7230J', created_at: '2026-09-10T10:00:00Z' },
+    { id: 'm2', sender: 'customer', text: 'filtro óleo motor 7230J', created_at: '2026-09-10T11:00:00Z' },
+    { id: 'm3', sender_type: 'agent', content: 'Vou verificar', created_at: '2026-09-10T12:00:00Z' },
+    { id: 'm4', sender_type: 'customer', content: null, created_at: '2026-09-10T13:00:00Z' },
+  ], null);
+  assert.equal(result.latestCustomerMessage.id, 'm2');
+  assert.equal(result.currentRequest, 'filtro óleo');
+  assert.equal(result.activeIntent.model, '7230J');
+  assert.equal(result.conversationHistory.length, 2);
+});
+
+test('normalization ignores malformed, empty and non-array messages without throwing', () => {
+  assert.deepEqual(intent.normalizeIntentMessages([]), []);
+  assert.deepEqual(intent.normalizeIntentMessages(null), []);
+  assert.doesNotThrow(() => intent.resolveConversationIntent([null, {}, { content: null }, { body: '   ' }], { foo: 'bar' }));
+  const result = intent.resolveConversationIntent([{ direction: 'inbound', message: 'Pergunta válida' }]);
+  assert.equal(result.latestCustomerMessage.content, 'Pergunta válida');
+});

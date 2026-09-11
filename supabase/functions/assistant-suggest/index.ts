@@ -11,7 +11,7 @@ import { F7IntelligenceEngine } from '../_shared/f7IntelligenceEngine.ts';
 import { DomainSpecialistRegistry } from '../_shared/specialistRegistry.ts';
 import { F7ToolRegistry } from '../_shared/toolRegistry.ts';
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
-import { buildResearchQuery, resolveConversationIntent } from '../_shared/conversationIntent.ts';
+import { buildResearchQuery, normalizeIntentMessages, resolveConversationIntent } from '../_shared/conversationIntent.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
@@ -102,7 +102,8 @@ function normalizeTerms(value: unknown) {
 }
 function boundedMessages(rows: any[]) {
   let remaining = MAX_MESSAGE_CONTEXT_CHARS;
-  return rows.slice(0, MAX_CONTEXT_MESSAGES).reverse().map((item) => {
+  const normalized = normalizeIntentMessages(rows);
+  return normalized.slice(0, MAX_CONTEXT_MESSAGES).reverse().map((item) => {
     if (remaining <= 0) return null;
     const content = safeText(item.content, Math.min(600, remaining));
     remaining -= content.length;
@@ -400,13 +401,33 @@ Deno.serve(async (req) => {
     const { messages, products, quick_replies: quickReplies, handoff_rules: handoffRules, knowledge, memory, verified_applications: verifiedApplications, cross_references: crossReferences } = companyContext;
     stage = 'CONTEXT_READY';
     await logStage(sb, conversation.company_id, stage);
-    const bounded = boundedMessages(messages || []);
-    const conversationIntent = resolveConversationIntent(messages || [], input?.previous_intent && typeof input.previous_intent === 'object' ? input.previous_intent : null);
+    await logStage(sb, conversation.company_id, 'CONTEXT_BOUND_MESSAGES_START');
+    let bounded: any[] = [];
+    try {
+      bounded = boundedMessages(messages);
+      await logStage(sb, conversation.company_id, 'CONTEXT_BOUND_MESSAGES_OK', { message_count: bounded.length });
+    } catch (error) {
+      await logStage(sb, conversation.company_id, 'CONTEXT_BOUND_MESSAGES_FAILED', { error_name: safeErrorDetails(error).error_name, internal_error_code: safeInternalCode(error) });
+      bounded = [];
+    }
+    await logStage(sb, conversation.company_id, 'CONVERSATION_INTENT_START');
+    const normalizedMessages = normalizeIntentMessages(messages);
+    const previousIntent = input?.previous_intent && typeof input.previous_intent === 'object' ? input.previous_intent : null;
+    let conversationIntent: any;
+    try {
+      conversationIntent = resolveConversationIntent(normalizedMessages, previousIntent);
+      await logStage(sb, conversation.company_id, 'CONVERSATION_INTENT_OK');
+    } catch (error) {
+      const latest = normalizedMessages.find((item: any) => item.sender_type === 'customer') || { id: null, content: '' };
+      conversationIntent = { latestCustomerMessage: { id: latest.id || null, content: safeText(latest.content, 1000) }, currentRequest: safeText(latest.content, 180), previousIntent, intentChanged: false, conversationHistory: normalizedMessages.filter((item: any) => item !== latest), activeIntent: { manufacturer: undefined, model: undefined, requestedPart: safeText(latest.content, 180), normalizedRequestedPart: safeText(latest.content, 180).toLocaleLowerCase('pt-BR') }, invalidations: [] };
+      await logStage(sb, conversation.company_id, 'CONVERSATION_INTENT_FAILED', { error_name: safeErrorDetails(error).error_name, internal_error_code: safeInternalCode(error) });
+    }
     const researchTraceId = traceId;
     await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'REQUEST_RECEIVED' });
     await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'CONTEXT_READY' });
     stage = 'CONTEXT_MESSAGES_READY';
     await logStage(sb, conversation.company_id, stage);
+    await logStage(sb, conversation.company_id, 'CURRENT_REQUEST_READY');
     const currentRequest = conversationIntent.currentRequest;
     const currentRequestText = [conversationIntent.activeIntent.manufacturer, conversationIntent.activeIntent.model, currentRequest].filter(Boolean).join(' ');
     const latestText = conversationIntent.latestCustomerMessage.content || currentRequestText;
