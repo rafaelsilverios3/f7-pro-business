@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/0050_financial_flow.sql', 'utf8');
 const capitalMigration = fs.readFileSync('supabase/migrations/0051_capital_contributions.sql', 'utf8');
+const provider = fs.readFileSync('src/data/providers/supabaseProvider.js', 'utf8');
 const financePage = fs.readFileSync('src/pages/Financeiro.jsx', 'utf8');
 const salesService = fs.readFileSync('src/services/salesService.js', 'utf8');
 
@@ -44,4 +45,17 @@ test('capital contribution is a confirmed non-operating cash entry', () => {
   assert.match(capitalMigration, /security definer/);
   assert.match(financePage, /Aporte \/ investimento/);
   assert.match(financePage, /CAPITAL_TYPES/);
+  assert.doesNotMatch(capitalMigration, /financial_entries\([^)]*created_by/i);
+  assert.doesNotMatch(provider, /FinancialEntry: \[[^\]]*['"]created_by['"]/);
+  assert.match(capitalMigration, /paid_at\)\s+values\(/);
+  assert.match(capitalMigration, /occurred_at_input\) returning \* into entry_row/);
+});
+
+test('financial entry payloads use only the remote schema and defer paid_by to settlement', () => {
+  const remoteColumns = ['company_id', 'sale_id', 'purchase_id', 'type', 'nature', 'entry_class', 'capital_type', 'is_operating', 'status', 'description', 'category', 'amount', 'total_amount', 'received_amount', 'paid_amount', 'due_date', 'paid_date', 'paid_at', 'paid_by', 'source_type', 'source_detail', 'notes', 'account', 'payment_method', 'cancelled_at'];
+  const match = provider.match(/FinancialEntry: \[([^\]]+)\]/);
+  assert.ok(match);
+  const columns = [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, column]) => column);
+  assert.deepEqual(columns, remoteColumns);
+  assert.match(financePage, /await financeService\.recordPayment/);
 });

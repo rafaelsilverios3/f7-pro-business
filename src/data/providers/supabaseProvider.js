@@ -27,7 +27,7 @@ const columns = {
   PurchaseOrder: ['company_id', 'supplier_id', 'status', 'total', 'expected_date'],
   PurchaseItem: ['company_id', 'purchase_id', 'product_id', 'quantity', 'cost'],
   Commission: ['company_id', 'sale_id', 'seller', 'rate', 'amount', 'status'],
-  FinancialEntry: ['company_id', 'sale_id', 'purchase_id', 'type', 'nature', 'entry_class', 'capital_type', 'is_operating', 'status', 'description', 'category', 'amount', 'total_amount', 'received_amount', 'paid_amount', 'due_date', 'paid_date', 'paid_at', 'paid_by', 'source_type', 'source_detail', 'notes', 'account', 'payment_method', 'cancelled_at', 'created_by'],
+  FinancialEntry: ['company_id', 'sale_id', 'purchase_id', 'type', 'nature', 'entry_class', 'capital_type', 'is_operating', 'status', 'description', 'category', 'amount', 'total_amount', 'received_amount', 'paid_amount', 'due_date', 'paid_date', 'paid_at', 'paid_by', 'source_type', 'source_detail', 'notes', 'account', 'payment_method', 'cancelled_at'],
   FinancialMovement: ['company_id', 'financial_entry_id', 'installment_id', 'direction', 'amount', 'payment_method', 'account', 'occurred_at', 'idempotency_key'],
   FinancialInstallment: ['company_id', 'financial_entry_id', 'installment_number', 'amount', 'received_amount', 'paid_amount', 'due_date', 'status'],
   Goal: ['company_id', 'name', 'type', 'target_value', 'period', 'start_date', 'end_date', 'user_id', 'status'],
