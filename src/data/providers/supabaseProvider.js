@@ -3,6 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 let client;
 const tableNames = { Customer: 'customers', Product: 'products', Sale: 'sales', StockMovement: 'stock_movements', FinancialEntry: 'financial_entries', Supplier: 'suppliers', PurchaseOrder: 'purchases', PurchaseItem: 'purchase_items', Quote: 'quotes', Commission: 'commissions', Company: 'companies', AuditLog: 'audit_logs', Goal: 'goals', Notification: 'notifications', Profile: 'profiles', Conversation: 'conversations', Message: 'messages', Opportunity: 'opportunities', ProductOpportunity: 'product_opportunities', OpportunityProductDraft: 'opportunity_product_drafts', SupplierIntelligence: 'supplier_intelligence_profiles', SupplierReview: 'supplier_reviews', SupplierRiskSignal: 'supplier_risk_signals', MarketSource: 'market_sources', MarketSignal: 'market_signals', MarketOpportunity: 'market_opportunities', SalesChannel: 'sales_channels', ProductChannel: 'product_channel_links', ChannelMetric: 'channel_metrics', Automation: 'automations', AutomationRun: 'automation_runs', IntelligenceInsight: 'intelligence_insights', CompanySubscription: 'company_subscriptions', CompanyInvite: 'company_invites' };
 const sortColumns = { created_date: 'created_at', updated_date: 'updated_at' };
+const normalizeSort = (sort, fallback = 'created_at') => {
+  const value = typeof sort === 'string' && sort.trim() ? sort.trim() : fallback;
+  const descending = value.startsWith('-');
+  const key = value.replace(/^-/, '');
+  return { column: sortColumns[key] || key || fallback, descending };
+};
 const normalize = (name, row) => {
   if (!row) return row;
   if (name === 'Product') return { ...row, sale_price: row.price, cost_price: row.cost, min_stock: row.minimum_stock, created_date: row.created_at, updated_date: row.updated_at, unit: row.unit || 'un' };
@@ -62,8 +68,8 @@ export function getSupabaseClient() {
 function entity(name) {
   const table = tableNames[name] || name;
   return {
-    async list(sort = 'created_at', limit = 500) { const column = sortColumns[sort.replace(/^-/, '')] || sort.replace(/^-/, ''); const { data, error } = await getSupabaseClient().from(table).select('*').order(column, { ascending: !sort.startsWith('-') }).limit(limit); if (error) throw error; return (data || []).map((row) => normalize(name, row)); },
-    async filter(filters = {}, sort = '-created_at', limit = 500) { let query = getSupabaseClient().from(table).select('*'); for (const [key, value] of Object.entries(filters)) query = query.eq(key, value); const column = sortColumns[sort.replace(/^-/, '')] || sort.replace(/^-/, ''); const { data, error } = await query.order(column, { ascending: !sort.startsWith('-') }).limit(limit); if (error) throw error; return (data || []).map((row) => normalize(name, row)); },
+    async list(sort = 'created_at', limit = 500) { const ordering = normalizeSort(sort); const { data, error } = await getSupabaseClient().from(table).select('*').order(ordering.column, { ascending: !ordering.descending }).limit(limit); if (error) throw error; return (data || []).map((row) => normalize(name, row)); },
+    async filter(filters = {}, sort = '-created_at', limit = 500) { let query = getSupabaseClient().from(table).select('*'); for (const [key, value] of Object.entries(filters)) query = query.eq(key, value); const ordering = normalizeSort(sort, '-created_at'); const { data, error } = await query.order(ordering.column, { ascending: !ordering.descending }).limit(limit); if (error) throw error; return (data || []).map((row) => normalize(name, row)); },
     async get(id) { const { data, error } = await getSupabaseClient().from(table).select('*').eq('id', id).single(); if (error && error.code !== 'PGRST116') throw error; return normalize(name, data); },
     async create(payload) { const { data, error } = await getSupabaseClient().from(table).insert(payloadFor(name, payload)).select().single(); if (error) throw error; return normalize(name, data); },
     async update(id, payload) { const { data, error } = await getSupabaseClient().from(table).update(payloadFor(name, payload)).eq('id', id).select().single(); if (error) throw error; return normalize(name, data); },

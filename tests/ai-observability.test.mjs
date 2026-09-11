@@ -55,3 +55,9 @@ test('observability functions resolve the authenticated user before checking mem
   assert.match(inspector, /const token = auth\(req\)/);
   assert.match(health, /const token = auth\(req\)/);
 });
+
+test('supabase provider tolerates an invalid sort value without crashing the page', () => {
+  const provider = fs.readFileSync('src/data/providers/supabaseProvider.js', 'utf8');
+  assert.match(provider, /typeof sort === 'string'/);
+  assert.match(provider, /normalizeSort\(sort/);
+});
