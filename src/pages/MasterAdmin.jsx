@@ -9,7 +9,20 @@ const cards = [
 
 export default function MasterAdmin() {
   const [data, setData] = useState(empty); const [localToken, setLocalToken] = useState(() => sessionStorage.getItem('f7_master_admin_token') || ''); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [selected, setSelected] = useState(null);
-  const load = async () => { setLoading(true); setError(''); try { const response = await fetch(API + '/overview', { headers: { Accept: 'application/json', 'x-master-admin-token': localToken } }); if (!response.ok) throw new Error(response.status === 401 ? 'Token local inválido.' : 'API administrativa local indisponível.'); setData(await response.json()); } catch (cause) { setError(cause.message || 'Inicie o servidor administrativo local.'); setData(empty); } finally { setLoading(false); } };
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const response = await fetch(API + '/overview', { headers: { Accept: 'application/json', 'x-master-admin-token': localToken } });
+      if (!response.ok) {
+        if (response.status === 401) { sessionStorage.removeItem('f7_master_admin_token'); setLocalToken(''); throw new Error('Token local inválido. Informe novamente o token do servidor.'); }
+        throw new Error('API administrativa local indisponível.');
+      }
+      setData(await response.json());
+    } catch (cause) {
+      const message = cause instanceof TypeError ? 'Não foi possível conectar à API local. Em outro terminal, execute: npm run master-admin' : (cause.message || 'Inicie o servidor administrativo local.');
+      setError(message); setData(empty);
+    } finally { setLoading(false); }
+  };
   useEffect(() => { if (localToken) { sessionStorage.setItem('f7_master_admin_token', localToken); load(); } else setLoading(false); }, [localToken]);
   const metrics = data.metrics || {};
   const companies = useMemo(() => data.companies || [], [data.companies]);
