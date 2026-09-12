@@ -9,6 +9,7 @@ import { Search, Moon, Sun } from 'lucide-react';
 import ProfileDialog from './ProfileDialog';
 import { getDataProvider } from '@/data/providerSelector';
 import { applyTheme, getStoredTheme, resolveTheme } from '@/lib/theme';
+import { platformAdminService } from '@/services/platformAdminService';
 
 export default function Layout() {
   const { company, loading } = useCompany();
@@ -20,6 +21,7 @@ export default function Layout() {
   const [profileName, setProfileName] = useState('');
   const [theme, setTheme] = useState(getStoredTheme);
   const [resolvedTheme, setResolvedTheme] = useState(() => resolveTheme(getStoredTheme()));
+  const [platformAdmin, setPlatformAdmin] = useState(false);
 
   const roleLabels = {
     admin: 'Administrador', gestor: 'Gestor', financeiro: 'Financeiro',
@@ -64,6 +66,13 @@ export default function Layout() {
     return () => { cancelled = true; };
   }, [company]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setPlatformAdmin(false); return undefined; }
+    platformAdminService.access().then((result) => { if (!cancelled) setPlatformAdmin(result?.is_platform_admin === true); }).catch(() => { if (!cancelled) setPlatformAdmin(false); });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -97,6 +106,7 @@ export default function Layout() {
               <div className="border-b border-slate-700/70 px-3 py-2"><p className="truncate text-xs font-medium text-white">{visibleName}</p><p className="text-[10px] text-slate-400">{role}</p><p className="mt-1 truncate text-[10px] text-slate-500">{user?.email}</p></div>
               <p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Conta</p>
               <button onClick={() => { setUserMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><UserRound className="h-3.5 w-3.5" /> Minha conta</button>
+              {platformAdmin && <Link to="/administracao-f7" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-blue-200 transition hover:bg-blue-500/10"><ShieldCheck className="h-3.5 w-3.5" /> Administração F7</Link>}
               {['admin', 'gestor'].includes(String(user?.role || '').toLowerCase()) && <><p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Configurações</p><Link to="/configuracoes/integracoes" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><ShieldCheck className="h-3.5 w-3.5" /> Integrações</Link></>}
               <div className="my-1 border-t border-slate-700/70" />
               <button onClick={() => logout()} className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-rose-500/10 hover:text-rose-300"><LogOut className="h-3.5 w-3.5" /> Sair</button>

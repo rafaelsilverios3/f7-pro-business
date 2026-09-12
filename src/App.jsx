@@ -40,7 +40,7 @@ import SalesHub from './pages/SalesHub.jsx';
 import AiSalesAssistant from './pages/AiSalesAssistant.jsx';
 import OpportunityRadar from './pages/OpportunityRadar.jsx';
 import AIObservability from './pages/AIObservability.jsx';
-import MasterAdmin from './pages/MasterAdmin.jsx';
+import PlatformAdmin from './pages/PlatformAdmin.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
@@ -82,10 +82,6 @@ function RoleGuard({ permission, children }) {
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
   const location = useLocation();
-  const masterAdminEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_MASTER_ADMIN === 'true';
-  if (location.pathname === '/master-admin') {
-    return masterAdminEnabled ? <MasterAdmin /> : <Forbidden />;
-  }
   const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/aceitar-convite'];
   const publicSitePages = {
     '/': 'home',
@@ -127,6 +123,10 @@ const AuthenticatedApp = () => {
   }
 
   if (!authChecked || !isAuthenticated) return <Navigate to="/login" replace />;
+
+  if (location.pathname === '/administracao-f7' || location.pathname.startsWith('/administracao-f7/')) {
+    return <Routes><Route path="/administracao-f7" element={<PlatformAdmin />} /><Route path="/administracao-f7/empresas/:companyId" element={<PlatformAdmin />} /></Routes>;
+  }
 
   // Render the main app
   return (

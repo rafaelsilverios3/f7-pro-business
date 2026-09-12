@@ -1,0 +1,34 @@
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+
+const available = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
+async function call(action, payload = {}) {
+  if (!available()) throw new Error('PLATFORM_ADMIN_UNAVAILABLE');
+  const { data, error } = await getSupabaseClient().functions.invoke('platform-admin', { body: { action, ...payload } });
+  if (error) {
+    let detail = error;
+    try { if (error.context) { const body = await error.context.json(); detail = new Error(body?.error || error.message); } } catch { /* preserve SDK error */ }
+    throw detail;
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export const platformAdminService = {
+  access: () => call('access'),
+  overview: () => call('overview'),
+  companies: (params = {}) => call('companies', params),
+  company: (companyId) => call('company', { company_id: companyId }),
+  companyUsers: (companyId) => call('company_users', { company_id: companyId }),
+  warnings: (params = {}) => call('warnings', params),
+  audit: () => call('audit'),
+  updateCompanyPlan: (companyId, value, reason) => call('update_company_plan', { company_id: companyId, value, reason }),
+  updateCompanyStatus: (companyId, value, reason) => call('update_company_status', { company_id: companyId, value, reason }),
+  createWarning: (payload) => call('create_warning', payload),
+  resolveWarning: (warningId, resolutionNotes, reason) => call('resolve_warning', { warning_id: warningId, resolution_notes: resolutionNotes, reason }),
+  updateCompanyUser: (payload) => call('update_company_user', payload),
+  features: (companyId) => call('features', { company_id: companyId }),
+  updateFeature: (payload) => call('update_feature', payload),
+  ai: (companyId) => call('ai', { company_id: companyId }),
+  updateAI: (payload) => call('update_ai', payload),
+  platformAdmins: () => call('platform_admins'),
+};
