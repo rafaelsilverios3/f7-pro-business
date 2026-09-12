@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs';
+test('production accepts only material items as raw materials',()=>{const sql=fs.readFileSync('supabase/migrations/0058_production_material_item_type.sql','utf8');assert.match(sql,/coalesce\(p\.item_type,'product'\)='material'/);assert.doesNotMatch(sql,/coalesce\(p\.item_type,'product'\)='product'/);});
