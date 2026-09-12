@@ -6,6 +6,7 @@ import { automationService } from '@/services/automationService';
 import { getDataProvider } from '@/data/providerSelector';
 import { fmtDate } from '@/lib/business';
 import { TRIGGER_LABELS, ACTION_LABELS } from '@/lib/automations';
+import { calculateNextRunAt, AUTOMATION_WEEKDAYS } from '@/lib/automationScheduler';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -32,20 +33,22 @@ export default function Automacoes() {
         base44.entities.Automation.filter({ company_id: company.id }, '-created_date', 200),
         base44.entities.AutomationLog.filter({ company_id: company.id }, '-created_date', 50),
       ]);
-    setAutomations(a);
+    setAutomations((a || []).filter((item) => !item.deleted_at));
     setLogs(l);
   };
   useEffect(() => { load(); }, [company]);
 
   const toggleActive = async (auto) => {
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.update(company.id, auto.id, { active: !auto.active });
-    else await base44.entities.Automation.update(auto.id, { active: !auto.active });
+    const active = !auto.active;
+    const changes = { active, next_run_at: active ? calculateNextRunAt({ frequency: auto.schedule_frequency, weekday: auto.schedule_weekday, time: auto.schedule_time, timezone: auto.timezone || 'UTC' }) : null };
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.update(company.id, auto.id, changes);
+    else await base44.entities.Automation.update(auto.id, changes);
     load();
   };
 
   const handleDelete = async (auto) => {
     if (!confirm('Excluir esta automação?')) return;
-    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.remove(company.id, auto.id);
+    if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.update(company.id, auto.id, { active: false, deleted_at: new Date().toISOString(), next_run_at: null });
     else await base44.entities.Automation.delete(auto.id);
     load();
   };
@@ -53,7 +56,7 @@ export default function Automacoes() {
     setRunMessage('');
     try {
       const result = await automationService.runNow(company.id, auto);
-      setRunMessage(`Execução concluída: ${result.created.length} nova(s) e ${result.updated.length} atualizada(s) no Radar.`);
+      setRunMessage(`Execução concluída${Number.isFinite(result?.created?.length) ? `: ${result.created.length} nova(s) e ${result.updated?.length || 0} atualizada(s) no Radar` : ''}.`);
       await load();
     } catch (cause) { setRunMessage(cause.message === 'AUTOMATION_MANUAL_RUN_UNSUPPORTED' ? 'Executar agora está disponível apenas para detectores do Radar (cliente inativo e estoque mínimo).' : (cause.message || 'Não foi possível executar a automação.')); }
   };
@@ -130,7 +133,7 @@ export default function Automacoes() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{a.name}</p>
-                  <p className="text-[10px] text-slate-400">{TRIGGER_LABELS[a.trigger]}</p>
+                  <p className="text-[10px] text-slate-400">{TRIGGER_LABELS[a.trigger_type] || TRIGGER_LABELS[a.trigger]}</p>
                 </div>
               </div>
               <label className="relative inline-flex cursor-pointer items-center">
@@ -155,7 +158,7 @@ export default function Automacoes() {
               </div>
             </div>
             <div className="mt-3 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">{a.last_run ? `Última: ${fmtDate(a.last_run)}` : 'Nunca executada'}</span>
+              <span className="text-[10px] text-slate-400">{a.last_run_at ? `Última: ${fmtDate(a.last_run_at)}` : 'Nunca executada'}{a.next_run_at ? ` · Próxima: ${fmtDate(a.next_run_at)}` : ''}</span>
               <div className="flex items-center gap-1"><button onClick={() => runNow(a)} disabled={!a.active || !['client_inactive', 'stock_below_min'].includes(a.trigger_type)} title="Executar detector seguro agora" className="rounded-md p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30"><Play className="h-4 w-4" /></button><button onClick={() => handleDelete(a)} className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
             </div>
           </div>
@@ -174,6 +177,9 @@ function AutomationDialog({ open, onClose, company, onDone }) {
   const [taskTitle, setTaskTitle] = useState('');
   const [notifyTitle, setNotifyTitle] = useState('');
   const [notifyMessage, setNotifyMessage] = useState('');
+  const [frequency, setFrequency] = useState('manual');
+  const [weekday, setWeekday] = useState(1);
+  const [scheduleTime, setScheduleTime] = useState('08:00');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -182,10 +188,10 @@ function AutomationDialog({ open, onClose, company, onDone }) {
       if (a.type === 'notify') return { type: 'notify', params: { title: notifyTitle, message: notifyMessage } };
       return a;
     });
-    const payload = { company_id: company.id, name, trigger_type: trigger, conditions: [], actions: finalActions, active: true };
+    const payload = { company_id: company.id, name, trigger_type: trigger, conditions: [], actions: finalActions, active: true, schedule_frequency: frequency, schedule_weekday: frequency === 'weekly' ? Number(weekday) : null, schedule_time: scheduleTime, timezone: 'UTC', next_run_at: calculateNextRunAt({ frequency, weekday, time: scheduleTime, timezone: 'UTC' }) };
     if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') await automationService.create(company.id, payload);
     else await base44.entities.Automation.create(payload);
-    setName(''); setTaskTitle(''); setNotifyTitle(''); setNotifyMessage('');
+    setName(''); setTaskTitle(''); setNotifyTitle(''); setNotifyMessage(''); setFrequency('manual'); setWeekday(1); setScheduleTime('08:00');
     onDone?.();
     onClose();
   };
@@ -204,6 +210,16 @@ function AutomationDialog({ open, onClose, company, onDone }) {
             <select value={trigger} onChange={(e) => setTrigger(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
               {Object.entries(TRIGGER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5 sm:col-span-1">
+              <Label className="text-xs">Frequência</Label>
+              <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+                <option value="manual">Somente por evento</option><option value="daily">Diária</option><option value="weekly">Semanal</option>
+              </select>
+            </div>
+            {frequency === 'weekly' && <div className="space-y-1.5"><Label className="text-xs">Dia</Label><select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">{AUTOMATION_WEEKDAYS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select></div>}
+            {frequency !== 'manual' && <div className="space-y-1.5"><Label className="text-xs">Horário (UTC)</Label><Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required /></div>}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Ação</Label>
@@ -235,6 +251,7 @@ function AutomationDialog({ open, onClose, company, onDone }) {
           <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
             <p className="font-medium text-slate-600">Como funciona:</p>
             <p className="mt-1">Quando o evento <strong>{TRIGGER_LABELS[trigger]}</strong> ocorrer, a ação será executada automaticamente. Cada execução é registrada no log.</p>
+            {frequency !== 'manual' && <p className="mt-1">O detector também será executado {frequency === 'daily' ? 'diariamente' : 'semanalmente'} às {scheduleTime} UTC pelo scheduler server-side.</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
