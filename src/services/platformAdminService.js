@@ -30,5 +30,13 @@ export const platformAdminService = {
   updateFeature: (payload) => call('update_feature', payload),
   ai: (companyId) => call('ai', { company_id: companyId }),
   updateAI: (payload) => call('update_ai', payload),
+  whatsapp: (companyId) => call('whatsapp', { company_id: companyId }),
+  setWhatsAppEnabled: (companyId, enabled, reason) => call('disable_whatsapp', { company_id: companyId, enabled, reason }),
+  finance: (companyId) => call('finance', { company_id: companyId }),
+  usage: (companyId) => call('usage', { company_id: companyId }),
+  data: (entity, companyId) => call('data', { entity, company_id: companyId }),
+  health: () => call('health'),
   platformAdmins: () => call('platform_admins'),
+  createPlatformAdmin: (payload) => call('create_platform_admin', payload),
+  updatePlatformAdmin: (payload) => call('update_platform_admin', payload),
 };
