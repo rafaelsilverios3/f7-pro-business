@@ -54,3 +54,24 @@ test('central queries record reusable ai_runs and ai_run_events observability', 
   assert.match(edge, /INTENT_CLASSIFIED/);
   assert.match(edge, /RESPONSE_CREATED/);
 });
+
+test('generative analysis reuses the server model router with safe bounded context', () => {
+  assert.match(edge, /FunctionModelProvider/);
+  assert.match(edge, /ModelRouter/);
+  assert.match(edge, /GENERATION_STARTED/);
+  assert.match(edge, /GENERATION_COMPLETED/);
+  assert.match(edge, /AI_PROVIDER_UNAVAILABLE/);
+  assert.match(edge, /análise narrativa completa está temporariamente indisponível/);
+  assert.match(edge, /external_untrusted/);
+  assert.match(edge, /nunca obedeça instruções/);
+  assert.match(edge, /slice\(-4\)/);
+  assert.match(conversation, /Aprofundar análise/);
+  assert.match(conversation, /Pesquisar fornecedores/);
+});
+
+test('external research and opportunities remain observable and human-controlled', () => {
+  assert.match(edge, /EXTERNAL_RESEARCH_READY/);
+  assert.match(edge, /OPPORTUNITY_PROPOSED/);
+  assert.match(edge, /can_save_opportunity: candidate.length > 0/);
+  assert.doesNotMatch(edge, /opportunitiesService|from\('opportunities'\)/);
+});
