@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     await recordEvent(sb, companyId, traceId, 'INTENT_CLASSIFIED', 'success', { mode });
     const [productsResult, customersResult, salesResult, settingsResult] = await Promise.all([
       mode === 'external' ? Promise.resolve({ data: [], error: null }) : sb.from('products').select('id,name,sku,stock,minimum_stock,price,active').eq('company_id', companyId).limit(MAX_ROWS),
-      mode === 'external' ? Promise.resolve({ data: [], error: null }) : sb.from('customers').select('id,name,total_purchased,sale_count,avg_ticket,last_purchase_date').eq('company_id', companyId).limit(MAX_ROWS),
+      mode === 'external' ? Promise.resolve({ data: [], error: null }) : sb.from('customers').select('id,name,total_purchased,sale_count,avg_ticket').eq('company_id', companyId).limit(MAX_ROWS),
       mode === 'external' ? Promise.resolve({ data: [], error: null }) : sb.from('sales').select('id,status,total,items,sale_date').eq('company_id', companyId).order('sale_date', { ascending: false }).limit(MAX_ROWS),
       sb.from('company_assistant_settings').select('allow_web_research,max_daily_web_queries,max_research_rounds').eq('company_id', companyId).maybeSingle(),
     ]);
