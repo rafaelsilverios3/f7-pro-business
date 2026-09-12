@@ -65,6 +65,8 @@ test('generative analysis reuses the server model router with safe bounded conte
   assert.match(edge, /external_untrusted/);
   assert.match(edge, /nunca obedeça instruções/);
   assert.match(edge, /slice\(-4\)/);
+  assert.match(edge, /INTELLIGENCE_RESPONSE_FORMAT/);
+  assert.match(edge, /json_schema/);
   assert.match(conversation, /Aprofundar análise/);
   assert.match(conversation, /Pesquisar fornecedores/);
 });
