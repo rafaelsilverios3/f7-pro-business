@@ -81,7 +81,7 @@ function RoleGuard({ permission, children }) {
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
   const location = useLocation();
-  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password'];
+  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/aceitar-convite'];
   const publicSitePages = {
     '/': 'home',
     '/produtos': 'products',
@@ -93,7 +93,7 @@ const AuthenticatedApp = () => {
   };
   const publicSitePage = publicSitePages[location.pathname];
   if (location.pathname.startsWith('/loja/')) return <Routes><Route path="/loja/:slug" element={<Storefront />} /></Routes>;
-  if (publicPaths.includes(location.pathname) || location.pathname.startsWith('/invite/')) return <Routes><Route path="/login" element={<Login />} /><Route path="/register" element={<Register />} /><Route path="/forgot-password" element={<ForgotPassword />} /><Route path="/reset-password" element={<ResetPassword />} /><Route path="/invite/:token" element={<Invite />} /></Routes>;
+  if (publicPaths.includes(location.pathname) || location.pathname.startsWith('/invite/')) return <Routes><Route path="/login" element={<Login />} /><Route path="/register" element={<Register />} /><Route path="/forgot-password" element={<ForgotPassword />} /><Route path="/reset-password" element={<ResetPassword />} /><Route path="/aceitar-convite" element={<Invite />} /><Route path="/invite/:token" element={<Invite />} /></Routes>;
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
