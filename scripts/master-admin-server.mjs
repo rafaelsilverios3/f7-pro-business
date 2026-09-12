@@ -1,8 +1,9 @@
 import http from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const port = Number(process.env.MASTER_ADMIN_PORT || 8787);
-const localToken = process.env.MASTER_ADMIN_LOCAL_TOKEN;
+const localToken = process.env.SUPABASE_SERVICE_ROLE_KEY ? (process.env.MASTER_ADMIN_LOCAL_TOKEN || randomBytes(24).toString('hex')) : null;
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const publicKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -54,4 +55,7 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { metrics, companies: companiesWithData, mode: admin && localToken ? 'local_service_role_or_session' : 'authenticated_session' });
   } catch (error) { return json(res, 500, { error: 'admin_query_failed', message: String(error?.message || 'query failed').slice(0, 160) }); }
 });
-server.listen(port, '127.0.0.1', () => console.log(`F7 Master Admin API local listening on http://127.0.0.1:${port} (${admin ? 'service role available' : 'authenticated session mode'})`));
+server.listen(port, '127.0.0.1', () => {
+  console.log(`F7 Master Admin API local listening on http://127.0.0.1:${port} (${admin ? 'service role available' : 'authenticated session mode'})`);
+  if (admin) console.log(`F7 Master Admin local token: ${localToken}`);
+});
