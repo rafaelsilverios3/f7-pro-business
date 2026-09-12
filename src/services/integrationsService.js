@@ -118,8 +118,11 @@ function createIntegrationError(rawDetail, httpStatus) {
     ASSISTED_MODE_REQUIRED: 'Ative o modo assistido para gerar sugestões.',
     FEATURE_NOT_AVAILABLE: 'A IA não está disponível para esta empresa.',
     RATE_LIMITED: 'Limite temporário de sugestões atingido.',
+    SUPPLIER_SAVE_FAILED: 'Falha ao salvar fornecedor.',
   };
-  const message = metaCode != null
+  const message = safeDetail.code === 'SUPPLIER_SAVE_FAILED' && safeDetail.detail
+    ? `Falha ao salvar fornecedor (${redactDiagnosticText(safeDetail.detail)}).`
+    : metaCode != null
     ? `Meta recusou a validação do número. Código: ${metaCode}${metaSubcode != null ? `/${metaSubcode}` : ''}. Verifique token, permissões e vínculo com a conta WhatsApp Business.`
     : safeDetail.code === 'INTERNAL_PROVIDER_ERROR' ? `Falha interna na integração.${safeStage ? ` Etapa: ${safeStage}.` : ''}${safeInternalCode ? ` Código interno: ${safeInternalCode}.` : ''}`
       : assistantMessages[safeDetail.code]
