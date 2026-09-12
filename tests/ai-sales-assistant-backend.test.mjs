@@ -8,6 +8,7 @@ const gate = fs.readFileSync('supabase/migrations/0062_ai_sales_assistant_gate.s
 
 test('Sales Assistant usa gate da empresa e membership server-side', () => {
   assert.match(fn, /company_has_feature/);
+  assert.match(fn, /feature: 'ai_sales'/);
   assert.match(fn, /company_users/);
   assert.match(fn, /ROLES/);
   assert.match(gate, /ai_sales/);
