@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUp, ExternalLink, Loader2, Plus, Search, Sparkles } from 'lucide-react';
 import { intelligenceService } from '@/services/intelligenceService';
 import { opportunitiesService } from '@/services/opportunitiesService';
@@ -9,12 +9,13 @@ const SUGGESTIONS = ['Analisar meu negócio', 'Encontrar oportunidades', 'Pesqui
 const MODE_LABELS = { internal: 'INTERNO', external: 'EXTERNO', hybrid: 'HÍBRIDO' };
 
 export default function IntelligenceConversation({ company }) {
-  const navigate = useNavigate();
+  const navigate = useNavigate(); const location = useLocation();
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState({});
+  React.useEffect(() => { const incoming = location.state?.query; if (incoming) { setQuery(incoming); navigate(location.pathname, { replace: true, state: null }); } }, [location.pathname, location.state, navigate]);
 
   const ask = async (value = query) => {
     const text = String(value || '').trim();

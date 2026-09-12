@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Trash2, Zap, History } from 'lucide-react';
+import { Plus, Trash2, Zap, History, Play } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { automationService } from '@/services/automationService';
 import { getDataProvider } from '@/data/providerSelector';
@@ -19,6 +19,7 @@ export default function Automacoes() {
   const [logs, setLogs] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [runMessage, setRunMessage] = useState('');
 
   const load = async () => {
     if (!company) return;
@@ -48,6 +49,14 @@ export default function Automacoes() {
     else await base44.entities.Automation.delete(auto.id);
     load();
   };
+  const runNow = async (auto) => {
+    setRunMessage('');
+    try {
+      const result = await automationService.runNow(company.id, auto);
+      setRunMessage(`Execução concluída: ${result.created.length} nova(s) e ${result.updated.length} atualizada(s) no Radar.`);
+      await load();
+    } catch (cause) { setRunMessage(cause.message === 'AUTOMATION_MANUAL_RUN_UNSUPPORTED' ? 'Executar agora está disponível apenas para detectores do Radar (cliente inativo e estoque mínimo).' : (cause.message || 'Não foi possível executar a automação.')); }
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
@@ -61,6 +70,7 @@ export default function Automacoes() {
           </div>
         }
       />
+      {runMessage && <p className="mb-4 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-700">{runMessage}</p>}
 
       {showLogs && (
         <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -146,7 +156,7 @@ export default function Automacoes() {
             </div>
             <div className="mt-3 flex items-center justify-between">
               <span className="text-[10px] text-slate-400">{a.last_run ? `Última: ${fmtDate(a.last_run)}` : 'Nunca executada'}</span>
-              <button onClick={() => handleDelete(a)} className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+              <div className="flex items-center gap-1"><button onClick={() => runNow(a)} disabled={!a.active || !['client_inactive', 'stock_below_min'].includes(a.trigger_type)} title="Executar detector seguro agora" className="rounded-md p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30"><Play className="h-4 w-4" /></button><button onClick={() => handleDelete(a)} className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
             </div>
           </div>
         ))}
