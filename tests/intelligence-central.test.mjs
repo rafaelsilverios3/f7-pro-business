@@ -20,7 +20,7 @@ test('server classifies internal, external and hybrid requests without trusting 
   assert.match(intent, /return 'hybrid'/);
   assert.match(intent, /return 'external'/);
   assert.match(intent, /return 'internal'/);
-  assert.match(edge, /classifyIntelligenceMode\(query\)/);
+  assert.match(edge, /classifyIntelligenceMode\(query/);
   assert.doesNotMatch(conversation, /classifyIntelligenceMode/);
 });
 
@@ -74,4 +74,12 @@ test('external research and opportunities remain observable and human-controlled
   assert.match(edge, /OPPORTUNITY_PROPOSED/);
   assert.match(edge, /can_save_opportunity: candidate.length > 0/);
   assert.doesNotMatch(edge, /opportunitiesService|from\('opportunities'\)/);
+});
+
+test('follow-up questions inherit the last analytical mode without trusting free-form history', () => {
+  assert.match(intent, /previousModes/);
+  assert.match(intent, /onde eu compro/);
+  assert.match(edge, /item\.mode/);
+  assert.match(edge, /classifyIntelligenceMode\(query, history/);
+  assert.match(conversation, /mode: item\.result\.mode/);
 });

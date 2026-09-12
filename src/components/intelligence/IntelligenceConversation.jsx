@@ -19,7 +19,7 @@ export default function IntelligenceConversation({ company }) {
     if (!text || loading || !company?.id) return;
     setQuery(''); setError(''); setLoading(true);
     try {
-      const history = messages.slice(-4).map((item) => ({ query: item.query, answer: item.result.answer }));
+      const history = messages.slice(-4).map((item) => ({ query: item.query, answer: item.result.answer, mode: item.result.mode }));
       const result = await intelligenceService.query(company.id, text, history);
       setMessages((current) => [...current, { query: text, result }]);
     } catch (cause) { setError(cause.message || 'Não foi possível concluir a análise.'); }

@@ -129,11 +129,11 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     companyId = uuid(body?.company_id);
     const query = cleanText(body?.query);
-    const history = Array.isArray(body?.history) ? body.history.slice(-4).map((item: any) => ({ query: cleanText(item?.query, 400), answer: cleanText(item?.answer, 800) })).filter((item: any) => item.query) : [];
+    const history = Array.isArray(body?.history) ? body.history.slice(-4).map((item: any) => ({ query: cleanText(item?.query, 400), answer: cleanText(item?.answer, 800), mode: ['internal', 'external', 'hybrid'].includes(item?.mode) ? item.mode : null })).filter((item: any) => item.query) : [];
     if (!companyId || !query) return json({ code: 'INVALID_REQUEST' }, 422);
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle();
     if (!member?.active || !ALLOWED_ROLES.has(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    const mode: IntelligenceMode = classifyIntelligenceMode(query);
+    const mode: IntelligenceMode = classifyIntelligenceMode(query, history.map((item: any) => item.mode).filter(Boolean));
     await recordRun(sb, companyId, traceId, { current_stage: 'REQUEST_RECEIVED', status: 'running', provider: mode === 'internal' ? 'internal' : null, started_at: new Date(started).toISOString() });
     await recordEvent(sb, companyId, traceId, 'INTENT_CLASSIFIED', 'success', { mode });
     const [productsResult, customersResult, salesResult, settingsResult] = await Promise.all([
