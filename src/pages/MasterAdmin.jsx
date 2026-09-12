@@ -15,7 +15,9 @@ export default function MasterAdmin() {
       const response = await fetch(API + '/overview', { headers: { Accept: 'application/json', 'x-master-admin-token': localToken } });
       if (!response.ok) {
         if (response.status === 401) { sessionStorage.removeItem('f7_master_admin_token'); setLocalToken(''); throw new Error('Token local inválido. Informe novamente o token do servidor.'); }
-        throw new Error('API administrativa local indisponível.');
+        let detail = '';
+        try { const body = await response.json(); detail = typeof body?.message === 'string' ? body.message : ''; } catch { /* resposta não JSON */ }
+        throw new Error(detail ? `API local respondeu HTTP ${response.status}: ${detail}` : `API administrativa local respondeu HTTP ${response.status}.`);
       }
       setData(await response.json());
     } catch (cause) {
