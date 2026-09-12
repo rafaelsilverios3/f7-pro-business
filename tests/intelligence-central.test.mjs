@@ -43,7 +43,7 @@ test('external provider absence is explicit and never fabricates sources', () =>
 
 test('opportunity persistence remains an explicit human action', () => {
   assert.match(conversation, /Salvar oportunidade/);
-  assert.match(conversation, /opportunitiesService\.create/);
+  assert.match(conversation, /opportunityFoundationService\.create/);
   assert.match(edge, /requires_human: true/);
   assert.doesNotMatch(edge, /opportunities.*\.insert|promote/);
 });

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUp, ExternalLink, Loader2, Plus, Search, Sparkles } from 'lucide-react';
 import { intelligenceService } from '@/services/intelligenceService';
-import { opportunitiesService } from '@/services/opportunitiesService';
+import { opportunityFoundationService } from '@/services/opportunityFoundationService';
+import { buildModuleContext, contextSummary } from '@/lib/moduleContext';
 import { Button } from '@/components/ui/button';
 
 const SUGGESTIONS = ['Analisar meu negócio', 'Encontrar oportunidades', 'Pesquisar mercado', 'Encontrar fornecedores', 'Analisar meu estoque', 'Encontrar clientes com potencial'];
@@ -15,7 +16,8 @@ export default function IntelligenceConversation({ company }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState({});
-  React.useEffect(() => { const incoming = location.state?.query; if (incoming) { setQuery(incoming); navigate(location.pathname, { replace: true, state: null }); } }, [location.pathname, location.state, navigate]);
+  const [routeContext, setRouteContext] = useState({});
+  React.useEffect(() => { const incoming = location.state?.query || new URLSearchParams(location.search).get('query'); const incomingContext = location.state?.context || {}; if (incoming) setQuery(incoming); if (Object.keys(incomingContext).length) setRouteContext(incomingContext); if (incoming || Object.keys(incomingContext).length) navigate(location.pathname, { replace: true, state: null }); }, [location.pathname, location.search, location.state, navigate]);
 
   const ask = async (value = query) => {
     const text = String(value || '').trim();
@@ -23,25 +25,29 @@ export default function IntelligenceConversation({ company }) {
     setQuery(''); setError(''); setLoading(true);
     try {
       const history = messages.slice(-4).map((item) => ({ query: item.query, answer: item.result.answer, mode: item.result.mode }));
-      const result = await intelligenceService.query(company.id, text, history);
+      const result = await intelligenceService.query(company.id, text, history, routeContext);
       setMessages((current) => [...current, { query: text, result }]);
+      setRouteContext((current) => current);
     } catch (cause) { setError(cause.message || 'Não foi possível concluir a análise.'); }
     finally { setLoading(false); }
   };
 
   const saveOpportunity = async (item, messageIndex) => {
     try {
-      await opportunitiesService.create(company.id, { title: item.title || item.part_number || 'Oportunidade identificada', description: item.evidence?.[0]?.text || 'Oportunidade identificada pela F7 Intelligence.', source: 'intelligence', source_url: item.evidence?.[0]?.url || '', value: 0, stage: 'new' });
+      const evidence = Array.isArray(item.evidence) ? item.evidence : [];
+      const sourceUrl = evidence.find((entry) => entry?.url)?.url || '';
+      const partNumber = item.part_number || null;
+      await opportunityFoundationService.create(company.id, { title: item.title || partNumber || 'Oportunidade identificada', description: evidence[0]?.text || 'Oportunidade identificada pela F7 Intelligence.', source: 'intelligence', source_type: 'EXTERNA', source_url: sourceUrl, metadata: { source_module: 'intelligence', part_number: partNumber, evidence, entity_type: 'product', entity_id: routeContext.product_id || null, radar_state: 'NOVA', dedup_key: `intelligence:${partNumber || item.title || sourceUrl || 'opportunity'}:${sourceUrl || 'no-source'}` }, value: 0, stage: 'new' });
       setSaved((current) => ({ ...current, [`${messageIndex}-${item.part_number}`]: true }));
     } catch (cause) { setError(cause.message || 'Não foi possível salvar a oportunidade.'); }
   };
 
   const followUp = (prompt, asked) => ask(`${prompt} Contexto da análise anterior: ${asked}`);
-  const openSupplierSearch = (asked) => navigate('/supplier-intelligence', { state: { query: asked } });
+  const openSupplierSearch = (asked) => navigate('/supplier-intelligence', { state: { query: asked, context: buildModuleContext({ item: { ...routeContext, id: routeContext.opportunity_id, metadata: routeContext }, sourceModule: 'intelligence', intent: 'supplier_research' }) } });
 
   return <section className="mb-6 overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-br from-[#0e1a2b] via-[#182b52] to-indigo-900 text-white shadow-lg">
     <div className="p-5 sm:p-6">
-      <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-400/20"><Sparkles className="h-5 w-5 text-indigo-200" /></div><div><h2 className="text-lg font-semibold">Como posso ajudar sua empresa hoje?</h2><p className="mt-1 text-xs text-indigo-100/80">Converse com a F7 Intelligence usando os dados autorizados da sua empresa.</p></div></div>
+      <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-400/20"><Sparkles className="h-5 w-5 text-indigo-200" /></div><div><h2 className="text-lg font-semibold">Como posso ajudar sua empresa hoje?</h2><p className="mt-1 text-xs text-indigo-100/80">Converse com a F7 Intelligence usando os dados autorizados da sua empresa.</p>{Object.keys(routeContext).length > 0 && <p className="mt-2 text-[11px] text-indigo-200">Contexto recebido de {routeContext.source_module || 'outro módulo'} · {contextSummary(routeContext).opportunity_id ? 'oportunidade vinculada' : 'entidade vinculada'}</p>}</div></div>
       <form className="mt-5 flex gap-2" onSubmit={(event) => { event.preventDefault(); ask(); }}><input value={query} onChange={(event) => setQuery(event.target.value)} disabled={loading} placeholder="Pergunte à F7 Intelligence..." className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-indigo-100/60 focus:border-indigo-300" /><Button type="submit" disabled={loading || !query.trim()} className="shrink-0 bg-indigo-400 text-slate-950 hover:bg-indigo-300">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}</Button></form>
       <div className="mt-3 flex flex-wrap gap-2">{SUGGESTIONS.map((item) => <button type="button" key={item} disabled={loading} onClick={() => ask(item)} className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-indigo-100 transition hover:bg-white/15">{item}</button>)}</div>
     </div>

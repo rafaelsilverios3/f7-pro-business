@@ -5,6 +5,7 @@ import { buildSupplierCandidates, safeSupplierPayload } from '../_shared/supplie
 const ROLES = new Set(['admin', 'gestor', 'comercial']);
 const clean = (value: unknown, max = 600) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
+const sanitizeContext = (value: any) => { if (!value || typeof value !== 'object' || Array.isArray(value)) return {}; const result: Record<string, unknown> = {}; for (const key of ['opportunity_id', 'product_id', 'customer_id', 'supplier_id', 'entity_id']) { const parsed = uuid(value[key]); if (parsed) result[key] = parsed; } for (const key of ['source_module', 'entity_type', 'intent', 'return_path']) { const parsed = clean(value[key], 80); if (parsed) result[key] = parsed; } if (value.evidence && typeof value.evidence === 'object' && !Array.isArray(value.evidence)) result.evidence = JSON.parse(JSON.stringify(value.evidence).slice(0, 4000)); return result; };
 
 async function event(sb: any, companyId: string, traceId: string, stage: string, status = 'success', counts: Record<string, unknown> = {}, code?: string) {
   try { await sb.from('ai_run_events').insert({ company_id: companyId, trace_id: traceId, stage, status, counts, safe_error_code: code || null }); } catch { /* observability is best effort */ }
@@ -46,6 +47,7 @@ Deno.serve(async (req) => {
       return json({ code: 'OK', trace_id: traceId, ...saved });
     }
     const query = clean(body?.query);
+    const context = sanitizeContext(body?.context);
     if (!query) return json({ code: 'INVALID_REQUEST' }, 422);
     const depth = body?.depth === 'detailed' ? 'detailed' : 'quick';
     const history = Array.isArray(body?.history) ? body.history.slice(-4).map((item: any) => clean(item?.query, 300)).filter(Boolean) : [];
@@ -55,7 +57,7 @@ Deno.serve(async (req) => {
     const requestedQueries = depth === 'detailed' ? 3 : 1;
     const budget = await sb.rpc('reserve_ai_budget', { target_company: companyId, requested_ai_calls: 0, requested_web_queries: requestedQueries, requested_tokens: 0, requested_cost: 0 });
     if (budget.error || budget.data?.allowed === false) return json({ code: 'EXTERNAL_RESEARCH_BUDGET_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 429);
-    await event(sb, companyId, traceId, 'SUPPLIER_SEARCH_STARTED', 'success', { depth, query_length: query.length });
+    await event(sb, companyId, traceId, 'SUPPLIER_SEARCH_STARTED', 'success', { depth, query_length: query.length, opportunity_id: context.opportunity_id || null, product_id: context.product_id || null });
     await event(sb, companyId, traceId, 'EXTERNAL_RESEARCH_STARTED', 'success', { depth });
     const research = await conductWebResearch({ sb, company_id: companyId, query: { query: `${contextQuery} fornecedores distribuidores atacado`, application: query, locale: 'pt-BR', country: 'BR', market: 'brazil', region: 'south_america', max_results: depth === 'detailed' ? 8 : 5 }, limits: { max_rounds: depth === 'detailed' ? Math.min(2, Number(settings.data?.max_research_rounds || 2)) : 1, max_web_queries: depth === 'detailed' ? 3 : 1, max_total_results: depth === 'detailed' ? 10 : 5, max_page_fetches: depth === 'detailed' ? 3 : 1 }, onQuery: async (kind, details) => event(sb, companyId!, traceId, kind, kind === 'WEB_SEARCH_QUERY_FAILED' ? 'error' : 'success', details as any, details.code) });
     const candidates = buildSupplierCandidates(research?.results || [], query);
@@ -65,7 +67,7 @@ Deno.serve(async (req) => {
     await event(sb, companyId, traceId, 'SUPPLIER_QUALIFICATION_STARTED', 'success', { candidates: candidates.length });
     await event(sb, companyId, traceId, 'SUPPLIER_QUALIFICATION_COMPLETED', 'success', { qualified: candidates.filter((item: any) => item.state === 'QUALIFICADO').length });
     await event(sb, companyId, traceId, 'SUPPLIER_SEARCH_COMPLETED', 'success', { results: sources.length, candidates: candidates.length });
-    return json({ code: 'OK', trace_id: traceId, query, depth, status: research?.status || 'INSUFFICIENT_DATA', candidates, sources, research: { provider: research?.provider, cache_hit: research?.cache_hit || false, queries_executed: research?.queries_executed || 0, failure_codes: research?.failure_codes || [] } });
+    return json({ code: 'OK', trace_id: traceId, query, depth, context, status: research?.status || 'INSUFFICIENT_DATA', candidates, sources, research: { provider: research?.provider, cache_hit: research?.cache_hit || false, queries_executed: research?.queries_executed || 0, failure_codes: research?.failure_codes || [] } });
   } catch (error) {
     if (companyId) await event(admin(), companyId, traceId, 'ERROR', 'error', {}, error?.code || 'SUPPLIER_RESEARCH_FAILED');
     return json({ code: error?.message === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'SUPPLIER_RESEARCH_FAILED', trace_id: traceId }, error?.message === 'AUTH_REQUIRED' ? 401 : 500);

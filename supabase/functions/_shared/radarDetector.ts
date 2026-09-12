@@ -11,13 +11,18 @@ export async function runRadarDetector(sb: any, companyId: string, triggerType: 
       if (Number.isFinite(stock) && Number.isFinite(minimum) && minimum > 0 && stock <= minimum) signals.push({ radar_key: `product:stock_below_min:${product.id}`, title: `Estoque baixo: ${product.name}`, description: `O produto está com ${stock} unidade(s), abaixo do mínimo de ${minimum}.`, entity_type: 'product', entity_id: product.id, signal_type: 'STOCK_BELOW_MIN', evidence: { stock, minimum_stock: minimum } });
     }
   } else if (triggerType === 'client_inactive') {
-    const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const { data: customers, error: customerError } = await sb.from('customers').select('id,name,sale_count').eq('company_id', companyId).gte('sale_count', 2);
     if (customerError) throw customerError;
-    const { data: sales, error: salesError } = await sb.from('sales').select('customer_id,sale_date').eq('company_id', companyId).lt('sale_date', cutoff).order('sale_date', { ascending: false });
+    const { data: sales, error: salesError } = await sb.from('sales').select('customer_id,sale_date,created_at,status').eq('company_id', companyId).neq('status', 'cancelled').order('sale_date', { ascending: true });
     if (salesError) throw salesError;
-    const lastSale = new Map<string, string>(); for (const sale of sales || []) if (sale.customer_id && !lastSale.has(sale.customer_id)) lastSale.set(sale.customer_id, sale.sale_date);
-    for (const customer of customers || []) if (lastSale.has(customer.id)) signals.push({ radar_key: `customer:client_inactive:${customer.id}`, title: `Cliente inativo: ${customer.name}`, description: `Nenhuma compra registrada nos últimos 90 dias.`, entity_type: 'customer', entity_id: customer.id, signal_type: 'CLIENT_INACTIVE', evidence: { last_sale_date: lastSale.get(customer.id), inactivity_days: 90 } });
+    const byCustomer = new Map<string, any[]>(); for (const sale of sales || []) { const date = sale.sale_date || sale.created_at; if (!sale.customer_id || !date) continue; byCustomer.set(sale.customer_id, [...(byCustomer.get(sale.customer_id) || []), { ...sale, date }]); }
+    const dayMs = 86_400_000;
+    for (const customer of customers || []) {
+      const history = (byCustomer.get(customer.id) || []).sort((a, b) => Date.parse(a.date) - Date.parse(b.date)); if (history.length < 2) continue;
+      const intervals = history.slice(1).map((sale, index) => Math.floor((Date.parse(sale.date) - Date.parse(history[index].date)) / dayMs)).filter((item) => item > 0); if (!intervals.length) continue;
+      const average = intervals.reduce((sum, item) => sum + item, 0) / intervals.length; const lastSale = history[history.length - 1].date; const daysSince = Math.max(0, Math.floor((now.getTime() - Date.parse(lastSale)) / dayMs)); const expected = Math.max(45, Math.ceil(Math.max(average * 1.75, average + 14))); if (daysSince < expected) continue;
+      signals.push({ radar_key: `customer:possible_repurchase:${customer.id}`, title: `Possível recompra: ${customer.name}`, description: `${customer.name} está há ${daysSince} dias sem comprar, acima do intervalo esperado.`, entity_type: 'customer', entity_id: customer.id, signal_type: 'POSSIBLE_REPURCHASE', evidence: { purchase_count: history.length, average_interval_days: Math.round(average), days_since_purchase: daysSince, expected_window_days: expected, last_purchase_at: lastSale } });
+    }
   }
   let created = 0; let updated = 0;
   const { data: existing } = await sb.from('product_opportunities').select('id,metadata,status').eq('company_id', companyId);
@@ -27,6 +32,12 @@ export async function runRadarDetector(sb: any, companyId: string, triggerType: 
     const payload = { title: signal.title, description: signal.description, status: current?.status || 'descoberta', source: 'internal_business_data', source_type: 'INTERNA', confidence_level: 'ALTA', opportunity_score: 70, supplier_score: 0, trust_score: 80, channel_score: 0, metadata, collected_at: now.toISOString() };
     if (current) { const { error } = await sb.from('product_opportunities').update(payload).eq('id', current.id).eq('company_id', companyId); if (!error) updated += 1; }
     else { const { error } = await sb.from('product_opportunities').insert({ ...payload, company_id: companyId }); if (!error) created += 1; }
+  }
+  const detectedKeys = new Set(signals.map((signal) => signal.radar_key));
+  for (const row of existing || []) {
+    const key = row.metadata?.radar_key; if (!key || detectedKeys.has(key) || !['product:stock_below_min:', 'customer:possible_repurchase:', 'product:stagnant:'].some((prefix) => key.startsWith(prefix)) || ['RESOLVIDA', 'DESCARTADA'].includes(row.metadata?.radar_state)) continue;
+    const metadata = { ...(row.metadata || {}), radar_state: 'RESOLVIDA', resolved_at: now.toISOString() };
+    const { error } = await sb.from('product_opportunities').update({ status: 'convertida_em_produto', metadata }).eq('id', row.id).eq('company_id', companyId); if (!error) updated += 1;
   }
   return { signals_count: signals.length, opportunities_created: created, opportunities_updated: updated };
 }

@@ -31,5 +31,5 @@ test('score and priority are bounded, explainable and deterministic', () => {
 });
 
 test('policy keeps detection advisory and scheduler explicit', () => {
-  assert.match(source, /deterministic/i); assert.match(source, /requires_human_approval: true/); assert.match(source, /scheduler: 'not_implemented'/);
+  assert.match(source, /deterministic/i); assert.match(source, /requires_human_approval: true/); assert.match(source, /scheduler: 'server_side'/);
 });

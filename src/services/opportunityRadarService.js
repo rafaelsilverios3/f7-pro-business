@@ -39,6 +39,7 @@ export const opportunityRadarService = {
     const detected = detectRadarSignals({ companyId, customers: customerRows, products: productRows, sales: saleRows, now });
     const byKey = new Map(existing.map((item) => [item.metadata?.radar_key, item]));
     const result = { signals: detected, created: [], updated: [], skipped: [] };
+    const detectedKeys = new Set(detected.map((signal) => signal.radar_key));
     for (const signal of detected) {
       events.push({ type: RADAR_EVENT_TYPES[1], signal_type: signal.signal_type, radar_key: signal.radar_key });
       const payload = toRadarOpportunity(signal, now); const current = byKey.get(signal.radar_key);
@@ -48,6 +49,14 @@ export const opportunityRadarService = {
       } else {
         result.created.push(await opportunities.create(payload, companyId)); events.push({ type: RADAR_EVENT_TYPES[2], radar_key: signal.radar_key });
       }
+    }
+    // A previously active detector signal is resolved when its condition is no longer true.
+    for (const current of existing) {
+      const key = current.metadata?.radar_key;
+      if (!key || detectedKeys.has(key) || !['product:stock_below_min:', 'customer:possible_repurchase:', 'product:stagnant:'].some((prefix) => key.startsWith(prefix))) continue;
+      if (['RESOLVIDA', 'DESCARTADA'].includes(current.metadata?.radar_state)) continue;
+      const metadata = { ...(current.metadata || {}), radar_state: 'RESOLVIDA', resolved_at: new Date(now).toISOString() };
+      result.updated.push(await opportunities.update(current.id, { status: 'convertida_em_produto', metadata }, companyId));
     }
     if (result.created.length > 0) await notifications.create({ type: 'radar', title: 'F7 encontrou algo que merece sua atenção', message: `${result.created.length} nova(s) oportunidade(s) foram registradas no Opportunity Radar.`, read: false }, companyId).catch(() => null);
     events.push({ type: RADAR_EVENT_TYPES[4], at: new Date().toISOString(), counts: { signals: detected.length, created: result.created.length, updated: result.updated.length } });
