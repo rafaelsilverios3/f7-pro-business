@@ -133,7 +133,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           </DialogFooter>
         </form>
       </DialogContent>
-      <PricingDialog open={pricingOpen} onClose={() => setPricingOpen(false)} product={form} canManage={Boolean(initial && canManagePricing)} onSelectPrice={(value) => set('sale_price', value)} onApply={async ({ price, summary }) => { await onApplyPricing?.({ product: initial, price, summary }); set('sale_price', price); }} />
+      <PricingDialog open={pricingOpen} onClose={() => setPricingOpen(false)} product={form} canManage={Boolean(initial && canManagePricing)} onSelectPrice={(value) => set('sale_price', value)} onApply={async ({ price, summary }) => { const updated = await onApplyPricing?.({ product: initial, price, summary }); set('sale_price', updated?.price ?? price); if (updated?.cost != null) set('cost_price', updated.cost); }} />
     </Dialog>
   );
 }

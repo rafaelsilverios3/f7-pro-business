@@ -7,5 +7,5 @@ export async function applyProductPrice({ companyId, productId, newPrice, pricin
   if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
     return getDataProvider().rpc('apply_product_price', { target_company: companyId, target_product: productId, new_price: Number(newPrice), pricing_data: pricingData || {} });
   }
-  return productsService.update(companyId, productId, { sale_price: Number(newPrice) });
+  return productsService.update(companyId, productId, { sale_price: Number(newPrice), cost_price: pricingData?.realCost });
 }
