@@ -34,7 +34,7 @@ begin
     unit_price := greatest(0, coalesce(case when variant is null then product_row.price else variant_row.price end, product_row.price, 0));
     unit_cost := greatest(0, coalesce(case when variant is null then product_row.cost else variant_row.cost end, product_row.cost, 0));
     item_rate := greatest(0, coalesce(product_row.commission_rate,0));
-    normalized_items := normalized_items || jsonb_build_array(jsonb_build_object('product_id',product_row.id,'item_type',case when service then 'service' else 'product' end,'variant_id',variant,'name',product_row.name || case when variant is null then '' else ' · ' || variant_row.name end,'qty',qty,'price',unit_price,'cost',unit_cost,'total',round(qty*unit_price,2),'commission_rate',item_rate));
+    normalized_items := normalized_items || jsonb_build_array(jsonb_build_object('product_id',product_row.id,'item_type',case when service then 'service' else 'product' end,'variant_id',variant,'linked_product_id',nullif(item->>'linked_product_id',''),'description',coalesce(nullif(item->>'description',''),product_row.name),'name',product_row.name || case when variant is null then '' else ' · ' || variant_row.name end,'qty',qty,'price',unit_price,'cost',unit_cost,'total',round(qty*unit_price,2),'commission_rate',item_rate));
     subtotal:=subtotal+qty*unit_price; cost_total:=cost_total+qty*unit_cost; commission_total:=commission_total+round((qty*unit_price)*item_rate/100,2); commission_rate:=commission_rate+item_rate;
   end loop;
   subtotal:=round(subtotal,2); cost_total:=round(cost_total,2); total:=greatest(0,round(subtotal-greatest(0,coalesce((sale_payload->>'discount')::numeric,0))+greatest(0,coalesce((sale_payload->>'addition')::numeric,0)),2));

@@ -46,7 +46,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     setItems((prev) => {
       const ex = prev.find((i) => i.product_id === p.id);
       if (ex) return prev.map((i) => i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, qty: 1, price: p.sale_price || 0, cost: p.cost_price || 0 }];
+      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, description: p.description || '', linked_product_id: null, qty: 1, price: p.sale_price || 0, cost: p.cost_price || 0 }];
     });
     setProductQuery('');
   };
@@ -141,7 +141,8 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
               <div className="divide-y divide-slate-100">
                 {items.map((i) => (
                   <div key={i.product_id} className="flex items-center gap-2 p-2.5">
-                    <span className="flex-1 truncate text-sm text-slate-700">{i.name}</span>
+                    <span className="flex-1 truncate text-sm text-slate-700">{i.name}{i.item_type === 'service' && <span className="ml-1 text-[10px] font-semibold text-violet-600">MÃO DE OBRA/SERVIÇO</span>}</span>
+                    {i.item_type === 'service' && <select aria-label={`Vincular ${i.name} a produto`} value={i.linked_product_id || ''} onChange={(e) => setItems((prev) => prev.map((entry) => entry.product_id === i.product_id ? { ...entry, linked_product_id: e.target.value || null } : entry))} className="h-8 max-w-32 rounded-md border border-slate-200 bg-white px-1 text-[10px]"><option value="">Sem vínculo</option>{products.filter((product) => product.item_type !== 'service').map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select>}
                     <input type="number" value={i.qty} onChange={(e) => setQty(i.product_id, e.target.value)} className="h-8 w-14 rounded-md border border-slate-200 px-2 text-center text-sm" />
                     <span className="text-xs text-slate-400">×</span>
                     <input type="number" step="0.01" value={i.price} onChange={(e) => setPrice(i.product_id, e.target.value)} className="h-8 w-20 rounded-md border border-slate-200 px-2 text-right text-sm" />

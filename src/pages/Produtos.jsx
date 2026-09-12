@@ -47,7 +47,7 @@ export default function Produtos() {
   const stats = useMemo(() => {
     if (!items) return { total: 0, critical: 0, stockValue: 0 };
     return {
-      total: items.length,
+      total: items.filter((p) => p.item_type !== 'service').length,
       services: items.filter((p) => p.item_type === 'service').length,
       critical: items.filter((p) => p.item_type !== 'service' && (p.stock || 0) <= (p.min_stock || 0)).length,
       stockValue: items.filter((p) => p.item_type !== 'service').reduce((s, p) => s + (p.stock || 0) * (p.cost_price || 0), 0),

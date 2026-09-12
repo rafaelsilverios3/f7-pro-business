@@ -31,6 +31,7 @@ import Onboarding from './pages/Onboarding.jsx';
 import Usuarios from './pages/Usuarios.jsx';
 import PDV from './pages/PDV.jsx';
 import Precificacao from './pages/Precificacao.jsx';
+import Producao from './pages/Producao.jsx';
 import Storefront from './pages/Storefront.jsx';
 import Opportunities from './pages/Opportunities.jsx';
 import SupplierIntelligence from './pages/SupplierIntelligence.jsx';
@@ -133,6 +134,7 @@ const AuthenticatedApp = () => {
           <Route path="/dashboard" element={<Navigate to="/f7probusiness" replace />} />
           <Route path="/clientes" element={<RoleGuard permission="customers.view"><Clientes /></RoleGuard>} />
           <Route path="/produtos" element={<RoleGuard permission="products.view"><Produtos /></RoleGuard>} />
+          <Route path="/producao" element={<RoleGuard permission="production.view"><Producao /></RoleGuard>} />
           <Route path="/estoque" element={<RoleGuard permission="inventory.view"><Estoque /></RoleGuard>} />
           <Route path="/vendas" element={<RoleGuard permission="sales.view"><Vendas /></RoleGuard>} />
           <Route path="/pdv" element={<RoleGuard permission="pdv.use"><PDV /></RoleGuard>} />
