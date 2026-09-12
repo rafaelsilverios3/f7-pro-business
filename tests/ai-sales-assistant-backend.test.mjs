@@ -33,3 +33,9 @@ test('UI ativa conversa, fallback factual e confirmação humana', () => {
   assert.match(page, /Confirmar criação do rascunho/);
   assert.match(page, /open_supplier_intelligence/);
 });
+
+test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {
+  assert.match(fn, /previousProduct/);
+  assert.match(fn, /previousCustomer/);
+  assert.match(page, /context: messages\[index \+ 1\]/);
+});
