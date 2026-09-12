@@ -1,7 +1,7 @@
 import { createRepository } from '@/data/repositoryFactory';
 import { classifyRadarRisk } from '@/lib/opportunityRadar';
 import { buildCommercialIntelligenceReport } from '@/lib/commercialIntelligence';
-import { detectRadarSignals, toRadarOpportunity } from '@/lib/opportunityRadarDetectors';
+import { detectRadarSignals, toRadarOpportunity, RADAR_EVENT_TYPES } from '@/lib/opportunityRadarDetectors';
 
 const opportunities = createRepository('ProductOpportunity');
 const market = createRepository('MarketOpportunity');
@@ -35,20 +35,23 @@ export const opportunityRadarService = {
   },
   async scan(companyId, now = new Date()) {
     const [customerRows, productRows, saleRows, existing] = await Promise.all([customers.list(companyId, '-created_date'), products.list(companyId, '-created_date'), sales.list(companyId, '-sale_date'), opportunities.list(companyId, '-created_date')]);
+    const events = [{ type: RADAR_EVENT_TYPES[0], at: new Date(now).toISOString() }];
     const detected = detectRadarSignals({ companyId, customers: customerRows, products: productRows, sales: saleRows, now });
     const byKey = new Map(existing.map((item) => [item.metadata?.radar_key, item]));
     const result = { signals: detected, created: [], updated: [], skipped: [] };
     for (const signal of detected) {
+      events.push({ type: RADAR_EVENT_TYPES[1], signal_type: signal.signal_type, radar_key: signal.radar_key });
       const payload = toRadarOpportunity(signal, now); const current = byKey.get(signal.radar_key);
       if (current) {
         const metadata = { ...(current.metadata || {}), ...(payload.metadata || {}), radar_state: current.metadata?.radar_state || 'NOVA', last_seen_at: payload.metadata.last_seen_at };
-        result.updated.push(await opportunities.update(current.id, { ...payload, status: current.status, metadata }, companyId));
+        result.updated.push(await opportunities.update(current.id, { ...payload, status: current.status, metadata }, companyId)); events.push({ type: RADAR_EVENT_TYPES[3], radar_key: signal.radar_key });
       } else {
-        result.created.push(await opportunities.create(payload, companyId));
+        result.created.push(await opportunities.create(payload, companyId)); events.push({ type: RADAR_EVENT_TYPES[2], radar_key: signal.radar_key });
       }
     }
     if (result.created.length > 0) await notifications.create({ type: 'radar', title: 'F7 encontrou algo que merece sua atenção', message: `${result.created.length} nova(s) oportunidade(s) foram registradas no Opportunity Radar.`, read: false }, companyId).catch(() => null);
-    return { ...result, total: detected.length };
+    events.push({ type: RADAR_EVENT_TYPES[4], at: new Date().toISOString(), counts: { signals: detected.length, created: result.created.length, updated: result.updated.length } });
+    return { ...result, total: detected.length, events };
   },
   async update(companyId, id, data = {}) {
     const current = await opportunities.get(id, companyId); const metadata = { ...(current.metadata || {}) };

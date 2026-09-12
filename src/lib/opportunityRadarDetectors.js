@@ -102,3 +102,4 @@ export function toRadarOpportunity(signal = {}, now = new Date()) {
 }
 
 export const RADAR_DETECTOR_POLICY = Object.freeze({ deterministic_first: true, advisory_only: true, automatic_sensitive_actions: false, requires_human_approval: true, scheduler: 'not_implemented' });
+export const RADAR_EVENT_TYPES = Object.freeze(['RADAR_SCAN_STARTED', 'RADAR_SIGNAL_DETECTED', 'RADAR_OPPORTUNITY_CREATED', 'RADAR_OPPORTUNITY_UPDATED', 'RADAR_SCAN_COMPLETED']);
