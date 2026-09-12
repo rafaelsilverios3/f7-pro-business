@@ -61,3 +61,10 @@ test('product dialog keeps the modal open on save errors and prevents duplicate 
   assert.match(dialog, /onClose\(\)/);
   assert.match(page, /await load\(\)/);
 });
+
+test('product creation retries duplicate SKUs with a deterministic numeric suffix', () => {
+  assert.match(service, /products_company_id_sku_key/);
+  assert.match(service, /candidate = `\$\{baseSku\}\$\{suffix \+ 2\}`/);
+  assert.match(service, /createWithAvailableSku\(companyId, payload\)/);
+  assert.match(service, /suffix <= 99/);
+});

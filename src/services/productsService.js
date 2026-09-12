@@ -4,6 +4,24 @@ import { productSchema } from '@/schemas';
 
 const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
 const numberField = (value, fallback = 0) => value === '' || value == null ? fallback : Number(value);
+const isDuplicateSkuError = (error) => String(error?.code || '').toLowerCase() === '23505'
+  || Number(error?.status) === 409
+  || String(error?.message || '').includes('products_company_id_sku_key');
+
+async function createWithAvailableSku(companyId, payload) {
+  const baseSku = typeof payload.sku === 'string' ? payload.sku.trim() : '';
+  if (!baseSku) return productsRepository.create(payload, companyId);
+  let candidate = baseSku;
+  for (let suffix = 0; suffix <= 99; suffix += 1) {
+    try {
+      return await productsRepository.create({ ...payload, sku: candidate }, companyId);
+    } catch (error) {
+      if (!isDuplicateSkuError(error) || suffix === 99) throw error;
+      candidate = `${baseSku}${suffix + 2}`;
+    }
+  }
+  throw new Error('Não foi possível gerar um SKU disponível.');
+}
 const productPayload = (companyId, data = {}) => {
   const payload = { company_id: companyId };
   const textFields = ['name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'unit', 'dimensions', 'tags', 'keywords', 'featured', 'active'];
@@ -28,7 +46,7 @@ export const productsService = {
       min_stock: parsed.minimum_stock,
     };
     if (parsed.item_type === 'service') { payload.stock = 0; payload.minimum_stock = 0; }
-    return productsRepository.create(payload, companyId);
+    return createWithAvailableSku(companyId, payload);
   },
   update: async (companyId, id, data = {}) => {
     const current = await productsRepository.get(id, companyId);
