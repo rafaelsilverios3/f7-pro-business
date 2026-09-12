@@ -96,3 +96,8 @@ grant execute on function public.release_automation_claim(uuid, text, timestampt
 
 comment on column public.automations.schedule_frequency is 'manual, daily or weekly; scheduler never accepts arbitrary cron text';
 comment on column public.automations.claim_token is 'short-lived server-side claim used by the scheduler dispatcher';
+
+-- Vendedores podem consultar o calendário e o histórico, mas somente admin/gestor alteram regras.
+drop policy if exists automations_select on public.automations;
+create policy automations_select on public.automations for select to authenticated
+  using (public.current_company_role(company_id) in ('admin','gestor','comercial','vendedor'));
