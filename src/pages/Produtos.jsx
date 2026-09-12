@@ -59,8 +59,8 @@ export default function Produtos() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
       <PageHeader
-        title="Produtos, materiais e serviços"
-        subtitle="Gerencie seu catálogo com preços, margem e estoque."
+        title="Catálogo"
+        subtitle="Gerencie produtos, matérias-primas e serviços da empresa."
         action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Novo {tab === 'material' ? 'material' : tab === 'service' ? 'serviço' : 'produto'}</Button>}
       />
 
@@ -148,3 +148,4 @@ export default function Produtos() {
     </div>
   );
 }
+

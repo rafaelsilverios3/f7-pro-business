@@ -23,7 +23,7 @@ const NAV = [
       { to: '/pdv', label: 'PDV', icon: ScanLine, permission: 'pdv.use' },
       { to: '/precificacao', label: 'Precificação', icon: BadgeDollarSign, permission: 'pricing.view' },
       { to: '/clientes', label: 'Clientes', icon: Users, permission: 'customers.view' },
-      { to: '/produtos', label: 'Produtos', icon: Package, permission: 'products.view' },
+      { to: '/produtos', label: 'Catálogo', icon: Package, permission: 'products.view' },
       { to: '/producao', label: 'Produção', icon: Factory, permission: 'production.view' },
       { to: '/estoque', label: 'Estoque', icon: Boxes, permission: 'inventory.view' },
       { to: '/vendas', label: 'Vendas', icon: ShoppingCart, permission: 'sales.view' },
@@ -180,3 +180,4 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
     </>
   );
 }
+
