@@ -19,8 +19,9 @@ const productPayload = (companyId, data = {}) => {
 export const productsService = {
   list: (companyId) => productsRepository.list(companyId),
   create: (companyId, data) => {
-    const parsed = productSchema.parse({ ...data, company_id: companyId, price: data.price ?? data.sale_price, cost: data.cost ?? data.cost_price, minimum_stock: data.minimum_stock ?? data.min_stock });
-    const payload = isSupabase() ? { ...parsed, subcategory: parsed.subcategory || parsed.category || undefined, commission_rate: parsed.commission ?? parsed.commission_rate } : {
+    const normalizedData = { ...data, sku: data.sku?.trim() || undefined, barcode: data.barcode?.trim() || undefined };
+    const parsed = productSchema.parse({ ...normalizedData, company_id: companyId, price: normalizedData.price ?? normalizedData.sale_price, cost: normalizedData.cost ?? normalizedData.cost_price, minimum_stock: normalizedData.minimum_stock ?? normalizedData.min_stock });
+    const payload = isSupabase() ? { ...parsed, sku: parsed.sku?.trim() || null, barcode: parsed.barcode?.trim() || null, subcategory: parsed.subcategory || parsed.category || undefined, commission_rate: parsed.commission ?? parsed.commission_rate } : {
       ...parsed,
       sale_price: parsed.price,
       cost_price: parsed.cost,

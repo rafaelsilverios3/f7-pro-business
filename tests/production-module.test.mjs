@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const migration = fs.readFileSync('supabase/migrations/0054_production_module.sql', 'utf8');
 const page = fs.readFileSync('src/pages/Producao.jsx', 'utf8');
 const service = fs.readFileSync('src/services/productionService.js', 'utf8');
+const productsService = fs.readFileSync('src/services/productsService.js', 'utf8');
 const sale = fs.readFileSync('src/components/vendas/SaleDialog.jsx', 'utf8');
 const schema = fs.readFileSync('src/schemas/index.js', 'utf8');
 
@@ -55,4 +56,9 @@ test('production service normalizes empty numeric form values before RPC', () =>
   assert.match(service, /quantity: numberOr\(item\.quantity\)/);
   assert.match(service, /conversion_factor: Math\.max\(0\.000001, numberOr\(item\.conversion_factor, 1\)\)/);
   assert.match(service, /normalizeRecipePayload\(payload, companyId\)/);
+});
+
+test('new production materials do not persist an empty SKU that conflicts with the unique index', () => {
+  assert.match(page, /sku: material\.sku\.trim\(\) \|\| null/);
+  assert.match(productsService, /sku: parsed\.sku\?\.trim\(\) \|\| null/);
 });

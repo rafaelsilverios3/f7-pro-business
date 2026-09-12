@@ -56,8 +56,8 @@ export default function Producao() {
   const createMaterial = async () => {
     if (!material.name.trim()) return;
     setSaving(true); setError('');
-    try { const created = await productsService.create(company.id, { ...material, name: material.name.trim(), item_type: 'product', price: 0, cost: Number(material.cost_price) || 0, stock: Number(material.stock) || 0, minimum_stock: 0, unit: material.unit }); setProducts((current) => [created, ...current]); setRecipe((current) => ({ ...current, items: [...current.items, { material_product_id: created.id, quantity: 1, unit: material.unit, conversion_factor: 1 }] })); setMaterial(emptyMaterial); setMaterialOpen(false); }
-    catch (cause) { setError(cause?.message || 'Não foi possível criar a matéria-prima.'); }
+    try { const created = await productsService.create(company.id, { ...material, name: material.name.trim(), sku: material.sku.trim() || null, item_type: 'product', price: 0, cost: Number(material.cost_price) || 0, stock: Number(material.stock) || 0, minimum_stock: 0, unit: material.unit }); setProducts((current) => [created, ...current]); setRecipe((current) => ({ ...current, items: [...current.items, { material_product_id: created.id, quantity: 1, unit: material.unit, conversion_factor: 1 }] })); setMaterial(emptyMaterial); setMaterialOpen(false); }
+    catch (cause) { setError(cause?.code === '23505' || cause?.status === 409 ? 'Já existe uma matéria-prima com este SKU nesta empresa.' : (cause?.message || 'Não foi possível criar a matéria-prima.')); }
     finally { setSaving(false); }
   };
   const saveRecipe = async () => {
