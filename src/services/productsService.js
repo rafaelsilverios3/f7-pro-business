@@ -6,7 +6,7 @@ const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
 const numberField = (value, fallback = 0) => value === '' || value == null ? fallback : Number(value);
 const productPayload = (companyId, data = {}) => {
   const payload = { company_id: companyId };
-  const textFields = ['name', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'unit', 'dimensions', 'tags', 'keywords', 'featured', 'active'];
+  const textFields = ['name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'unit', 'dimensions', 'tags', 'keywords', 'featured', 'active'];
   for (const field of textFields) if (Object.prototype.hasOwnProperty.call(data, field)) payload[field] = data[field];
   if (!payload.subcategory && Object.prototype.hasOwnProperty.call(data, 'category')) payload.subcategory = data.category || null;
   const aliases = { cost: 'cost_price', price: 'sale_price', minimum_stock: 'min_stock', commission_rate: 'commission' };
@@ -26,11 +26,13 @@ export const productsService = {
       cost_price: parsed.cost,
       min_stock: parsed.minimum_stock,
     };
+    if (parsed.item_type === 'service') { payload.stock = 0; payload.minimum_stock = 0; }
     return productsRepository.create(payload, companyId);
   },
   update: async (companyId, id, data = {}) => {
     const current = await productsRepository.get(id, companyId);
     const canonicalPayload = productPayload(companyId, data);
+    if ((data.item_type || current.item_type) === 'service') { canonicalPayload.item_type = 'service'; canonicalPayload.stock = 0; canonicalPayload.minimum_stock = 0; }
     const payload = isSupabase() ? canonicalPayload : { ...canonicalPayload, sale_price: canonicalPayload.price, cost_price: canonicalPayload.cost, min_stock: canonicalPayload.minimum_stock, commission: canonicalPayload.commission_rate };
     const updated = await productsRepository.update(id, payload, companyId);
     if (Object.prototype.hasOwnProperty.call(payload, 'stock') && Number(payload.stock) !== Number(current.stock)) {

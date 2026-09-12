@@ -46,7 +46,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     setItems((prev) => {
       const ex = prev.find((i) => i.product_id === p.id);
       if (ex) return prev.map((i) => i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { product_id: p.id, name: p.name, qty: 1, price: p.sale_price || 0, cost: p.cost_price || 0 }];
+      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, qty: 1, price: p.sale_price || 0, cost: p.cost_price || 0 }];
     });
     setProductQuery('');
   };
@@ -116,16 +116,16 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Adicionar produto</Label>
+            <Label className="text-xs">Adicionar produto ou serviço</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Buscar produto..."
+              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Buscar produto ou serviço..."
                 className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400" />
               {productQuery && productResults.length > 0 && (
                 <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
                   {productResults.map((p) => (
                     <button key={p.id} type="button" onClick={() => addItem(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
-                      <span className="text-slate-700">{p.name}</span>
+                      <span className="text-slate-700">{p.name} <span className="ml-1 text-[10px] font-semibold text-violet-600">{p.item_type === 'service' ? 'SERVIÇO' : 'PRODUTO'}</span></span>
                       <span className="text-xs text-slate-400">{fmtMoney(p.sale_price)}</span>
                     </button>
                   ))}
@@ -169,6 +169,8 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
           </div>
 
           <div className="rounded-lg bg-slate-50 p-3 text-sm">
+            <div className="flex justify-between text-slate-500"><span>Produtos</span><span>{fmtMoney(items.filter((i) => i.item_type !== 'service').reduce((s, i) => s + i.qty * i.price, 0))}</span></div>
+            <div className="flex justify-between text-slate-500"><span>Serviços</span><span>{fmtMoney(items.filter((i) => i.item_type === 'service').reduce((s, i) => s + i.qty * i.price, 0))}</span></div>
             <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
             <div className="flex justify-between text-slate-500"><span>Desconto</span><span>- {fmtMoney(Number(discount) || 0)}</span></div>
             <div className="flex justify-between text-slate-500"><span>Acréscimo</span><span>+ {fmtMoney(Number(addition) || 0)}</span></div>

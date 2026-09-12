@@ -12,14 +12,14 @@ function productSaveMessage(error) {
   const code = String(error?.code || '').trim();
   if (code === '23505') return 'Já existe um produto com este SKU nesta empresa.';
   if (code === '42501') return 'Você não tem permissão para alterar produtos desta empresa.';
-  if (code === '42703' || code === 'PGRST204' || code === 'PGRST205') return 'O banco ainda não possui todos os campos do catálogo. Aplique a migration 0021 do catálogo de produtos.';
+  if (code === '42703' || code === 'PGRST204' || code === 'PGRST205') return 'O banco ainda não possui todos os campos do catálogo. Aplique as migrations 0021 e 0053 do catálogo de produtos e serviços.';
   if (code === 'PGRST116') return 'O produto não foi encontrado nesta empresa. Atualize a página e tente novamente.';
   return 'Não foi possível salvar as alterações do produto.';
 }
 
 export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing }) {
   const emptyForm = {
-    sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
+    item_type: 'product', duration_minutes: '', sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
     cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
   };
   const [form, setForm] = useState(emptyForm);
@@ -33,7 +33,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
   }, [initial, open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const margin = form.cost_price > 0 ? ((form.sale_price - form.cost_price) / form.sale_price) * 100 : 0;
+  const margin = Number(form.sale_price) > 0 ? ((Number(form.sale_price) - Number(form.cost_price)) / Number(form.sale_price)) * 100 : 0;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -41,7 +41,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     setSaving(true);
     setSaveError('');
     try {
-      await onSave({ ...form, cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.stock === '' ? 0 : Number(form.stock), min_stock: form.min_stock === '' ? 0 : Number(form.min_stock), commission: form.commission === '' ? 0 : Number(form.commission) });
+      await onSave({ ...form, item_type: form.item_type || 'product', duration_minutes: form.duration_minutes === '' ? null : Number(form.duration_minutes), cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.item_type === 'service' ? 0 : (form.stock === '' ? 0 : Number(form.stock)), min_stock: form.item_type === 'service' ? 0 : (form.min_stock === '' ? 0 : Number(form.min_stock)), commission: form.commission === '' ? 0 : Number(form.commission) });
       onClose();
     } catch (error) {
       setSaveError(productSaveMessage(error));
@@ -55,6 +55,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
       <DialogContent className="flex min-h-0 max-w-3xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>{initial ? 'Editar produto' : 'Novo produto'}</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1">
+          <div className="flex gap-2 rounded-lg bg-slate-50 p-1"><button type="button" onClick={() => set('item_type', 'product')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${form.item_type !== 'service' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>Produto</button><button type="button" onClick={() => set('item_type', 'service')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${form.item_type === 'service' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>Serviço</button></div>
           {saveError && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</p>}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -102,8 +103,9 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
               <div className="flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-600">{margin.toFixed(2)}%</div>
             </div>
           </div>
+          {form.item_type === 'service' && <div className="space-y-1.5"><Label className="text-xs">Duração estimada (minutos)</Label><Input type="number" min="1" value={form.duration_minutes} onChange={(e) => set('duration_minutes', e.target.value)} /></div>}
           <Button type="button" variant="outline" className="w-full" onClick={() => setPricingOpen(true)}>Calcular preço de venda</Button>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {form.item_type === 'product' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Estoque</Label>
               <Input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
@@ -112,11 +114,8 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
               <Label className="text-xs">Estoque Mín.</Label>
               <Input type="number" value={form.min_stock} onChange={(e) => set('min_stock', e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Comissão %</Label>
-              <Input type="number" step="0.1" value={form.commission} onChange={(e) => set('commission', e.target.value)} />
-            </div>
-          </div>
+          </div>}
+          <div className="space-y-1.5"><Label className="text-xs">Comissão %</Label><Input type="number" step="0.1" value={form.commission} onChange={(e) => set('commission', e.target.value)} /></div>
           <div className="space-y-1.5">
             <Label className="text-xs">Descrição</Label>
             <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} className="resize-none" />
@@ -126,7 +125,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           <div className="space-y-1.5"><Label className="text-xs">Descrição completa</Label><Textarea value={form.full_description || ''} onChange={(e) => set('full_description', e.target.value)} rows={3} className="resize-none" /></div>
           <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label className="text-xs">Tags</Label><Input value={(form.tags || []).join(', ')} onChange={(e) => set('tags', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} placeholder="ex.: promoção, lançamento" /></div><div className="space-y-1.5"><Label className="text-xs">Palavras-chave</Label><Input value={(form.keywords || []).join(', ')} onChange={(e) => set('keywords', e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} /></div></div>
           <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={Boolean(form.featured)} onChange={(e) => set('featured', e.target.checked)} /> Produto em destaque</label>
-          <ProductCatalogPanel companyId={companyId} productId={initial?.id} canManage={canManageCatalog} />
+          {form.item_type === 'product' && <ProductCatalogPanel companyId={companyId} productId={initial?.id} canManage={canManageCatalog} />}
           <DialogFooter className="sticky bottom-0 -mx-1 border-t border-slate-700/70 bg-background px-1 pt-3">
             <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : initial ? 'Salvar' : 'Adicionar'}</Button>

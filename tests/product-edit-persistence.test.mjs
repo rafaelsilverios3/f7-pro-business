@@ -10,6 +10,7 @@ const page = fs.readFileSync('src/pages/Produtos.jsx', 'utf8');
 const productSchemaSql = [
   fs.readFileSync('supabase/migrations/0001_initial_schema.sql', 'utf8'),
   fs.readFileSync('supabase/migrations/0021_product_catalog.sql', 'utf8'),
+  fs.readFileSync('supabase/migrations/0053_product_service_items.sql', 'utf8'),
 ].join('\n');
 
 test('product updates use an explicit canonical payload and preserve zero values', () => {
@@ -36,7 +37,7 @@ test('product update allowlist matches real products columns and excludes catego
   const match = provider.match(/Product: \[([^\]]+)\]/);
   assert.ok(match, 'Product provider allowlist must exist');
   const allowedColumns = [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, column]) => column);
-  const expectedColumns = ['company_id', 'name', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'weight', 'dimensions', 'tags', 'keywords', 'featured', 'unit', 'commission_rate', 'cost', 'price', 'stock', 'minimum_stock', 'active'];
+  const expectedColumns = ['company_id', 'name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'weight', 'dimensions', 'tags', 'keywords', 'featured', 'unit', 'commission_rate', 'cost', 'price', 'stock', 'minimum_stock', 'active'];
   assert.deepEqual(allowedColumns, expectedColumns);
   assert.equal(allowedColumns.includes('category'), false);
   for (const column of expectedColumns) assert.match(productSchemaSql, new RegExp(`\\b${column}\\b`));
@@ -52,7 +53,7 @@ test('product update is tenant scoped and records only stock differences', () =>
 
 test('product dialog keeps the modal open on save errors and prevents duplicate saves', () => {
   assert.match(dialog, /Não foi possível salvar as alterações do produto/);
-  assert.match(dialog, /migration 0021 do catálogo de produtos/);
+  assert.match(dialog, /migrations 0021 e 0053 do catálogo de produtos e serviços/);
   assert.match(dialog, /Você não tem permissão para alterar produtos/);
   assert.match(dialog, /Salvando\.\.\./);
   assert.match(dialog, /disabled=\{saving\}/);
