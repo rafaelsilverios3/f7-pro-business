@@ -118,7 +118,7 @@ export default function Produtos() {
                       <td className="px-4 py-3 text-slate-500">{p.category || '—'}</td>
                       <td className="px-4 py-3 text-right text-slate-500">{fmtMoney(p.cost_price)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(p.sale_price)}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{margin.toFixed(1)}%</td>
+                      <td className="px-4 py-3 text-right text-slate-600">{margin.toFixed(2)}%</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${critical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
                           {critical && <AlertTriangle className="h-3 w-3" />}{fmtNum(p.stock)}

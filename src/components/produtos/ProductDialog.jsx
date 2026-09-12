@@ -99,7 +99,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Margem</Label>
-              <div className="flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-600">{margin.toFixed(1)}%</div>
+              <div className="flex h-9 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-600">{margin.toFixed(2)}%</div>
             </div>
           </div>
           <Button type="button" variant="outline" className="w-full" onClick={() => setPricingOpen(true)}>Calcular preço de venda</Button>
