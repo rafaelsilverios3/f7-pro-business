@@ -35,8 +35,8 @@ export default function Produtos() {
 
   const filtered = useMemo(() => {
     if (!items) return [];
-    if (!query) return items;
-    return items.filter((p) => p.name?.toLowerCase().includes(query.toLowerCase()) || p.sku?.toLowerCase().includes(query.toLowerCase()));
+    const normalized = query.trim().toLowerCase();
+    return items.filter((p) => (p.item_type || 'product') === tab && (!subcategory || p.subcategory === subcategory) && (!normalized || `${p.name || ''} ${p.sku || ''} ${p.subcategory || ''}`.toLowerCase().includes(normalized)));
   }, [items, query, tab, subcategory]);
 
   const handleSave = async (form) => {
@@ -49,10 +49,10 @@ export default function Produtos() {
   const stats = useMemo(() => {
     if (!items) return { total: 0, critical: 0, stockValue: 0 };
     return {
-      total: items.filter((p) => p.item_type !== 'service').length,
+      total: items.filter((p) => (p.item_type || 'product') === tab).length,
       services: items.filter((p) => p.item_type === 'service').length,
-      critical: items.filter((p) => p.item_type !== 'service' && (p.stock || 0) <= (p.min_stock || 0)).length,
-      stockValue: items.filter((p) => p.item_type !== 'service').reduce((s, p) => s + (p.stock || 0) * (p.cost_price || 0), 0),
+      critical: tab === 'service' ? 0 : items.filter((p) => (p.item_type || 'product') === tab && (p.stock || 0) <= (p.min_stock || 0)).length,
+      stockValue: tab === 'service' ? 0 : items.filter((p) => p.item_type !== 'service' && (p.item_type || 'product') === tab).reduce((s, p) => s + (p.stock || 0) * (p.cost_price || 0), 0),
     };
   }, [items]);
 
@@ -68,7 +68,7 @@ export default function Produtos() {
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">Total de produtos</p>
+          <p className="text-xs text-slate-500">Total de {tab === 'material' ? 'materiais' : tab === 'service' ? 'serviços' : 'produtos'}</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{fmtNum(stats.total)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Total de serviços</p><p className="mt-1 text-xl font-semibold text-violet-600">{fmtNum(stats.services)}</p></div>
