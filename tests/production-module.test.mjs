@@ -47,3 +47,12 @@ test('production UI exposes decimal quantities, cost inputs and batch production
   assert.match(page, /Produzir lote/);
   assert.match(page, /quantity/);
 });
+
+test('production service normalizes empty numeric form values before RPC', () => {
+  assert.match(service, /const numberOr = \(value, fallback = 0\)/);
+  assert.match(service, /yield_quantity: Math\.max\(0\.001, numberOr\(payload\.yield_quantity, 1\)\)/);
+  assert.match(service, /labor_cost: Math\.max\(0, numberOr\(payload\.labor_cost\)\)/);
+  assert.match(service, /quantity: numberOr\(item\.quantity\)/);
+  assert.match(service, /conversion_factor: Math\.max\(0\.000001, numberOr\(item\.conversion_factor, 1\)\)/);
+  assert.match(service, /normalizeRecipePayload\(payload, companyId\)/);
+});
