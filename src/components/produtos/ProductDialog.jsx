@@ -33,6 +33,15 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
   }, [initial, open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const persistLive = async (field, value) => {
+    if (!initial || saving || !onSave) return;
+    setSaving(true); setSaveError('');
+    try {
+      const next = { ...form, [field]: value };
+      await onSave({ ...next, item_type: next.item_type || 'product', duration_minutes: next.duration_minutes === '' ? null : Number(next.duration_minutes), cost_price: next.cost_price === '' ? 0 : Number(next.cost_price), sale_price: next.sale_price === '' ? 0 : Number(next.sale_price), stock: next.item_type === 'service' ? 0 : (next.stock === '' ? 0 : Number(next.stock)), min_stock: next.item_type === 'service' ? 0 : (next.min_stock === '' ? 0 : Number(next.min_stock)), commission: next.commission === '' ? 0 : Number(next.commission) });
+    } catch (error) { setSaveError(productSaveMessage(error)); }
+    finally { setSaving(false); }
+  };
   const margin = Number(form.sale_price) > 0 ? ((Number(form.sale_price) - Number(form.cost_price)) / Number(form.sale_price)) * 100 : 0;
 
   const submit = async (e) => {
@@ -88,11 +97,11 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Custo</Label>
-              <Input type="number" step="0.01" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} />
+              <Input type="number" step="0.01" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} onBlur={(e) => persistLive('cost_price', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Venda</Label>
-              <Input type="number" step="0.01" value={form.sale_price} onChange={(e) => set('sale_price', e.target.value)} />
+              <Input type="number" step="0.01" value={form.sale_price} onChange={(e) => set('sale_price', e.target.value)} onBlur={(e) => persistLive('sale_price', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Margem</Label>

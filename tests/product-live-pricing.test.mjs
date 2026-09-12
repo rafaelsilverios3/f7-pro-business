@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs';
+test('product edit persists cost and sale price when fields lose focus',()=>{const source=fs.readFileSync('src/components/produtos/ProductDialog.jsx','utf8');assert.match(source,/const persistLive = async/);assert.match(source,/persistLive\('cost_price'/);assert.match(source,/persistLive\('sale_price'/);assert.match(source,/const margin = Number\(form\.sale_price\)/);});
