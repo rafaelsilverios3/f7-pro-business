@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, Users, ShieldAlert, Activity, RefreshCw, LockKeyhole, Database, Bot, PlugZap } from 'lucide-react';
 
-const API = import.meta.env.VITE_MASTER_ADMIN_API_URL || 'http://localhost:8787';
+const API = import.meta.env.VITE_MASTER_ADMIN_API_URL || 'http://127.0.0.1:8787';
 const empty = { companies: [], metrics: {} };
 const cards = [
   ['companies', 'Empresas', Building2], ['activeCompanies', 'Ativas', Activity], ['users', 'Usuários', Users], ['whatsapp', 'WhatsApps conectados', PlugZap], ['ai', 'IA ativa', Bot], ['errors', 'Erros recentes', ShieldAlert],
