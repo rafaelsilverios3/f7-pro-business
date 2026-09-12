@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import IntelligenceConversation from '@/components/intelligence/IntelligenceConversation';
 
 const TYPE_ICONS = {
   growth: TrendingUp, decline: TrendingDown, margin: DollarSign, stock: Package,
@@ -104,6 +105,8 @@ export default function Intelligence() {
           </div>
         }
       />
+
+      <IntelligenceConversation company={company} />
 
       <div className="mb-5 flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs text-violet-700">
         <Lightbulb className="h-4 w-4 shrink-0" />
