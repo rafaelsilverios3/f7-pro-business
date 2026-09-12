@@ -8,7 +8,7 @@ import { opportunityFoundationService } from '@/services/opportunityFoundationSe
 import { ageLabel } from '@/lib/opportunityRadar';
 
 const value = (raw) => raw == null || raw === '' ? 'dados indisponíveis' : raw;
-const filters = [['all', 'Todas'], ['customer', 'Clientes'], ['product', 'Produtos'], ['stock', 'Estoque'], ['sales', 'Vendas']];
+const filters = [['all', 'Todas'], ['customer', 'Clientes'], ['product', 'Produtos'], ['stock', 'Estoque'], ['sales', 'Vendas'], ['supplier', 'Fornecedores'], ['external', 'Externas']];
 const priorityStyle = { CRÍTICA: 'bg-rose-100 text-rose-800', ALTA: 'bg-orange-100 text-orange-800', MÉDIA: 'bg-amber-100 text-amber-800', BAIXA: 'bg-slate-100 text-slate-700' };
 const stateLabels = { NOVA: 'Nova', EM_ANALISE: 'Em análise', ACEITA: 'Aceita', ADIADA: 'Adiada', DESCARTADA: 'Descartada', RESOLVIDA: 'Resolvida' };
 
@@ -20,7 +20,7 @@ export default function OpportunityRadar() {
   const scan = async () => { if (!company || scanning) return; setScanning(true); setError(''); setNotice(''); try { const result = await opportunityRadarService.scan(company.id); await load(); setNotice(result.total ? `Varredura concluída: ${result.total} sinal(is), ${result.created.length} nova(s) e ${result.updated.length} atualizada(s).` : 'Varredura concluída. Não há sinais com dados suficientes agora.'); } catch (cause) { setError(cause.message || 'Não foi possível executar a varredura.'); } finally { setScanning(false); } };
   const action = async (item, state) => { try { await opportunityRadarService.update(company.id, item.id, { status: state, radar_state: state }); await load(); } catch (cause) { setError(cause.message || 'Não foi possível atualizar a oportunidade.'); } };
   const snooze = async (item) => { const until = new Date(Date.now() + 3 * 86_400_000).toISOString(); try { await opportunityRadarService.snooze(company.id, item.id, until); await load(); } catch (cause) { setError(cause.message || 'Não foi possível adiar a oportunidade.'); } };
-  const filtered = useMemo(() => items.filter((item) => filter === 'all' || item.radar?.entity_type === filter || (filter === 'stock' && ['stock_below_min', 'critical_stock'].includes(item.radar?.signal_type)) || (filter === 'sales' && ['sales_growth', 'stagnant_product'].includes(item.radar?.signal_type))), [items, filter]);
+  const filtered = useMemo(() => items.filter((item) => filter === 'all' || item.radar?.entity_type === filter || (filter === 'stock' && ['stock_below_min', 'critical_stock'].includes(item.radar?.signal_type)) || (filter === 'sales' && ['sales_growth', 'stagnant_product'].includes(item.radar?.signal_type)) || (filter === 'external' && ['EXTERNA', 'HIBRIDA'].includes(item.source_type))), [items, filter]);
   const summary = useMemo(() => ({ high: items.filter((item) => ['CRÍTICA', 'ALTA'].includes(item.radar?.priority)).length, attention: items.filter((item) => item.radar?.priority === 'MÉDIA').length, total: items.length, analyzed: items.filter((item) => item.radar?.state === 'EM_ANALISE').length }), [items]);
   const openAssistant = (item) => navigate('/ai-sales', { state: { prefill: `Analise esta oportunidade do Radar: ${item.title}. Evidências: ${JSON.stringify(item.radar?.evidence || {})}. Ação sugerida: ${item.radar?.suggested_action || ''}` } });
   const openIntelligence = (item) => navigate('/intelligence', { state: { query: `Analise a oportunidade ${item.title}. ${item.description || ''}` } });
