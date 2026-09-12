@@ -20,7 +20,7 @@ test('production schema is tenant isolated and keeps cost snapshots', () => {
 test('recipe recalculation updates cost without changing price', () => {
   assert.match(migration, /update public\.products set cost=recipe_row\.unit_cost/);
   assert.doesNotMatch(migration, /set price=/i);
-  assert.match(page, /O preço de venda não muda automaticamente/);
+  assert.match(page, /O preço de venda não é alterado automaticamente/);
 });
 
 test('production is atomic and records material out plus finished product in', () => {
