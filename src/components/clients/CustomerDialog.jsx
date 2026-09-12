@@ -39,13 +39,13 @@ export default function CustomerDialog({ open, onClose, onSave, initial }) {
               <div className="flex-1 space-y-1.5">
                 <Label className="text-xs">Tipo</Label>
                 <div className="flex gap-1.5">
-                  {['pf', 'pj'].map((t) => <button key={t} type="button" onClick={() => set('type', t)} className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition duration-200 ${form.type === t ? 'border-blue-400 bg-blue-500/20 text-blue-100 shadow-[0_0_0_1px_rgba(58,160,255,.35)]' : 'border-slate-600 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'}`}>{t === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</button>)}
+                  {['pf', 'pj'].map((t) => <button key={t} type="button" onClick={() => set('type', t)} className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-semibold transition duration-200 ${form.type === t ? 'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'border-slate-600 bg-slate-900/40 text-slate-400 hover:border-blue-400/70 hover:text-white'}`}>{t === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</button>)}
                 </div>
               </div>
               <div className="flex-1 space-y-1.5">
                 <Label className="text-xs">Classificação</Label>
                 <div className="flex gap-1.5">
-                  {['a', 'b', 'c'].map((t) => <button key={t} type="button" onClick={() => set('classification', t)} className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-bold uppercase transition duration-200 ${form.classification === t ? 'border-blue-400 bg-blue-500/20 text-blue-100 shadow-[0_0_0_1px_rgba(58,160,255,.35)]' : 'border-slate-600 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-white'}`}>{t}</button>)}
+                  {['a', 'b', 'c'].map((t) => <button key={t} type="button" onClick={() => set('classification', t)} className={`flex-1 rounded-lg border px-3 py-2.5 text-xs font-bold uppercase transition duration-200 ${form.classification === t ? 'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'border-slate-600 bg-slate-900/40 text-slate-400 hover:border-blue-400/70 hover:text-white'}`}>{t}</button>)}
                 </div>
               </div>
             </div>

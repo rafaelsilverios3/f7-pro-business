@@ -69,7 +69,7 @@ export default function Clientes() {
         <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
           {[['all', 'Todos'], ['lead', 'Leads'], ['active', 'Ativos'], ['inactive', 'Inativos']].map(([v, l]) => (
             <button key={v} onClick={() => setStatusFilter(v)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium ${statusFilter === v ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>{l}</button>
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${statusFilter === v ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-900/20' : 'text-slate-500 hover:bg-blue-500/10 hover:text-blue-700'}`}>{l}</button>
           ))}
         </div>
       </div>
