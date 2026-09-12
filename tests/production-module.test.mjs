@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/0054_production_module.sql', 'utf8');
+const ambiguityFix = fs.readFileSync('supabase/migrations/0056_fix_production_material_reference.sql', 'utf8');
 const page = fs.readFileSync('src/pages/Producao.jsx', 'utf8');
 const service = fs.readFileSync('src/services/productionService.js', 'utf8');
 const productsService = fs.readFileSync('src/services/productsService.js', 'utf8');
@@ -61,4 +62,11 @@ test('production service normalizes empty numeric form values before RPC', () =>
 test('new production materials do not persist an empty SKU that conflicts with the unique index', () => {
   assert.match(page, /sku: material\.sku\.trim\(\) \|\| null/);
   assert.match(productsService, /sku: parsed\.sku\?\.trim\(\) \|\| null/);
+});
+
+test('production recipe material lookup qualifies the products column and avoids material ambiguity', () => {
+  assert.match(ambiguityFix, /material_payload jsonb/);
+  assert.match(ambiguityFix, /from public\.products as p where p\.id=\(material_payload->>'material_product_id'\)/);
+  assert.doesNotMatch(ambiguityFix, /\(material->>/);
+  assert.match(ambiguityFix, /grant execute on function public\.save_production_recipe\(jsonb\)/);
 });
