@@ -30,7 +30,7 @@ export default function Estoque() {
       inventoryService.list(company.id),
       getDataProvider().entity('StockMovement').filter({ company_id: company.id }, '-created_date', 100),
     ]);
-    setProducts(ps); setMovements(ms);
+    setProducts((ps || []).filter((product) => product.item_type === 'product' || product.item_type === 'material')); setMovements(ms);
   };
   useEffect(() => { load(); }, [company]);
 

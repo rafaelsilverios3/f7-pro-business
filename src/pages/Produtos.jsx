@@ -19,6 +19,8 @@ export default function Produtos() {
   const [role, setRole] = useState(user?.role || '');
   const [items, setItems] = useState(null);
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState('product');
+  const [subcategory, setSubcategory] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const canManagePricing = can({ role }, 'pricing.manage');
@@ -35,7 +37,7 @@ export default function Produtos() {
     if (!items) return [];
     if (!query) return items;
     return items.filter((p) => p.name?.toLowerCase().includes(query.toLowerCase()) || p.sku?.toLowerCase().includes(query.toLowerCase()));
-  }, [items, query]);
+  }, [items, query, tab, subcategory]);
 
   const handleSave = async (form) => {
     if (editing) await productsService.update(company.id, editing.id, form);
@@ -57,10 +59,12 @@ export default function Produtos() {
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
       <PageHeader
-        title="Produtos e Serviços"
+        title="Produtos, materiais e serviços"
         subtitle="Gerencie seu catálogo com preços, margem e estoque."
-        action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Novo produto</Button>}
+        action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Novo {tab === 'material' ? 'material' : tab === 'service' ? 'serviço' : 'produto'}</Button>}
       />
+
+      <div className="mb-4 flex flex-wrap gap-2">{[['product','Produtos'],['material','Materiais'],['service','Serviços']].map(([key,label]) => <button key={key} type="button" onClick={() => { setTab(key); setSubcategory(''); setQuery(''); }} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${tab === key ? 'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'border-slate-200 bg-white text-slate-600'}`}>{label} <span className="ml-1 text-xs opacity-75">{items ? items.filter((p) => (p.item_type || 'product') === key).length : 0}</span></button>)}</div>
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -78,11 +82,10 @@ export default function Produtos() {
         </div>
       </div>
 
-      <div className="mb-4 relative max-w-sm">
+      <div className="mb-4 flex flex-wrap gap-2"><div className="relative max-w-sm flex-1">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto ou SKU..."
-          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400" />
-      </div>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, SKU ou subcategoria..." className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400" />
+      </div>{items && [...new Set(items.filter((p) => (p.item_type || 'product') === tab).map((p) => p.subcategory).filter(Boolean))].length > 0 && <select value={subcategory} onChange={(e) => setSubcategory(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 text-sm"><option value="">Todas as subcategorias</option>{[...new Set(items.filter((p) => (p.item_type || 'product') === tab).map((p) => p.subcategory).filter(Boolean))].sort().map((value) => <option key={value} value={value}>{value}</option>)}</select>}</div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {!items ? (
@@ -117,7 +120,7 @@ export default function Produtos() {
                         <p className="font-medium text-slate-800">{p.name}</p>
                         <p className="text-xs text-slate-400">{p.sku || '—'} {p.brand && `· ${p.brand}`}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-500"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${p.item_type === 'service' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{p.item_type === 'service' ? 'SERVIÇO' : 'PRODUTO'}</span><span className="ml-2">{p.category || p.subcategory || '—'}</span></td>
+                      <td className="px-4 py-3 text-slate-500"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${p.item_type === 'service' ? 'bg-violet-100 text-violet-700' : p.item_type === 'material' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.item_type === 'service' ? 'SERVIÇO' : p.item_type === 'material' ? 'MATERIAL' : 'PRODUTO'}</span><span className="ml-2">{p.subcategory || '—'}</span></td>
                       <td className="px-4 py-3 text-right text-slate-500">{fmtMoney(p.cost_price)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(p.sale_price)}</td>
                       <td className="px-4 py-3 text-right text-slate-600">{margin.toFixed(2)}%</td>
@@ -141,7 +144,7 @@ export default function Produtos() {
         )}
       </div>
 
-      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} companyId={company?.id} canManagePricing={canManagePricing} canManageCatalog={canManageCatalog} onApplyPricing={async ({ product, price, summary }) => { const updated = await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); return updated; }} />
+      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} defaultItemType={tab} fixedItemType={!editing || editing?.item_type === 'material'} companyId={company?.id} canManagePricing={canManagePricing} canManageCatalog={canManageCatalog} onApplyPricing={async ({ product, price, summary }) => { const updated = await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); return updated; }} />
     </div>
   );
 }

@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 export default function Precificacao() {
   const { company } = useOutletContext(); const { user } = useAuth(); const [products, setProducts] = useState([]); const [role, setRole] = useState(''); const [query, setQuery] = useState(''); const [selected, setSelected] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const canManage = can({ role }, 'pricing.manage');
-  const load = async () => { if (!company?.id) return; setLoading(true); try { setProducts(await productsRepository.list(company.id, 'name', 500)); } catch (cause) { setError(cause.message || 'Não foi possível carregar produtos.'); } finally { setLoading(false); } };
+  const load = async () => { if (!company?.id) return; setLoading(true); try { setProducts((await productsRepository.list(company.id, 'name', 500)).filter((product) => product.item_type === 'product' || product.item_type === 'service')); } catch (cause) { setError(cause.message || 'Não foi possível carregar produtos.'); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [company?.id]);
   useEffect(() => { let cancelled = false; if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) { setRole(user?.role || ''); return undefined; } getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => { if (!cancelled) setRole(data?.role || ''); }); return () => { cancelled = true; }; }, [company?.id, user?.id, user?.role]);
   const filtered = products.filter((product) => `${product.name} ${product.sku || ''}`.toLowerCase().includes(query.toLowerCase().trim()));

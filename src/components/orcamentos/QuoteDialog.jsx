@@ -38,7 +38,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
     (async () => {
       const provider = getDataProvider();
       setCustomers(await provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500));
-      setProducts(await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500));
+      setProducts((await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500)).filter((product) => product.item_type === 'product' || product.item_type === 'service'));
       const d = new Date(); d.setDate(d.getDate() + 15);
       setValidUntil(d.toISOString().slice(0, 10));
     })();

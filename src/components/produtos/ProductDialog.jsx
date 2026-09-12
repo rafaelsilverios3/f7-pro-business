@@ -17,9 +17,9 @@ function productSaveMessage(error) {
   return 'Não foi possível salvar as alterações do produto.';
 }
 
-export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing }) {
+export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing, defaultItemType = 'product', fixedItemType = false }) {
   const emptyForm = {
-    item_type: 'product', duration_minutes: '', sku: '', barcode: '', name: '', category: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
+    item_type: defaultItemType, duration_minutes: '', sku: '', barcode: '', name: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
     cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
   };
   const [form, setForm] = useState(emptyForm);
@@ -41,7 +41,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     setSaving(true);
     setSaveError('');
     try {
-      await onSave({ ...form, item_type: form.item_type || 'product', duration_minutes: form.duration_minutes === '' ? null : Number(form.duration_minutes), cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.item_type === 'service' ? 0 : (form.stock === '' ? 0 : Number(form.stock)), min_stock: form.item_type === 'service' ? 0 : (form.min_stock === '' ? 0 : Number(form.min_stock)), commission: form.commission === '' ? 0 : Number(form.commission) });
+      await onSave({ ...form, item_type: fixedItemType ? defaultItemType : (form.item_type || 'product'), duration_minutes: form.duration_minutes === '' ? null : Number(form.duration_minutes), cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.item_type === 'service' ? 0 : (form.stock === '' ? 0 : Number(form.stock)), min_stock: form.item_type === 'service' ? 0 : (form.min_stock === '' ? 0 : Number(form.min_stock)), commission: form.commission === '' ? 0 : Number(form.commission) });
       onClose();
     } catch (error) {
       setSaveError(productSaveMessage(error));
@@ -55,16 +55,12 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
       <DialogContent className="flex min-h-0 max-w-3xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>{initial ? 'Editar produto' : 'Novo produto'}</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden pr-1">
-          <div className="flex gap-2 rounded-lg bg-slate-950/40 p-1"><button type="button" onClick={() => set('item_type', 'product')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${form.item_type !== 'service' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-blue-500/10 hover:text-blue-100'}`}>Produto</button><button type="button" onClick={() => set('item_type', 'service')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${form.item_type === 'service' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-blue-500/10 hover:text-blue-100'}`}>Serviço</button></div>
+          {!fixedItemType && <div className="flex gap-2 rounded-lg bg-slate-950/40 p-1"><button type="button" onClick={() => set('item_type', 'product')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${form.item_type !== 'service' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-blue-500/10 hover:text-blue-100'}`}>Produto</button><button type="button" onClick={() => set('item_type', 'service')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${form.item_type === 'service' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-blue-500/10 hover:text-blue-100'}`}>Serviço</button></div>}
           {saveError && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</p>}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">SKU / Código</Label>
               <Input value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="SKU" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Categoria</Label>
-              <Input value={form.category} onChange={(e) => set('category', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Código de barras</Label>
@@ -105,7 +101,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           </div>
           {form.item_type === 'service' && <div className="space-y-1.5"><Label className="text-xs">Duração estimada (minutos)</Label><Input type="number" min="1" value={form.duration_minutes} onChange={(e) => set('duration_minutes', e.target.value)} /></div>}
           <Button type="button" variant="outline" className="w-full" onClick={() => setPricingOpen(true)}>Calcular preço de venda</Button>
-          {form.item_type === 'product' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {form.item_type !== 'service' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Estoque</Label>
               <Input type="number" value={form.stock} onChange={(e) => set('stock', e.target.value)} />
@@ -136,3 +132,4 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     </Dialog>
   );
 }
+

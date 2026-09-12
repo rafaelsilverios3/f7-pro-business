@@ -167,7 +167,7 @@ export default function Atendimento() {
       if (conversationResult.status === 'rejected') throw conversationResult.reason;
       const convs = conversationResult.value || [];
       const prods = productResult.status === 'fulfilled' ? productResult.value || [] : [];
-      setConversations(convs); setProducts(prods);
+      setConversations(convs); setProducts((prods || []).filter((product) => product.item_type === 'product' || product.item_type === 'service'));
       const currentSelected = selectedRef.current;
       if (currentSelected) {
         const updated = convs.find((c) => c.id === currentSelected.id);
