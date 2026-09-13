@@ -40,10 +40,11 @@ test('Sales Hub envia contexto INTERNAL minimizado e saneado para a Intelligence
   assert.doesNotMatch(model, /phone|email|document/);
 });
 
-test('lacunas de follow-up persistente ficam explícitas e não viram tarefas falsas', () => {
-  assert.match(model, /Não há estrutura persistente de follow-ups\/atividades/);
-  assert.match(page, /não simula tarefas nem persiste dados no navegador/);
-  assert.doesNotMatch(service, /Task\.create|FollowUp\.create|Activity\.create/);
+test('atividades persistentes substituem o placeholder sem criar CRM paralelo', () => {
+  assert.match(model, /scopedActivities/);
+  assert.match(page, /Minhas tarefas/);
+  assert.match(service, /crmActivitiesService\.listActivities/);
+  assert.doesNotMatch(page, /localStorage\s*\(/);
 });
 
 test('falhas parciais são identificadas sem esconder o estado disponível', () => {
