@@ -333,11 +333,11 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2.5">
               <span className="text-sm text-amber-700">Contas a receber</span>
-              <span className="text-sm font-semibold text-amber-700">{fmtMoneyShort(m.contasReceber)}</span>
+              <span className="text-sm font-semibold text-amber-700">{m.financeAvailable ? fmtMoneyShort(m.contasReceber) : 'Indisponível'}</span>
             </div>
             <div className="flex items-center justify-between rounded-lg bg-orange-50 px-3 py-2.5">
               <span className="text-sm text-orange-700">Contas a pagar</span>
-              <span className="text-sm font-semibold text-orange-700">{fmtMoneyShort(m.contasPagar)}</span>
+              <span className="text-sm font-semibold text-orange-700">{m.financeAvailable ? fmtMoneyShort(m.contasPagar) : 'Indisponível'}</span>
             </div>
           </div>
         </div>
@@ -411,10 +411,10 @@ export default function Dashboard() {
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-xs text-slate-500">Projeção líquida de compromissos</p>
-              <p className={`mt-1 text-lg font-bold ${m.fluxoCaixa >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {m.fluxoCaixa >= 0 ? '+' : ''}{fmtMoney(m.fluxoCaixa)}
+              <p className={`mt-1 text-lg font-bold ${!m.financeAvailable ? 'text-slate-500' : m.fluxoCaixa >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {m.financeAvailable ? `${m.fluxoCaixa >= 0 ? '+' : ''}${fmtMoney(m.fluxoCaixa)}` : 'Indisponível'}
               </p>
-              <p className="text-[10px] text-slate-400">A receber ({fmtMoneyShort(m.contasReceber)}) - A pagar ({fmtMoneyShort(m.contasPagar)}); não representa caixa realizado.</p>
+              <p className="text-[10px] text-slate-400">{m.financeAvailable ? `A receber (${fmtMoneyShort(m.contasReceber)}) - A pagar (${fmtMoneyShort(m.contasPagar)}); não representa caixa realizado.` : 'Dados financeiros indisponíveis para este tenant.'}</p>
             </div>
           </div>
         </div>
