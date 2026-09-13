@@ -55,15 +55,14 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 import { can } from '@/lib/permissions';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
-import { loadSubscription, trialActive, trialExpired, TRIAL_ALLOWED_PATHS, FEATURE_REQUIREMENTS } from '@/services/subscriptionService';
+import { trialActive, trialExpired, TRIAL_ALLOWED_PATHS, FEATURE_REQUIREMENTS } from '@/services/subscriptionService';
 import { canUseFeature } from '@/services/planService';
 
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
+  const layoutContext = useOutletContext() || {};
   const location = useLocation();
-  const [subscription, setSubscription] = React.useState(null);
-  const [subscriptionLoading, setSubscriptionLoading] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase');
-  React.useEffect(() => { let cancelled = false; if (!company?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setSubscriptionLoading(false); return undefined; } setSubscriptionLoading(true); loadSubscription(company.id).then((result) => { if (!cancelled) setSubscription(result); }).catch(() => { if (!cancelled) setSubscription(null); }).finally(() => { if (!cancelled) setSubscriptionLoading(false); }); return () => { cancelled = true; }; }, [company?.id]);
+  const { subscription = null, subscriptionLoading = false } = layoutContext;
   if (loading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
   if (subscriptionLoading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
   if (!company) return <Navigate to="/onboarding" replace />;
@@ -71,7 +70,7 @@ const CompanyGuard = () => {
   if (trialActive(subscription) && !TRIAL_ALLOWED_PATHS.includes(location.pathname)) return <FeatureLocked path={location.pathname} />;
   const requirement = FEATURE_REQUIREMENTS[location.pathname];
   if (subscription?.status === 'active' && requirement && !canUseFeature(subscription.plan, requirement[2])) return <FeatureLocked path={location.pathname} />;
-  return <Outlet context={{ company, subscription }} />;
+  return <Outlet context={{ company, subscription, subscriptionLoading }} />;
 };
 
 function Forbidden() {

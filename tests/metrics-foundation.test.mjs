@@ -145,6 +145,17 @@ test('executive dashboard has explicit loading, partial-error and empty-safe UI 
   assert.match(dashboard, /m\.partialErrors\.length > 0/);
   assert.match(dashboard, /Indisponível/);
   assert.match(dashboard, /Number\(m\.margem \|\| 0\)\.toFixed/);
+  assert.match(dashboard, /data-dashboard-loading/);
+  assert.match(dashboard, /Tente novamente em instantes/);
+  assert.match(dashboard, /requestId !== dashboardRequest\.current/);
+});
+
+test('dashboard period controls and actionable rows stay usable on narrow viewports', () => {
+  const dashboard = fs.readFileSync(new URL('../src/pages/Dashboard.jsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /aria-label="Período do dashboard"/);
+  assert.match(dashboard, /overflow-x-auto/);
+  assert.match(dashboard, /whitespace-nowrap/);
+  assert.match(dashboard, /flex min-w-0 flex-wrap items-center gap-3 rounded-xl/);
 });
 
 test('executive charts aggregate real periods and keep cancelled sales out of revenue', () => {

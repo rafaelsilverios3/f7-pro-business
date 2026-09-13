@@ -24,6 +24,7 @@ export default function Layout() {
   const [resolvedTheme, setResolvedTheme] = useState(() => resolveTheme(getStoredTheme()));
   const [platformAdmin, setPlatformAdmin] = useState(false);
   const [subscription, setSubscription] = useState(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase');
 
   const roleLabels = {
     admin: 'Administrador', gestor: 'Gestor', financeiro: 'Financeiro',
@@ -41,7 +42,20 @@ export default function Layout() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  useEffect(() => { let cancelled = false; if (!company?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return undefined; loadSubscription(company.id).then((result) => { if (!cancelled) setSubscription(result); }).catch(() => {}); return () => { cancelled = true; }; }, [company?.id]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!company?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
+      setSubscription(null);
+      setSubscriptionLoading(false);
+      return undefined;
+    }
+    setSubscriptionLoading(true);
+    loadSubscription(company.id)
+      .then((result) => { if (!cancelled) setSubscription(result); })
+      .catch(() => { if (!cancelled) setSubscription(null); })
+      .finally(() => { if (!cancelled) setSubscriptionLoading(false); });
+    return () => { cancelled = true; };
+  }, [company?.id]);
 
   const visibleName = profileName || (displayName.includes('@') ? 'Seu perfil' : displayName);
   const visibleInitials = visibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
@@ -118,7 +132,7 @@ export default function Layout() {
             </div>}
           </div>
         </div>
-        <Outlet context={{ company }} />
+        <Outlet context={{ company, subscription, subscriptionLoading }} />
       </main>
       <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} company={company} role={String(user?.role || '').toLowerCase()} profileName={profileName} theme={theme} onThemeChange={setTheme} onSaved={setProfileName} />
     </div>

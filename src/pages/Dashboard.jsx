@@ -26,7 +26,7 @@ import { ExecutiveChartCard } from '@/components/dashboard/ExecutiveChartCard';
 import ExecutiveInsightCard from '@/components/dashboard/ExecutiveInsightCard';
 import ExecutiveIntelligenceSummary from '@/components/dashboard/ExecutiveIntelligenceSummary';
 import { buildExecutiveIntelligenceContext, generateExecutiveSummary } from '@/services/executiveIntelligenceService';
-import { canUseFeature } from '@/services/planService';
+import { canUseSubscriptionFeature } from '@/services/planService';
 
 const radarOpportunityRepository = createRepository('ProductOpportunity');
 
@@ -75,9 +75,11 @@ export default function Dashboard() {
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [executiveSummaryRefresh, setExecutiveSummaryRefresh] = useState(0);
   const executiveSummaryRequest = useRef('');
+  const dashboardRequest = useRef(0);
 
   const loadDashboard = async () => {
     if (!company) return;
+    const requestId = ++dashboardRequest.current;
     setLoading((current) => !data || current);
     setRefreshing(Boolean(data));
     setError(null);
@@ -97,6 +99,7 @@ export default function Dashboard() {
         inventoryRepository.list(company.id, '-created_date', 10),
         isSupabase ? radarOpportunityRepository.list(company.id, '-created_date', 500) : Promise.resolve([]),
       ]);
+      if (requestId !== dashboardRequest.current) return;
       const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
       const legacy = value(0, [[], [], []]);
       const radar = value(6, []);
@@ -114,8 +117,8 @@ export default function Dashboard() {
       });
       setUpdatedAt(new Date());
       if (failures.length === results.length) setError(new Error('Não foi possível carregar as métricas do dashboard.'));
-    } catch (cause) { setError(cause); }
-    finally { setLoading(false); setRefreshing(false); }
+    } catch { if (requestId === dashboardRequest.current) setError(new Error('Não foi possível carregar o dashboard.')); }
+    finally { if (requestId === dashboardRequest.current) { setLoading(false); setRefreshing(false); } }
   };
 
   useEffect(() => {
@@ -211,7 +214,7 @@ export default function Dashboard() {
     return buildExecutiveIntelligenceContext(company.id, m, createPeriodContext({ companyId: company.id, periodKey: period }));
   }, [m, company?.id, period]);
 
-  const intelligenceEnabled = import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || canUseFeature(subscription?.plan || company?.plan || 'free', 'intelligence');
+  const intelligenceEnabled = canUseSubscriptionFeature(subscription, 'intelligence', { provider: import.meta.env.VITE_DATA_PROVIDER, fallbackPlan: company?.plan || 'free' });
   useEffect(() => {
     if (!executiveContext || !company?.id || !intelligenceEnabled) { setExecutiveSummary(null); return undefined; }
     if (refreshing) return undefined;
@@ -224,38 +227,38 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [executiveContext, company?.id, period, updatedAt, executiveSummaryRefresh, intelligenceEnabled, refreshing]);
 
-  if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={loadDashboard}>Tentar novamente</button></div>;
-  if (!m) return <div className="mx-auto w-full max-w-[1760px] px-5 py-7 xl:px-8 2xl:px-10"><div className="mb-7 h-28 animate-pulse rounded-2xl bg-slate-800/60" /><div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-44 animate-pulse rounded-2xl border border-slate-700/60 bg-slate-800/60" />)}</div></div>;
+  if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">Tente novamente em instantes.</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={loadDashboard}>Tentar novamente</button></div>;
+  if (!m) return <div data-dashboard-loading className="mx-auto w-full max-w-[1760px] px-3 py-5 sm:px-5 sm:py-7 xl:px-8 2xl:px-10"><div className="mb-5 h-24 animate-pulse rounded-2xl bg-slate-800/60 sm:mb-7 sm:h-28" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-700/60 bg-slate-800/60 sm:h-44" />)}</div><div className="mt-5 h-56 animate-pulse rounded-2xl border border-indigo-200/20 bg-indigo-950/30" /></div>;
 
   const today = format(new Date(), 'dd/MM/yyyy HH:mm');
 
   return (
-    <div className="mx-auto w-full max-w-[1760px] px-5 py-7 xl:px-8 2xl:px-10">
+    <div className="mx-auto w-full max-w-[1760px] min-w-0 px-3 py-5 sm:px-5 sm:py-7 xl:px-8 2xl:px-10">
       <div className="mb-7 flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">F7 PRO BUSINESS</p>
           <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Visão Executiva</h1>
-          <p className="mt-2 text-sm text-slate-400">{company.name || 'Sua empresa'} · resumo executivo do negócio.</p>
+          <p className="mt-2 break-words text-sm text-slate-400">{company.name || 'Sua empresa'} · resumo executivo do negócio.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl border border-slate-700/70 bg-[#0d1b2e] px-4 py-2.5 text-right">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <div className="min-w-0 rounded-xl border border-slate-700/70 bg-[#0d1b2e] px-3 py-2.5 text-left sm:px-4 sm:text-right">
             <p className="text-xs font-medium capitalize text-slate-200">{PERIODS.find((item) => item.value === period)?.label || period}</p>
             <p className="mt-0.5 text-[10px] text-slate-500">Atualizado {updatedAt ? format(updatedAt, 'dd/MM/yyyy HH:mm') : today}</p>
           </div>
-          <div className="flex gap-1 rounded-xl border border-slate-700/70 bg-[#0d1b2e] p-1">
+          <div role="group" aria-label="Período do dashboard" className="order-last flex max-w-full min-w-0 gap-1 overflow-x-auto rounded-xl border border-slate-700/70 bg-[#0d1b2e] p-1 sm:order-none">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
                 type="button"
                 aria-pressed={period === p.value}
                 onClick={() => setPeriod(p.value)}
-                className={`rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-200 sm:px-3 ${period === p.value ? 'f7-period-active bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-200 sm:px-3 ${period === p.value ? 'f7-period-active bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
               >
                 {p.label}
               </button>
             ))}
           </div>
-          <button type="button" aria-label="Atualizar métricas" onClick={loadDashboard} disabled={refreshing} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700/70 bg-[#0d1b2e] text-slate-300 hover:text-white disabled:opacity-50">
+          <button type="button" aria-label="Atualizar métricas" onClick={loadDashboard} disabled={refreshing} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700/70 bg-[#0d1b2e] text-slate-300 hover:text-white disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -328,7 +331,7 @@ export default function Dashboard() {
       {/* Análises acionáveis */}
       <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-2" data-executive-actionable>
         <ExecutiveInsightCard title="Clientes que mais compram" description="Top 5 por faturamento no período selecionado" empty={!m.actionable.topCustomers.available} emptyMessage="Nenhuma compra identificada no período.">
-          <div className="space-y-2">{m.actionable.topCustomers.rows.map((row, index) => <div key={row.customer_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-100 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">{fmtNum(row.purchases)} compra(s) · ticket {fmtMoney(row.average_ticket)}</p></div><div className="text-right"><p className="text-sm font-bold text-slate-800">{fmtMoney(row.revenue)}</p><EntityLink type="customer" id={row.customer_id} label="Ver cliente" /></div><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+          <div className="space-y-2">{m.actionable.topCustomers.rows.map((row, index) => <div key={row.customer_id} className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">{fmtNum(row.purchases)} compra(s) · ticket {fmtMoney(row.average_ticket)}</p></div><div className="text-right"><p className="text-sm font-bold text-slate-800">{fmtMoney(row.revenue)}</p><EntityLink type="customer" id={row.customer_id} label="Ver cliente" /></div><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
         </ExecutiveInsightCard>
 
         <ExecutiveInsightCard title="Clientes em queda" description="Comparação determinística com o período anterior equivalente" empty={!m.actionable.decliningCustomers.available} emptyMessage="Nenhum cliente com queda relevante no período.">

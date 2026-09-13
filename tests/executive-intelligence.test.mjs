@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { canUseSubscriptionFeature } from '../src/services/planService.js';
 
 const service = fs.readFileSync('src/services/executiveIntelligenceService.js', 'utf8');
 const component = fs.readFileSync('src/components/dashboard/ExecutiveIntelligenceSummary.jsx', 'utf8');
 const dashboard = fs.readFileSync('src/pages/Dashboard.jsx', 'utf8');
 const edge = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
+const app = fs.readFileSync('src/App.jsx', 'utf8');
+const layout = fs.readFileSync('src/components/layout/Layout.jsx', 'utf8');
 
 test('executive context reuses dashboard metrics and keeps bounded factual signals', () => {
   assert.match(service, /buildExecutiveIntelligenceContext/);
@@ -25,11 +28,22 @@ test('summary is factual-first, has evidence and fails closed without data', () 
 
 test('dashboard summary is asynchronous, period-aware and entitlement-aware', () => {
   assert.match(dashboard, /generateExecutiveSummary/);
-  assert.match(dashboard, /canUseFeature\(subscription\?\.plan/);
+  assert.match(dashboard, /canUseSubscriptionFeature\(subscription/);
   assert.match(dashboard, /executiveSummaryRequest/);
   assert.match(component, /F7 Intelligence — Resumo Executivo/);
   assert.match(component, /Atualizar análise/);
   assert.match(component, /Aprofundar análise/);
+});
+
+test('intelligence gate follows active subscription status for every commercial plan', () => {
+  assert.equal(canUseSubscriptionFeature({ plan: 'free', status: 'trial' }, 'intelligence'), false);
+  assert.equal(canUseSubscriptionFeature({ plan: 'free', status: 'active' }, 'intelligence'), false);
+  for (const plan of ['pro', 'business', 'premium']) assert.equal(canUseSubscriptionFeature({ plan, status: 'active' }, 'intelligence'), true);
+  assert.equal(canUseSubscriptionFeature({ plan: 'pro', status: 'past_due' }, 'intelligence'), false);
+  assert.equal(canUseSubscriptionFeature({ plan: 'pro', status: 'active' }, 'intelligence', { provider: 'base44' }), true);
+  assert.match(layout, /Outlet context=\{\{ company, subscription, subscriptionLoading \}\}/);
+  assert.match(app, /const layoutContext = useOutletContext\(\) \|\| \{\}/);
+  assert.doesNotMatch(app, /loadSubscription\(/);
 });
 
 test('server executive operation reuses membership, gate, strict output and tenant-safe context', () => {
