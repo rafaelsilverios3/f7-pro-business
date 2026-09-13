@@ -27,7 +27,6 @@ import { ExecutiveChartCard } from '@/components/dashboard/ExecutiveChartCard';
 import ExecutiveInsightCard from '@/components/dashboard/ExecutiveInsightCard';
 import ExecutiveIntelligenceSummary from '@/components/dashboard/ExecutiveIntelligenceSummary';
 import { buildExecutiveIntelligenceContext, generateExecutiveSummary } from '@/services/executiveIntelligenceService';
-import { canUseSubscriptionFeature } from '@/services/planService';
 
 const radarOpportunityRepository = createRepository('ProductOpportunity');
 
@@ -65,7 +64,7 @@ function EntityLink({ type, id, label }) {
 }
 
 export default function Dashboard() {
-  const { company, subscription } = useOutletContext();
+  const { company } = useOutletContext();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -218,19 +217,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) { setIntelligenceRpcGate(true); return undefined; }
-    if (subscription) { setIntelligenceRpcGate(null); return undefined; }
     let cancelled = false;
     setIntelligenceRpcGate(null);
     getSupabaseClient().rpc('company_has_feature', { target_company: company.id, feature: 'intelligence' }).then(({ data }) => {
       if (!cancelled) setIntelligenceRpcGate(data === true);
     }).catch(() => { if (!cancelled) setIntelligenceRpcGate(false); });
     return () => { cancelled = true; };
-  }, [company?.id, subscription?.plan, subscription?.status]);
+  }, [company?.id]);
   const intelligenceEnabled = import.meta.env.VITE_DATA_PROVIDER !== 'supabase'
     ? true
-    : subscription
-      ? canUseSubscriptionFeature(subscription, 'intelligence', { provider: 'supabase', fallbackPlan: company?.plan || 'free' })
-      : intelligenceRpcGate === true;
+    : intelligenceRpcGate === true;
   useEffect(() => {
     if (!executiveContext || !company?.id || !intelligenceEnabled) { setExecutiveSummary(null); return undefined; }
     if (refreshing) return undefined;

@@ -28,7 +28,6 @@ test('summary is factual-first, has evidence and fails closed without data', () 
 
 test('dashboard summary is asynchronous, period-aware and entitlement-aware', () => {
   assert.match(dashboard, /generateExecutiveSummary/);
-  assert.match(dashboard, /canUseSubscriptionFeature\(subscription/);
   assert.match(dashboard, /company_has_feature/);
   assert.match(dashboard, /intelligenceRpcGate/);
   assert.match(dashboard, /executiveSummaryRequest/);
