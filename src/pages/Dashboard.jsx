@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
@@ -24,6 +24,9 @@ import { Link } from 'react-router-dom';
 import { createRepository } from '@/data/repositoryFactory';
 import { ExecutiveChartCard } from '@/components/dashboard/ExecutiveChartCard';
 import ExecutiveInsightCard from '@/components/dashboard/ExecutiveInsightCard';
+import ExecutiveIntelligenceSummary from '@/components/dashboard/ExecutiveIntelligenceSummary';
+import { buildExecutiveIntelligenceContext, generateExecutiveSummary } from '@/services/executiveIntelligenceService';
+import { canUseFeature } from '@/services/planService';
 
 const radarOpportunityRepository = createRepository('ProductOpportunity');
 
@@ -61,13 +64,17 @@ function EntityLink({ type, id, label }) {
 }
 
 export default function Dashboard() {
-  const { company } = useOutletContext();
+  const { company, subscription } = useOutletContext();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [executiveSummary, setExecutiveSummary] = useState(null);
+  const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
+  const [executiveSummaryRefresh, setExecutiveSummaryRefresh] = useState(0);
+  const executiveSummaryRequest = useRef('');
 
   const loadDashboard = async () => {
     if (!company) return;
@@ -199,6 +206,24 @@ export default function Dashboard() {
     };
   }, [data, period, company?.id]);
 
+  const executiveContext = useMemo(() => {
+    if (!m || !company?.id) return null;
+    return buildExecutiveIntelligenceContext(company.id, m, createPeriodContext({ companyId: company.id, periodKey: period }));
+  }, [m, company?.id, period]);
+
+  const intelligenceEnabled = import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || canUseFeature(subscription?.plan || company?.plan || 'free', 'intelligence');
+  useEffect(() => {
+    if (!executiveContext || !company?.id || !intelligenceEnabled) { setExecutiveSummary(null); return undefined; }
+    if (refreshing) return undefined;
+    const key = `${company.id}:${period}:${updatedAt?.getTime() || 'initial'}:${executiveSummaryRefresh}`;
+    if (executiveSummaryRequest.current === key) return undefined;
+    executiveSummaryRequest.current = key;
+    let cancelled = false;
+    setExecutiveSummaryLoading(true);
+    generateExecutiveSummary(company.id, executiveContext).then((result) => { if (!cancelled) setExecutiveSummary({ ...result, period: executiveContext.period }); }).finally(() => { if (!cancelled) setExecutiveSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [executiveContext, company?.id, period, updatedAt, executiveSummaryRefresh, intelligenceEnabled, refreshing]);
+
   if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={loadDashboard}>Tentar novamente</button></div>;
   if (!m) return <div className="mx-auto w-full max-w-[1760px] px-5 py-7 xl:px-8 2xl:px-10"><div className="mb-7 h-28 animate-pulse rounded-2xl bg-slate-800/60" /><div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-44 animate-pulse rounded-2xl border border-slate-700/60 bg-slate-800/60" />)}</div></div>;
 
@@ -249,6 +274,8 @@ export default function Dashboard() {
         <KpiCard label="Oportunidades abertas" value={fmtNum(m.oportunidadesAbertas)} icon={Target} snapshot accent="bg-amber-500/15 text-amber-300" sub="Opportunity Radar" />
         <KpiCard label="Projeção líquida de compromissos" value={m.financeAvailable ? fmtMoney(m.fluxoCaixa) : 'Indisponível'} icon={Wallet} snapshot accent="bg-orange-500/15 text-orange-300" sub={m.financeAvailable ? `A receber ${fmtMoneyShort(m.contasReceber)} · a pagar ${fmtMoneyShort(m.contasPagar)}` : 'dados financeiros indisponíveis'} />
       </div>
+
+      <ExecutiveIntelligenceSummary summary={executiveSummary} loading={executiveSummaryLoading} locked={!intelligenceEnabled} onRefresh={() => { executiveSummaryRequest.current = ''; setExecutiveSummaryRefresh((value) => value + 1); }} />
 
       {/* Gráficos executivos */}
       <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-2">
