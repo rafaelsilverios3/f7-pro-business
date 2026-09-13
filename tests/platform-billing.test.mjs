@@ -23,6 +23,7 @@ const automationEdge = fs.readFileSync('supabase/functions/automation-worker/ind
 const billingHealth = fs.readFileSync('supabase/functions/billing-health/index.ts', 'utf8');
 const radarService = fs.readFileSync('src/services/opportunityRadarService.js', 'utf8');
 const subscriptionService = fs.readFileSync('src/services/subscriptionService.js', 'utf8');
+const supabaseConfig = fs.readFileSync('supabase/config.toml', 'utf8');
 
 test('billing foundation separates plans, subscriptions, payments, checkouts and webhook events', () => {
   for (const table of ['plans', 'plan_features', 'billing_customers', 'billing_payments', 'billing_checkout_sessions', 'billing_webhook_events']) assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
@@ -62,6 +63,17 @@ test('PIX exposes provider evidence and payment activation only comes from webho
   assert.match(webhook, /provider_order_id/);
   assert.match(webhook, /billing_period/);
   assert.doesNotMatch(webhook, /30 \* 86_400_000/);
+});
+
+test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remains mandatory', () => {
+  assert.match(supabaseConfig, /\[functions\.billing-webhook\][\s\S]*verify_jwt\s*=\s*false/);
+  assert.doesNotMatch(supabaseConfig, /\[functions\.(billing-checkout|billing-health)\][\s\S]*verify_jwt\s*=\s*false/);
+  assert.match(webhook, /req\.headers\.get\('x-signature'\)/);
+  assert.match(webhook, /req\.headers\.get\('x-request-id'\)/);
+  assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
+  assert.match(webhook, /INVALID_WEBHOOK_SIGNATURE.*401/);
+  assert.match(webhook, /crypto\.subtle\.sign\('HMAC'/);
+  assert.match(webhook, /v1\/orders/);
 });
 
 test('Orders PIX test contract uses the official deterministic payer without exposing secrets', () => {
