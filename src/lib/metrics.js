@@ -58,6 +58,7 @@ export function createPeriodContext({ companyId, periodKey = 'month', timezone, 
   } else if (periodKey === 'year') { start = isoDate(year, 1, 1); end = isoDate(year, 12, 31); }
   else if (periodKey === 'all') { start = null; end = null; }
   else if (periodKey === 'custom' && (!start || !end)) throw new Error('Período custom exige start_date e end_date.');
+  if (periodKey === 'custom' && start > end) throw new Error('A data inicial deve ser anterior ou igual à data final.');
   return Object.freeze({ company_id: companyId, start_date: start, end_date: end, timezone: tz, period_key: periodKey });
 }
 

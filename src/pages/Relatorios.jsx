@@ -1,176 +1,77 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { Download, FileText, BarChart3 } from 'lucide-react';
-import { reportsService } from '@/services/reportsService';
-import { fmtMoney, fmtDate, fmtNum } from '@/lib/business';
-import { buildAbcRows, createPeriodContext, matchesPeriod } from '@/lib/metrics';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { CheckCircle2, Download, FileText, Loader2, RefreshCw, Search, Sparkles, XCircle } from 'lucide-react';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { reportsService, REPORT_TABS, buildReportIntelligenceContext, buildReportView } from '@/services/reportsService';
+import { intelligenceService } from '@/services/intelligenceService';
+import { createPeriodContext } from '@/lib/metrics';
+import { fmtDate, fmtMoney, fmtNum } from '@/lib/business';
 import { buildPrintableHtml, buildTableHtml, serializeCsv } from '@/lib/exporters';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 
-const REPORTS = [
-  { id: 'sales', label: 'Vendas e Faturamento', icon: BarChart3 },
-  { id: 'profit', label: 'Lucro e Margem', icon: BarChart3 },
-  { id: 'customers', label: 'Clientes', icon: BarChart3 },
-  { id: 'abc', label: 'Curva ABC', icon: BarChart3 },
-  { id: 'products', label: 'Produtos', icon: BarChart3 },
-  { id: 'stock', label: 'Estoque e Movimentações', icon: BarChart3 },
-  { id: 'purchases', label: 'Compras e Fornecedores', icon: BarChart3 },
-  { id: 'financial', label: 'Financeiro', icon: BarChart3 },
-  { id: 'sellers', label: 'Vendedores', icon: BarChart3 },
-];
+const PERIODS = [{ v: 'today', l: 'Hoje' }, { v: '7d', l: '7 dias' }, { v: '30d', l: '30 dias' }, { v: 'month', l: 'Mês' }, { v: 'quarter', l: 'Trimestre' }, { v: 'year', l: 'Ano' }, { v: 'all', l: 'Tudo' }, { v: 'custom', l: 'Personalizado' }];
+const EMPTY_FILTERS = { search: '', customerId: '', seller: '', product: '', status: '', category: '', stock: '', type: '' };
+const labelFor = (id) => REPORT_TABS.find((item) => item.id === id)?.label || 'Relatórios';
+const finite = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+function MetricCard({ label, value, hint, delta }) {
+  return <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-1 truncate text-xl font-semibold text-slate-900">{value}</p>{delta && <p className={`mt-1 text-[11px] ${delta.state === 'negative' ? 'text-rose-600' : 'text-emerald-600'}`}>{delta.delta_percent == null ? delta.state === 'new' ? 'Novo no período' : 'Sem comparação' : `${delta.delta_percent >= 0 ? '+' : ''}${delta.delta_percent.toFixed(1)}% vs. anterior`}</p>}{hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}</div>;
+}
+
+function formatCell(value, header) {
+  if (value == null || value === '') return '—';
+  if (typeof value === 'number') return /participação|margem|percent/i.test(header) ? `${value.toFixed(1)}%` : /valor|faturamento|lucro|ticket/i.test(header) ? fmtMoney(value) : fmtNum(value);
+  if (/data|vencimento|previsão/i.test(header)) return fmtDate(value);
+  return String(value);
+}
 
 export default function Relatorios() {
   const { company } = useOutletContext();
-  const [report, setReport] = useState('sales');
-  const [period, setPeriod] = useState('month');
-  const [data, setData] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [report, setReport] = useState(() => REPORT_TABS.some((item) => item.id === searchParams.get('tab')) ? searchParams.get('tab') : 'overview');
+  const [period, setPeriod] = useState(() => PERIODS.some((item) => item.v === searchParams.get('period')) ? searchParams.get('period') : 'month');
+  const [startDate, setStartDate] = useState(() => searchParams.get('start') || '');
+  const [endDate, setEndDate] = useState(() => searchParams.get('end') || '');
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [data, setData] = useState(null); const [view, setView] = useState(null); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [refreshTick, setRefreshTick] = useState(0);
+  const [gate, setGate] = useState('loading'); const [analysis, setAnalysis] = useState(null); const [analysisLoading, setAnalysisLoading] = useState(false); const requestId = useRef(0);
 
-  const periodContext = useMemo(() => company ? createPeriodContext({ companyId: company.id, periodKey: period }) : null, [company, period]);
+  const periodState = useMemo(() => { try { const context = period === 'custom' ? createPeriodContext({ companyId: company?.id, periodKey: 'custom', startDate, endDate }) : createPeriodContext({ companyId: company?.id, periodKey: period }); return { context, error: '' }; } catch (cause) { return { context: null, error: cause.message || 'Informe um intervalo válido.' }; } }, [company?.id, period, startDate, endDate]);
+  const { context: periodContext, error: periodError } = periodState;
 
-  const load = async () => {
-    if (!company) return;
-    setData(await reportsService.load(company.id, periodContext));
-  };
-  useEffect(() => { load(); }, [company, periodContext]);
+  useEffect(() => { if (!company?.id) return undefined; let cancelled = false; if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setGate('allowed'); return undefined; } setGate('loading'); getSupabaseClient().rpc('company_has_feature', { target_company: company.id, feature: 'advanced_reports' }).then(({ data: allowed, error: cause }) => { if (!cancelled) setGate(!cause && allowed === true ? 'allowed' : 'blocked'); }).catch(() => { if (!cancelled) setGate('blocked'); }); return () => { cancelled = true; }; }, [company?.id]);
+  useEffect(() => { const next = new URLSearchParams(); next.set('tab', report); next.set('period', period); if (period === 'custom' && startDate && endDate) { next.set('start', startDate); next.set('end', endDate); } setSearchParams(next, { replace: true }); }, [report, period, startDate, endDate, setSearchParams]);
+  useEffect(() => { if (gate !== 'allowed' || !company?.id || !periodContext) return undefined; const current = ++requestId.current; setLoading(true); setError(''); reportsService.load(company.id, periodContext).then((result) => { if (current !== requestId.current) return; setData(result); setView(buildReportViewSafe(company.id, result, periodContext, report, filters)); }).catch(() => { if (current === requestId.current) setError('Não foi possível carregar este relatório. Tente novamente em instantes.'); }).finally(() => { if (current === requestId.current) setLoading(false); }); return () => { requestId.current += 1; }; }, [gate, company?.id, periodContext, report, refreshTick]);
+  useEffect(() => { if (data && periodContext) setView(buildReportViewSafe(company.id, data, periodContext, report, filters)); }, [data, periodContext, report, filters, company?.id]);
 
-  const exportCSV = (rows, headers, filename) => {
-    const csv = serializeCsv(headers, rows);
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${filename}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
+  const options = useMemo(() => ({ customers: data?.customers || [], sellers: [...new Set((data?.sales || []).map((row) => row.seller).filter(Boolean))].sort(), categories: [...new Set((data?.products || []).map((row) => row.category).filter(Boolean))].sort(), statuses: [...new Set((data?.sales || []).map((row) => row.status).filter(Boolean))].sort(), financialStatuses: [...new Set((data?.fin || []).map((row) => row.status).filter(Boolean))].sort() }), [data]);
+  const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const clearFilters = () => setFilters(EMPTY_FILTERS);
+  const hasFilters = Object.values(filters).some(Boolean);
 
-  const exportPDF = (title, content) => {
-    const win = window.open('', '_blank');
-    win.document.write(buildPrintableHtml(title, content));
-    win.document.close();
-    win.print();
-  };
+  const exportCSV = () => { if (!view?.rows?.rows?.length) return; const csv = serializeCsv(view.rows.headers, view.rows.rows); const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `relatorio-${report}-${period}.csv`; anchor.click(); URL.revokeObjectURL(url); };
+  const exportPDF = () => { if (!view?.rows?.rows?.length) return; const win = window.open('', '_blank'); if (!win) return; win.document.write(buildPrintableHtml(`Relatório: ${labelFor(report)} · ${periodLabel(period)}`, buildTableHtml(view.rows.headers, view.rows.rows))); win.document.close(); win.print(); };
+  const analyze = async () => { if (!view || analysisLoading) return; setAnalysisLoading(true); setAnalysis(null); try { const result = await intelligenceService.query(company.id, `Analise internamente o relatório de ${labelFor(report)}. Não faça pesquisa externa e não invente causas ou números.`, [], buildReportIntelligenceContext(view)); setAnalysis(result); } catch { setAnalysis({ answer: 'A análise assistida está indisponível no momento. O relatório continua disponível com os dados internos.', mode: 'internal' }); } finally { setAnalysisLoading(false); } };
 
-  const reportData = useMemo(() => {
-    if (!data) return null;
-    const validSales = data.sales.filter((s) => s.status !== 'cancelled');
-    const cur = validSales.filter((s) => matchesPeriod(s.sale_date || s.created_at, periodContext));
-
-    switch (report) {
-      case 'sales': {
-        const rows = cur.map((s) => [fmtDate(s.sale_date), s.customer_name, s.seller || '', s.payment_method || '', s.total || 0, s.status]);
-        return { headers: ['Data', 'Cliente', 'Vendedor', 'Pagamento', 'Total', 'Status'], rows, total: cur.reduce((a, s) => a + (s.total || 0), 0) };
-      }
-      case 'profit': {
-        const rows = cur.map((s) => [fmtDate(s.sale_date), s.customer_name, s.total || 0, s.cost_total || 0, s.profit || 0, s.total > 0 ? ((s.profit / s.total) * 100).toFixed(1) + '%' : '0%']);
-        return { headers: ['Data', 'Cliente', 'Total', 'Custo', 'Lucro', 'Margem'], rows, total: cur.reduce((a, s) => a + (s.profit || 0), 0) };
-      }
-      case 'customers': {
-        const rows = data.customers.filter((c) => matchesPeriod(c.created_date || c.created_at, periodContext)).map((c) => [c.name, c.document || '', c.email || '', c.phone || '', c.status, c.classification?.toUpperCase(), c.total_purchased || 0, c.sale_count || 0]);
-        return { headers: ['Nome', 'Documento', 'E-mail', 'Telefone', 'Status', 'Classe', 'Total Comprado', 'Compras'], rows };
-      }
-      case 'abc': {
-        const rows = buildAbcRows(cur, periodContext).map((row) => [row.name, row.value, `${row.share.toFixed(1)}%`, `${row.cumulative_share.toFixed(1)}%`, row.classification]);
-        return { headers: ['Produto', 'Faturamento', '%', '% Acumulado', 'Classe'], rows };
-      }
-      case 'products': {
-        const rows = data.products.map((p) => [p.sku || '', p.name, p.category || '', p.brand || '', p.cost_price || 0, p.sale_price || 0, p.stock || 0, p.min_stock || 0, p.active ? 'Ativo' : 'Inativo']);
-        return { headers: ['SKU', 'Nome', 'Categoria', 'Marca', 'Custo', 'Venda', 'Estoque', 'Mínimo', 'Status'], rows };
-      }
-      case 'stock': {
-        const rows = data.movements.filter((m) => matchesPeriod(m.created_date || m.created_at, periodContext)).map((m) => [fmtDate(m.created_date || m.created_at), m.product_name, m.type, m.quantity, m.reason || '']);
-        return { headers: ['Data', 'Produto', 'Tipo', 'Qtd', 'Motivo'], rows };
-      }
-      case 'purchases': {
-        const rows = data.purchases.filter((p) => matchesPeriod(p.created_date || p.created_at, periodContext)).map((p) => [fmtDate(p.created_date || p.created_at), p.supplier_name, p.total || 0, p.status, fmtDate(p.expected_date), fmtDate(p.received_date)]);
-        return { headers: ['Data', 'Fornecedor', 'Total', 'Status', 'Previsão', 'Recebido'], rows };
-      }
-      case 'financial': {
-        const rows = data.fin.filter((f) => matchesPeriod(f.paid_date || f.due_date || f.created_date, periodContext)).map((f) => [f.type === 'receivable' ? 'Receber' : 'Pagar', f.description, f.category || '', f.amount || 0, fmtDate(f.due_date), f.status]);
-        return { headers: ['Tipo', 'Descrição', 'Categoria', 'Valor', 'Vencimento', 'Status'], rows };
-      }
-      case 'sellers': {
-        const sellerMap = {};
-        cur.forEach((s) => {
-          const k = s.seller || 'Sem vendedor';
-          if (!sellerMap[k]) sellerMap[k] = { name: k, sales: 0, total: 0, profit: 0 };
-          sellerMap[k].sales++;
-          sellerMap[k].total += s.total || 0;
-          sellerMap[k].profit += s.profit || 0;
-        });
-        const rows = Object.values(sellerMap).sort((a, b) => b.total - a.total).map((s) => [s.name, s.sales, s.total, s.profit]);
-        return { headers: ['Vendedor', 'Vendas', 'Faturamento', 'Lucro'], rows };
-      }
-      default: return null;
-    }
-  }, [data, report, period]);
-
-  return (
-    <div className="mx-auto max-w-7xl px-5 py-8">
-      <PageHeader
-        title="Relatórios"
-        subtitle="Relatórios detalhados com filtros e exportação."
-      />
-
-      <div className="mb-5 flex flex-wrap gap-2">
-        {REPORTS.map((r) => (
-          <button
-            key={r.id}
-            onClick={() => setReport(r.id)}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${report === r.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
-          >
-            <r.icon className="h-3.5 w-3.5" /> {r.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
-          {[{ v: 'day', l: 'Hoje' }, { v: 'month', l: 'Mês' }, { v: 'year', l: 'Ano' }, { v: 'all', l: 'Tudo' }].map((p) => (
-            <button key={p.v} onClick={() => setPeriod(p.v)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${period === p.v ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>{p.l}</button>
-          ))}
-        </div>
-        {reportData && (
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => exportCSV(reportData.rows, reportData.headers, `relatorio-${report}`)}>
-              <Download className="mr-1.5 h-3.5 w-3.5" /> CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              const tableHtml = buildTableHtml(reportData.headers, reportData.rows);
-              exportPDF(`Relatório: ${REPORTS.find((r) => r.id === report)?.label}`, tableHtml);
-            }}>
-              <FileText className="mr-1.5 h-3.5 w-3.5" /> PDF
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {!reportData ? (
-          <div className="p-12 text-center text-sm text-slate-400">Carregando...</div>
-        ) : reportData.rows.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-sm font-medium text-slate-700">Sem dados para este relatório</p>
-            <p className="mt-1 text-xs text-slate-400">Tente outro período ou verifique se há registros.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-500">
-                  {reportData.headers.map((h, i) => <th key={i} className={`px-4 py-3 font-medium ${i >= 3 && i !== reportData.headers.length - 1 ? 'text-right' : ''}`}>{h}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {reportData.rows.map((r, i) => (
-                  <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    {r.map((c, j) => <td key={j} className={`px-4 py-3 ${j >= 3 && j !== r.length - 1 ? 'text-right' : ''} ${j === 0 ? 'font-medium text-slate-800' : 'text-slate-600'}`}>{typeof c === 'number' ? (c > 100 ? fmtMoney(c) : fmtNum(c)) : c}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  if (gate === 'loading') return <div className="mx-auto max-w-7xl px-5 py-8"><PageHeader title="Relatórios" subtitle="Validando o acesso aos relatórios avançados..." /><div className="mt-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-blue-600" /></div></div>;
+  if (gate !== 'allowed') return <div className="mx-auto max-w-3xl px-5 py-8"><PageHeader title="Relatórios" subtitle="Análises avançadas da operação." /><div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-6"><XCircle className="h-6 w-6 text-amber-600" /><h2 className="mt-3 text-lg font-semibold text-slate-900">Relatórios avançados disponíveis a partir do plano BUSINESS.</h2><p className="mt-1 text-sm text-slate-600">O acesso depende do entitlement da empresa e permanece bloqueado para planos sem autorização.</p></div></div>;
+  const metrics = view?.metrics; const comparison = metrics?.comparisons || {};
+  return <div className="mx-auto w-full max-w-[1760px] min-w-0 px-3 py-5 sm:px-5 sm:py-7 xl:px-8">
+    <PageHeader title="Relatórios" subtitle="Relatórios avançados com dados reais, filtros e exportação." />
+    <div className="mt-5 flex min-w-0 gap-2 overflow-x-auto border-b border-slate-200 pb-2" role="tablist" aria-label="Tipo de relatório">{REPORT_TABS.map((item) => <button key={item.id} type="button" role="tab" aria-selected={report === item.id} onClick={() => setReport(item.id)} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${report === item.id ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>{item.label}</button>)}</div>
+    <div className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-end lg:justify-between"><div className="flex min-w-0 gap-1 overflow-x-auto" role="group" aria-label="Período do relatório">{PERIODS.map((item) => <button key={item.v} type="button" onClick={() => setPeriod(item.v)} className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium ${period === item.v ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{item.l}</button>)}</div><div className="flex flex-wrap items-end gap-2">{period === 'custom' && <><label className="text-[11px] text-slate-500">Início<input aria-label="Data inicial" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-1 block rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label><label className="text-[11px] text-slate-500">Fim<input aria-label="Data final" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-1 block rounded-lg border border-slate-200 px-2 py-2 text-xs" /></label></>}{periodError && <span className="text-xs text-rose-600">{periodError}</span>}<Button variant="outline" size="sm" onClick={() => { setData(null); setAnalysis(null); setRefreshTick((value) => value + 1); }} disabled={loading}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Atualizar</Button></div></div>
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-wrap items-center gap-2"><Search className="h-4 w-4 text-slate-400" /><input aria-label="Buscar no relatório" value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} placeholder="Buscar no relatório..." className="min-w-[12rem] flex-1 border-0 text-sm outline-none" /><button type="button" onClick={clearFilters} disabled={!hasFilters} className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40">Limpar filtros</button></div><div className="mt-3 flex flex-wrap gap-2">{(report === 'sales' || report === 'customers') && <select aria-label="Cliente" value={filters.customerId} onChange={(event) => updateFilter('customerId', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todos os clientes</option>{options.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name || 'Cliente'}</option>)}</select>}{report === 'sales' && <><select aria-label="Vendedor" value={filters.seller} onChange={(event) => updateFilter('seller', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todos os vendedores</option>{options.sellers.map((seller) => <option key={seller}>{seller}</option>)}</select><select aria-label="Status da venda" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todos os status</option>{options.statuses.map((status) => <option key={status}>{status}</option>)}</select></>}{report === 'customers' && <select aria-label="Atividade do cliente" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todas as atividades</option><option value="new">Novos</option><option value="recurring">Recorrentes</option><option value="active">Ativos</option><option value="inactive">Inativos (90+ dias)</option></select>}{(report === 'products' || report === 'stock') && <><select aria-label="Categoria" value={filters.category} onChange={(event) => updateFilter('category', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todas as categorias</option>{options.categories.map((category) => <option key={category}>{category}</option>)}</select>{report === 'products' && <select aria-label="Status do produto" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todos os produtos</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select>}{report === 'stock' && <select aria-label="Situação do estoque" value={filters.stock} onChange={(event) => updateFilter('stock', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todas as situações</option><option value="normal">Normal</option><option value="baixo">Baixo</option><option value="zerado">Zerado</option></select>}</>}{report === 'financial' && <><select aria-label="Tipo financeiro" value={filters.type} onChange={(event) => updateFilter('type', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Receber e pagar</option><option value="receivable">A receber</option><option value="payable">A pagar</option></select><select aria-label="Status financeiro" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="">Todos os status</option>{options.financialStatuses.map((status) => <option key={status}>{status}</option>)}</select></>}{hasFilters && <span className="self-center text-[11px] text-blue-600">Filtros ativos</span>}</div></div>
+    {loading ? <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{[1, 2, 3, 4, 5].map((item) => <div key={item} className="h-24 animate-pulse rounded-2xl bg-slate-100" />)}</div> : error ? <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">{error}<button type="button" onClick={() => setRefreshTick((value) => value + 1)} className="ml-3 font-semibold underline">Tentar novamente</button></div> : view && <>
+      <div className="mt-5 grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="Faturamento" value={fmtMoney(metrics.sales.revenue)} hint="Vendas válidas no período" delta={comparison.revenue} /><MetricCard label="Vendas" value={fmtNum(metrics.sales.count)} hint="Canceladas ficam separadas" delta={comparison.sales} /><MetricCard label="Ticket médio" value={fmtMoney(metrics.sales.average_ticket)} delta={comparison.ticket} /><MetricCard label="Margem das vendas" value={`${finite(metrics.sales.margin).toFixed(1)}%`} hint="Lucro / faturamento" delta={comparison.margin} /><MetricCard label="Clientes ativos" value={fmtNum(metrics.customers.active)} hint="Com atividade no período" delta={comparison.customers} /></div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><div className="text-xs text-slate-500">{labelFor(report)} · {periodLabel(period)} · {view.count ? `${fmtNum(view.count)} registros` : 'sem registros'}{hasFilters ? ' · filtros aplicados' : ''}</div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={analyze} disabled={analysisLoading}><Sparkles className="mr-1.5 h-3.5 w-3.5" />{analysisLoading ? 'Analisando...' : 'Analisar com F7 Intelligence'}</Button>{view.rows.rows.length > 0 && <><Button variant="outline" size="sm" onClick={exportCSV}><Download className="mr-1.5 h-3.5 w-3.5" />CSV</Button><Button variant="outline" size="sm" onClick={exportPDF}><FileText className="mr-1.5 h-3.5 w-3.5" />PDF</Button></>}</div></div>
+      {analysis && <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-5"><div className="flex items-center gap-2 text-sm font-semibold text-indigo-900"><Sparkles className="h-4 w-4" />Análise interna assistida</div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{analysis.answer || 'Análise concluída sem observações adicionais.'}</p>{analysis.analysis?.recommendations?.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-600">{analysis.analysis.recommendations.map((item) => <li key={item}>{item}</li>)}</ul>}</div>}
+      {report === 'overview' ? <div className="mt-5 grid gap-4 lg:grid-cols-3"><SummaryBox title="Estoque crítico" value={metrics.products.critical} hint="Snapshot atual" /><SummaryBox title="Oportunidades abertas" value={metrics.opportunities.open} hint="Opportunity Radar" /><SummaryBox title="Projeção líquida de compromissos" value={metrics.finance.available ? fmtMoney(metrics.finance.projected_net) : 'Indisponível'} hint="A receber - a pagar; não é lucro ou saldo bancário" /></div> : <ReportTable headers={view.rows.headers} rows={view.rows.rows} />}
+    </>}
+  </div>;
 }
+
+function SummaryBox({ title, value, hint }) { return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-medium text-slate-500">{title}</p><p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p><p className="mt-1 text-xs text-slate-400">{hint}</p></div>; }
+function ReportTable({ headers, rows }) { return <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">{rows.length === 0 ? <div className="p-12 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-300" /><p className="mt-2 text-sm font-medium text-slate-700">Nenhum registro encontrado para os filtros selecionados.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead><tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-500">{headers.map((header) => <th key={header} className="whitespace-nowrap px-4 py-3 font-medium">{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${index}-${row[0]}`} className="border-b border-slate-50 hover:bg-slate-50/60">{row.map((cell, cellIndex) => <td key={cellIndex} className={`whitespace-nowrap px-4 py-3 ${typeof cell === 'number' ? 'text-right tabular-nums' : ''} ${cellIndex === 0 ? 'font-medium text-slate-800' : 'text-slate-600'}`}>{formatCell(cell, headers[cellIndex])}</td>)}</tr>)}</tbody></table></div>}</div>; }
+function periodLabel(period) { return PERIODS.find((item) => item.v === period)?.l || period; }
+function buildReportViewSafe(companyId, data, periodContext, report, filters) { try { return buildReportView(companyId, data, periodContext, report, filters); } catch { return null; } }
