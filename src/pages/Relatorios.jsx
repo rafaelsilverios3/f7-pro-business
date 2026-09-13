@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Download, FileText, BarChart3 } from 'lucide-react';
 import { reportsService } from '@/services/reportsService';
-import { fmtMoney, fmtDate, fmtNum, periodKey } from '@/lib/business';
+import { fmtMoney, fmtDate, fmtNum } from '@/lib/business';
+import { buildAbcRows, createPeriodContext, matchesPeriod } from '@/lib/metrics';
+import { buildPrintableHtml, buildTableHtml, serializeCsv } from '@/lib/exporters';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 
@@ -24,14 +26,16 @@ export default function Relatorios() {
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
 
+  const periodContext = useMemo(() => company ? createPeriodContext({ companyId: company.id, periodKey: period }) : null, [company, period]);
+
   const load = async () => {
     if (!company) return;
-    setData(await reportsService.load(company.id));
+    setData(await reportsService.load(company.id, periodContext));
   };
-  useEffect(() => { load(); }, [company]);
+  useEffect(() => { load(); }, [company, periodContext]);
 
   const exportCSV = (rows, headers, filename) => {
-    const csv = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
+    const csv = serializeCsv(headers, rows);
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -41,7 +45,7 @@ export default function Relatorios() {
 
   const exportPDF = (title, content) => {
     const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>${title}</title><style>body{font-family:sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:12px}th{background:#f5f5f5}h1{font-size:18px}</style></head><body><h1>${title}</h1>${content}</body></html>`);
+    win.document.write(buildPrintableHtml(title, content));
     win.document.close();
     win.print();
   };
@@ -49,7 +53,7 @@ export default function Relatorios() {
   const reportData = useMemo(() => {
     if (!data) return null;
     const validSales = data.sales.filter((s) => s.status !== 'cancelled');
-    const cur = validSales.filter((s) => periodKey(s.sale_date, period));
+    const cur = validSales.filter((s) => matchesPeriod(s.sale_date || s.created_at, periodContext));
 
     switch (report) {
       case 'sales': {
@@ -61,24 +65,11 @@ export default function Relatorios() {
         return { headers: ['Data', 'Cliente', 'Total', 'Custo', 'Lucro', 'Margem'], rows, total: cur.reduce((a, s) => a + (s.profit || 0), 0) };
       }
       case 'customers': {
-        const rows = data.customers.map((c) => [c.name, c.document || '', c.email || '', c.phone || '', c.status, c.classification?.toUpperCase(), c.total_purchased || 0, c.sale_count || 0]);
+        const rows = data.customers.filter((c) => matchesPeriod(c.created_date || c.created_at, periodContext)).map((c) => [c.name, c.document || '', c.email || '', c.phone || '', c.status, c.classification?.toUpperCase(), c.total_purchased || 0, c.sale_count || 0]);
         return { headers: ['Nome', 'Documento', 'E-mail', 'Telefone', 'Status', 'Classe', 'Total Comprado', 'Compras'], rows };
       }
       case 'abc': {
-        const prodMap = {};
-        validSales.forEach((s) => (s.items || []).forEach((i) => {
-          prodMap[i.name] = (prodMap[i.name] || 0) + (i.total || 0);
-        }));
-        const sorted = Object.entries(prodMap).sort((a, b) => b[1] - a[1]);
-        const total = sorted.reduce((s, [, v]) => s + v, 0);
-        let cum = 0;
-        const rows = sorted.map(([name, val]) => {
-          cum += val;
-          const pct = (val / total) * 100;
-          const cumPct = (cum / total) * 100;
-          const cls = cumPct <= 80 ? 'A' : cumPct <= 95 ? 'B' : 'C';
-          return [name, val, pct.toFixed(1) + '%', cumPct.toFixed(1) + '%', cls];
-        });
+        const rows = buildAbcRows(cur, periodContext).map((row) => [row.name, row.value, `${row.share.toFixed(1)}%`, `${row.cumulative_share.toFixed(1)}%`, row.classification]);
         return { headers: ['Produto', 'Faturamento', '%', '% Acumulado', 'Classe'], rows };
       }
       case 'products': {
@@ -86,15 +77,15 @@ export default function Relatorios() {
         return { headers: ['SKU', 'Nome', 'Categoria', 'Marca', 'Custo', 'Venda', 'Estoque', 'Mínimo', 'Status'], rows };
       }
       case 'stock': {
-        const rows = data.movements.map((m) => [fmtDate(m.created_date), m.product_name, m.type, m.quantity, m.reason || '']);
+        const rows = data.movements.filter((m) => matchesPeriod(m.created_date || m.created_at, periodContext)).map((m) => [fmtDate(m.created_date || m.created_at), m.product_name, m.type, m.quantity, m.reason || '']);
         return { headers: ['Data', 'Produto', 'Tipo', 'Qtd', 'Motivo'], rows };
       }
       case 'purchases': {
-        const rows = data.purchases.map((p) => [fmtDate(p.created_date), p.supplier_name, p.total || 0, p.status, fmtDate(p.expected_date), fmtDate(p.received_date)]);
+        const rows = data.purchases.filter((p) => matchesPeriod(p.created_date || p.created_at, periodContext)).map((p) => [fmtDate(p.created_date || p.created_at), p.supplier_name, p.total || 0, p.status, fmtDate(p.expected_date), fmtDate(p.received_date)]);
         return { headers: ['Data', 'Fornecedor', 'Total', 'Status', 'Previsão', 'Recebido'], rows };
       }
       case 'financial': {
-        const rows = data.fin.map((f) => [f.type === 'receivable' ? 'Receber' : 'Pagar', f.description, f.category || '', f.amount || 0, fmtDate(f.due_date), f.status]);
+        const rows = data.fin.filter((f) => matchesPeriod(f.paid_date || f.due_date || f.created_date, periodContext)).map((f) => [f.type === 'receivable' ? 'Receber' : 'Pagar', f.description, f.category || '', f.amount || 0, fmtDate(f.due_date), f.status]);
         return { headers: ['Tipo', 'Descrição', 'Categoria', 'Valor', 'Vencimento', 'Status'], rows };
       }
       case 'sellers': {
@@ -144,7 +135,7 @@ export default function Relatorios() {
               <Download className="mr-1.5 h-3.5 w-3.5" /> CSV
             </Button>
             <Button variant="outline" size="sm" onClick={() => {
-              const tableHtml = `<table><thead><tr>${reportData.headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${reportData.rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+              const tableHtml = buildTableHtml(reportData.headers, reportData.rows);
               exportPDF(`Relatório: ${REPORTS.find((r) => r.id === report)?.label}`, tableHtml);
             }}>
               <FileText className="mr-1.5 h-3.5 w-3.5" /> PDF

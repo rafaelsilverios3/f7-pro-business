@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Plus, Trash2, Trophy, Target, TrendingUp } from 'lucide-react';
-import { fmtMoney, periodKey } from '@/lib/business';
+import { fmtMoney } from '@/lib/business';
+import { createPeriodContext, matchesPeriod } from '@/lib/metrics';
 import { getCommissionSummary } from '@/lib/commissions';
 import { commissionsService } from '@/services/commissionsService';
 import { goalsService } from '@/services/goalsService';
@@ -14,6 +15,24 @@ import { Label } from '@/components/ui/label';
 
 const SCOPE_LABELS = { company: 'Empresa', team: 'Equipe', seller: 'Vendedor', category: 'Categoria', product: 'Produto' };
 const PERIOD_LABELS = { monthly: 'Mensal', quarterly: 'Trimestral', yearly: 'Anual' };
+
+function goalPeriodContext(companyId, goal) {
+  const value = String(goal.period_value || '').trim();
+  if (goal.period === 'yearly' && /^\d{4}$/.test(value)) return createPeriodContext({ companyId, periodKey: 'custom', startDate: `${value}-01-01`, endDate: `${value}-12-31` });
+  if (goal.period === 'quarterly') {
+    const match = value.match(/^(\d{4})-Q([1-4])$/);
+    if (match) {
+      const year = Number(match[1]); const first = (Number(match[2]) - 1) * 3 + 1;
+      const endMonth = first + 2; const lastDay = new Date(Date.UTC(year, endMonth, 0)).getUTCDate();
+      return createPeriodContext({ companyId, periodKey: 'custom', startDate: `${year}-${String(first).padStart(2, '0')}-01`, endDate: `${year}-${String(endMonth).padStart(2, '0')}-${lastDay}` });
+    }
+  }
+  if (goal.period === 'monthly' && /^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-').map(Number); const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return createPeriodContext({ companyId, periodKey: 'custom', startDate: `${value}-01`, endDate: `${value}-${String(lastDay).padStart(2, '0')}` });
+  }
+  return createPeriodContext({ companyId, periodKey: goal.period === 'yearly' ? 'year' : goal.period === 'quarterly' ? 'quarter' : 'month' });
+}
 
 export default function Metas() {
   const { company } = useOutletContext();
@@ -38,14 +57,17 @@ export default function Metas() {
   const goalProgress = useMemo(() => {
     if (!goals) return [];
     return goals.map((g) => {
+      const periodContext = goalPeriodContext(company.id, g);
+      const periodSales = sales.filter((s) => s.status !== 'cancelled' && matchesPeriod(s.sale_date || s.created_at, periodContext));
       let achieved = 0;
-      if (g.scope === 'company') {
-        achieved = sales.filter((s) => periodKey(s.sale_date, 'month')).reduce((sum, s) => sum + (s.total || 0), 0);
-      } else if (g.scope === 'seller') {
-        achieved = sales.filter((s) => s.seller === g.target_key && periodKey(s.sale_date, 'month')).reduce((sum, s) => sum + (s.total || 0), 0);
-      }
-      const pct = g.target_amount > 0 ? Math.min(100, (achieved / g.target_amount) * 100) : 0;
-      return { ...g, achieved, pct };
+      let available = true;
+      if (g.scope === 'company') achieved = periodSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+      else if (g.scope === 'seller') achieved = periodSales.filter((s) => s.seller === g.target_key).reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+      else if (g.scope === 'category') achieved = periodSales.reduce((sum, s) => sum + (s.items || []).filter((item) => item.category === g.target_key).reduce((itemSum, item) => itemSum + (Number(item.total) || 0), 0), 0);
+      else if (g.scope === 'product') achieved = periodSales.reduce((sum, s) => sum + (s.items || []).filter((item) => item.product_id === g.target_key || item.name === g.target_key).reduce((itemSum, item) => itemSum + (Number(item.total) || 0), 0), 0);
+      else available = false;
+      const pct = available && g.target_amount > 0 ? Math.min(100, (achieved / g.target_amount) * 100) : null;
+      return { ...g, achieved, pct, available };
     });
   }, [goals, sales]);
 
@@ -77,8 +99,8 @@ export default function Metas() {
             <div key={g.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${g.pct >= 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                    {g.pct >= 100 ? <Trophy className="h-4 w-4" /> : <Target className="h-4 w-4" />}
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${g.available && g.pct >= 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                    {g.available && g.pct >= 100 ? <Trophy className="h-4 w-4" /> : <Target className="h-4 w-4" />}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{SCOPE_LABELS[g.scope]}{g.target_key && g.target_key !== 'all' ? `: ${g.target_key}` : ''}</p>
@@ -90,7 +112,7 @@ export default function Metas() {
               <div className="mb-2 flex items-end justify-between">
                 <div>
                   <p className="text-[10px] text-slate-400">Atingido</p>
-                  <p className="text-lg font-bold text-slate-900">{fmtMoney(g.achieved)}</p>
+                <p className="text-lg font-bold text-slate-900">{g.available ? fmtMoney(g.achieved) : 'Indisponível'}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] text-slate-400">Meta</p>
@@ -100,10 +122,10 @@ export default function Metas() {
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                 <div
                   className={`h-full rounded-full transition-all ${g.pct >= 100 ? 'bg-emerald-500' : g.pct >= 50 ? 'bg-indigo-500' : 'bg-amber-500'}`}
-                  style={{ width: `${g.pct}%` }}
+                  style={{ width: `${g.available ? g.pct : 0}%` }}
                 />
               </div>
-              <p className="mt-1.5 text-right text-xs font-medium text-slate-600">{g.pct.toFixed(0)}%</p>
+              <p className="mt-1.5 text-right text-xs font-medium text-slate-600">{g.available ? `${g.pct.toFixed(0)}%` : 'Cálculo indisponível para este escopo'}</p>
             </div>
           ))}
         </div>

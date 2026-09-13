@@ -13,10 +13,12 @@ import { customersRepository } from '@/data/repositories/customersRepository';
 import { financeRepository } from '@/data/repositories/financeRepository';
 import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { getDataProvider } from '@/data/providerSelector';
-import { fmtMoney, fmtMoneyShort, fmtNum, periodKey, periodKeyPrev } from '@/lib/business';
+import { fmtMoney, fmtMoneyShort, fmtNum, periodKeyPrev } from '@/lib/business';
+import { buildEvolution, createPeriodContext } from '@/lib/metrics';
+import { getDashboardMetrics } from '@/services/metricsService';
 import { generateInsights } from '@/lib/intelligence';
 import KpiCard from '@/components/dashboard/KpiCard';
-import { subMonths, format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Target, GitBranch, Activity, Clock, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -77,35 +79,30 @@ export default function Dashboard() {
 
   const m = useMemo(() => {
     if (!data) return null;
+    const periodContext = createPeriodContext({ companyId: company.id, periodKey: period });
     const valid = data.sales.filter((s) => s.status !== 'cancelled');
-    const cur = valid.filter((s) => periodKey(s.sale_date, period));
+    const shared = getDashboardMetrics(company.id, data, periodContext);
+    const cur = shared.sales.rows;
     const prev = valid.filter((s) => periodKeyPrev(s.sale_date, period));
 
     const sumTotal = (arr) => arr.reduce((s, x) => s + (x.total || 0), 0);
     const sumProfit = (arr) => arr.reduce((s, x) => s + (x.profit || 0), 0);
 
-    const faturamento = sumTotal(cur);
+    const faturamento = shared.sales.revenue;
     const faturamentoPrev = sumTotal(prev);
-    const lucro = sumProfit(cur);
+    const lucro = shared.sales.profit;
     const lucroPrev = sumProfit(prev);
-    const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0;
+    const margem = shared.sales.margin;
     const margemPrev = faturamentoPrev > 0 ? (lucroPrev / faturamentoPrev) * 100 : 0;
     const numVendas = cur.length;
-    const ticketMedio = numVendas > 0 ? faturamento / numVendas : 0;
+    const ticketMedio = shared.sales.average_ticket;
 
-    const despesas = data.fin
-      .filter((f) => f.type === 'payable' && f.status === 'paid' && periodKey(f.paid_date || f.due_date, period))
-      .reduce((s, f) => s + (f.amount || 0), 0);
+    const despesas = shared.finance.expenses;
+    const contasReceber = shared.finance.receivable;
+    const contasPagar = shared.finance.payable;
 
-    const contasReceber = data.fin
-      .filter((f) => f.type === 'receivable' && f.status !== 'paid' && f.status !== 'cancelled')
-      .reduce((s, f) => s + (f.amount || 0), 0);
-    const contasPagar = data.fin
-      .filter((f) => f.type === 'payable' && f.status !== 'paid' && f.status !== 'cancelled')
-      .reduce((s, f) => s + (f.amount || 0), 0);
-
-    const novosClientes = data.customers.filter((c) => periodKey(c.created_date || c.created_at, period)).length;
-    const estoqueCritico = data.products.filter((p) => (p.stock || 0) <= (p.min_stock ?? p.minimum_stock ?? 0)).length;
+    const novosClientes = shared.customers.created;
+    const estoqueCritico = shared.products.critical;
 
     // Produtos mais vendidos
     const prodMap = {};
@@ -125,22 +122,7 @@ export default function Dashboard() {
     });
     const topVendedores = Object.entries(sellerMap).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5);
 
-    // Evolução 6 meses
-    const evolucao = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = subMonths(new Date(), i);
-      const start = startOfMonth(d);
-      const end = endOfMonth(d);
-      const monthSales = valid.filter((s) => {
-        if (!s.sale_date) return false;
-        try { return isWithinInterval(parseISO(s.sale_date), { start, end }); } catch { return false; }
-      });
-      evolucao.push({
-        mes: format(d, 'MMM', { locale: ptBR }),
-        faturamento: monthSales.reduce((s, x) => s + (x.total || 0), 0),
-        lucro: monthSales.reduce((s, x) => s + (x.profit || 0), 0),
-      });
-    }
+    const evolucao = buildEvolution(valid, periodContext);
 
     const pct = (a, b) => (b > 0 ? ((a - b) / b) * 100 : a > 0 ? 100 : 0);
 
@@ -153,17 +135,11 @@ export default function Dashboard() {
     });
 
     // Funil CRM
-    const funnel = {
-      leads: data.customers.filter((c) => c.status === 'lead').length,
-      ativos: data.customers.filter((c) => c.status === 'active').length,
-      oportunidades: (data.opportunities || []).filter((o) => !['won', 'lost'].includes(o.stage)).length,
-      vendas: cur.length,
-    };
+    const funnel = shared.funnel;
 
     // Projeção de faturamento
-    const dayOfMonth = new Date().getDate();
-    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-    const projecao = dayOfMonth > 0 ? (faturamento / dayOfMonth) * daysInMonth : 0;
+    const projection = shared.projection;
+    const projecao = projection.value;
 
     // Fluxo de caixa projetado (receber - pagar)
     const fluxoCaixa = contasReceber - contasPagar;
@@ -181,7 +157,7 @@ export default function Dashboard() {
       faturamento, lucro, margem, despesas, contasReceber, contasPagar,
       ticketMedio, numVendas, novosClientes, estoqueCritico,
       topProdutos, topVendedores, evolucao,
-      goalProgress, funnel, projecao, fluxoCaixa, recentActivity,
+      goalProgress, funnel, projecao, projectionLabel: projection.label, fluxoCaixa, recentActivity,
       insights: data.insights || [],
       opportunities: data.opportunities || [],
       trends: {
@@ -190,7 +166,7 @@ export default function Dashboard() {
         margem: margem - margemPrev,
       },
     };
-  }, [data, period]);
+  }, [data, period, company?.id]);
 
   if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={() => window.location.reload()}>Tentar novamente</button></div>;
   if (!m) return <div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-800" /></div>;
@@ -232,7 +208,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <KpiCard primary label="Faturamento" value={fmtMoney(m.faturamento)} icon={DollarSign} trend={m.trends.faturamento} accent="bg-blue-500/15 text-blue-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#3aa0ff" />
         <KpiCard primary label="Lucro" value={fmtMoney(m.lucro)} icon={TrendingUp} trend={m.trends.lucro} accent="bg-emerald-500/15 text-emerald-300" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#20d49a" />
-        <KpiCard primary label="Margem" value={`${m.margem.toFixed(1)}%`} icon={TrendingUp} trend={m.trends.margem} accent="bg-violet-500/15 text-violet-300" sub="margem líquida" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#9b70ff" />
+        <KpiCard primary label="Margem das vendas" value={`${m.margem.toFixed(1)}%`} icon={TrendingUp} trend={m.trends.margem} accent="bg-violet-500/15 text-violet-300" sub="lucro das vendas / faturamento" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#9b70ff" />
         <KpiCard primary label="Despesas" value={fmtMoney(m.despesas)} icon={Wallet} accent="bg-rose-500/15 text-rose-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#ff647c" />
         <KpiCard label="Contas a Receber" value={fmtMoney(m.contasReceber)} icon={Wallet} accent="bg-amber-500/15 text-amber-300" />
         <KpiCard label="Contas a Pagar" value={fmtMoney(m.contasPagar)} icon={Wallet} accent="bg-orange-500/15 text-orange-300" />
@@ -423,16 +399,16 @@ export default function Dashboard() {
           </div>
           <div className="space-y-3">
             <div className="rounded-lg bg-indigo-50 p-3">
-              <p className="text-xs text-indigo-500">Projeção de fechamento do mês</p>
+              <p className="text-xs text-indigo-500">{m.projectionLabel}</p>
               <p className="mt-1 text-lg font-bold text-indigo-700">{fmtMoney(m.projecao)}</p>
               <p className="text-[10px] text-indigo-400">Baseado no ritmo atual de {fmtMoney(m.faturamento)}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-xs text-slate-500">Fluxo de caixa projetado</p>
+              <p className="text-xs text-slate-500">Projeção líquida de compromissos</p>
               <p className={`mt-1 text-lg font-bold ${m.fluxoCaixa >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                 {m.fluxoCaixa >= 0 ? '+' : ''}{fmtMoney(m.fluxoCaixa)}
               </p>
-              <p className="text-[10px] text-slate-400">A receber ({fmtMoneyShort(m.contasReceber)}) - A pagar ({fmtMoneyShort(m.contasPagar)})</p>
+              <p className="text-[10px] text-slate-400">A receber ({fmtMoneyShort(m.contasReceber)}) - A pagar ({fmtMoneyShort(m.contasPagar)}); não representa caixa realizado.</p>
             </div>
           </div>
         </div>

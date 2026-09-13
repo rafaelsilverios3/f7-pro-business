@@ -1,9 +1,10 @@
 import { base44 } from '@/api/base44Client';
-import { format, parseISO, isAfter, isBefore, subMonths, startOfMonth, endOfMonth, startOfDay, endOfDay, startOfYear, endOfYear } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { createCommissionsForSale, reverseCommissionsForSale } from '@/lib/commissions';
 import { runAutomations } from '@/lib/automations';
 import { ptBR } from 'date-fns/locale';
 import { calculateSaleTotals, roundMoney } from '@/lib/calculations';
+import { createPeriodContext, matchesPeriod } from '@/lib/metrics';
 
 export const fmtMoney = (v) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
@@ -25,40 +26,22 @@ export const fmtDate = (d) => {
 
 export const todayISO = () => new Date().toISOString().slice(0, 10);
 
-const inRange = (dStr, start, end) => {
-  if (!dStr) return false;
-  try {
-    const d = parseISO(dStr);
-    return (isAfter(d, start) || d.getTime() === start.getTime()) &&
-           (isBefore(d, end) || d.getTime() === end.getTime());
-  } catch { return false; }
-};
-
 export function periodKey(saleDate, period) {
-  if (!saleDate) return false;
-  const now = new Date();
-  if (period === 'day') return inRange(saleDate, startOfDay(now), endOfDay(now));
-  if (period === 'month') return inRange(saleDate, startOfMonth(now), endOfMonth(now));
-  if (period === 'year') return inRange(saleDate, startOfYear(now), endOfYear(now));
-  return false;
+  if (period === 'all') return Boolean(saleDate);
+  try { return matchesPeriod(saleDate, createPeriodContext({ companyId: '__legacy__', periodKey: period })); } catch { return false; }
 }
 
 export function periodKeyPrev(saleDate, period) {
-  if (!saleDate) return false;
+  if (!saleDate || period === 'all') return false;
   const now = new Date();
-  if (period === 'day') {
-    const prev = new Date(now); prev.setDate(prev.getDate() - 1);
-    return inRange(saleDate, startOfDay(prev), endOfDay(prev));
-  }
-  if (period === 'month') {
-    const prev = subMonths(now, 1);
-    return inRange(saleDate, startOfMonth(prev), endOfMonth(prev));
-  }
-  if (period === 'year') {
-    const prev = new Date(now.getFullYear() - 1, 0, 1);
-    return inRange(saleDate, startOfYear(prev), endOfYear(prev));
-  }
-  return false;
+  const current = createPeriodContext({ companyId: '__legacy__', periodKey: period, now });
+  if (!current.start_date || !current.end_date) return false;
+  const start = new Date(`${current.start_date}T12:00:00Z`);
+  const end = new Date(`${current.end_date}T12:00:00Z`);
+  const days = Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+  const previousEnd = new Date(start); previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+  const previousStart = new Date(previousEnd); previousStart.setUTCDate(previousStart.getUTCDate() - days + 1);
+  return matchesPeriod(saleDate, { period_key: 'custom', start_date: previousStart.toISOString().slice(0, 10), end_date: previousEnd.toISOString().slice(0, 10), timezone: current.timezone });
 }
 
 // Cria uma venda e integra estoque, financeiro e cliente automaticamente

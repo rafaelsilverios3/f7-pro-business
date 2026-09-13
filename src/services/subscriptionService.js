@@ -10,6 +10,7 @@ export const FEATURE_REQUIREMENTS = {
   '/atendimento': ['BUSINESS', 'Smart Atendimento', 'atendimento'],
   '/market-intelligence': ['BUSINESS', 'Market Intelligence', 'advanced_reports'],
   '/sales-hub': ['BUSINESS', 'F7 Sales Hub', 'advanced_reports'],
+  '/relatorios': ['BUSINESS', 'Relatórios avançados', 'advanced_reports'],
 };
 
 export async function loadSubscription(companyId) {
