@@ -131,6 +131,9 @@ test('checkout reuses open intent and webhook validates money before activation'
 
 test('billing health never returns provider secrets and radar is gated server-side', () => {
   assert.match(billingHealth, /access_token_configured/);
+  assert.match(billingHealth, /users\/me/);
+  assert.match(billingHealth, /environment_confirmed/);
+  assert.match(billingHealth, /credential_environment/);
   assert.doesNotMatch(billingHealth, /MERCADO_PAGO_ACCESS_TOKEN[^\n]*(?:return|json)/);
   assert.match(radarService, /company_has_feature/);
   assert.match(radarService, /FEATURE_NOT_AVAILABLE/);
