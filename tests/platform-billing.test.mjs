@@ -43,6 +43,8 @@ test('PIX exposes provider evidence and payment activation only comes from webho
   assert.match(webhook, /billing_webhook_events/);
   assert.match(webhook, /duplicate/);
   assert.match(webhook, /status === 'approved'/);
+  assert.match(webhook, /billing_period/);
+  assert.doesNotMatch(webhook, /30 \* 86_400_000/);
 });
 
 test('billing authorization and tenant ownership are checked server-side', () => {
