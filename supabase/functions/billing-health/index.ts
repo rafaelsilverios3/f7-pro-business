@@ -9,6 +9,9 @@ Deno.serve(async (req) => {
     const { data } = await sb.auth.getUser(jwt);
     if (!data?.user) return json({ code: 'AUTH_REQUIRED' }, 401);
     const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
+    const configuredEnvironment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
+    const validEnvironment = configuredEnvironment === 'test' || configuredEnvironment === 'production';
+    const environmentConflict = !validEnvironment;
     let providerReachable = false;
     let providerUser: any = null;
     if (token) {
@@ -17,17 +20,29 @@ Deno.serve(async (req) => {
       providerUser = response.ok ? await response.json().catch(() => null) : null;
     }
     const isTestUser = Array.isArray(providerUser?.tags) && providerUser.tags.includes('test_user');
+    const webhookSecretConfigured = Boolean(Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET'));
+    const sandboxAllowed = configuredEnvironment === 'test' && validEnvironment && providerReachable && webhookSecretConfigured && !environmentConflict;
     return json({
       provider: 'mercado_pago',
-      environment: Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || 'test',
+      configured: Boolean(token && webhookSecretConfigured),
+      environment: configuredEnvironment || 'unconfigured',
+      configured_environment: validEnvironment ? configuredEnvironment : null,
       access_token_configured: Boolean(token),
-      webhook_secret_configured: Boolean(Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET')),
+      webhook_secret_configured: webhookSecretConfigured,
       provider_reachable: providerReachable,
-      credential_environment: isTestUser ? 'sandbox' : 'unconfirmed',
-      environment_confirmed: isTestUser,
+      credential_environment: validEnvironment ? configuredEnvironment : 'unconfirmed',
+      environment_confirmed: sandboxAllowed,
+      environment_conflict: environmentConflict,
+      environment_evidence: [
+        validEnvironment ? `server_config=${configuredEnvironment}` : 'server_config=invalid_or_missing',
+        `provider_api_reachable=${providerReachable}`,
+        `provider_test_user=${isTestUser}`,
+        `webhook_secret_configured=${webhookSecretConfigured}`,
+      ],
       provider_user_id: providerUser?.id || null,
       provider_site_id: providerUser?.site_id || null,
-      pix_enabled: Boolean(token && isTestUser),
+      pix_allowed: sandboxAllowed,
+      pix_enabled: sandboxAllowed,
       card_enabled: false,
     });
   } catch (cause) {

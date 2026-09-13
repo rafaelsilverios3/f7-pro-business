@@ -141,6 +141,12 @@ test('billing health never returns provider secrets and radar is gated server-si
   assert.match(billingHealth, /users\/me/);
   assert.match(billingHealth, /environment_confirmed/);
   assert.match(billingHealth, /credential_environment/);
+  assert.match(billingHealth, /MERCADO_PAGO_ENVIRONMENT/);
+  assert.match(billingHealth, /configured_environment/);
+  assert.match(billingHealth, /pix_allowed/);
+  assert.match(checkout, /MERCADO_PAGO_PRODUCTION_BLOCKED/);
+  assert.match(checkout, /MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED/);
+  assert.doesNotMatch(billingHealth, /isTestUser\s*\)/);
   assert.doesNotMatch(billingHealth, /MERCADO_PAGO_ACCESS_TOKEN[^\n]*(?:return|json)/);
   assert.match(radarService, /company_has_feature/);
   assert.match(radarService, /FEATURE_NOT_AVAILABLE/);
