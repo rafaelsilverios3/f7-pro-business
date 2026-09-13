@@ -33,7 +33,10 @@ Deno.serve(async (req) => {
     if (plan.price_minor == null) return json({ code: 'PLAN_PRICE_NOT_CONFIGURED', message: 'O preço deste plano ainda não foi definido.' }, 409);
     if (plan.code === 'free') return json({ code: 'FREE_PLAN_NO_PAYMENT_REQUIRED', plan });
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
-    if (environment !== 'test') return json({ code: environment === 'production' ? 'MERCADO_PAGO_PRODUCTION_BLOCKED' : 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
+    const validEnvironment = environment === 'test' || environment === 'production';
+    if (!validEnvironment) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
+    const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
+    if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
     if (!Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET')) return json({ code: 'MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED' }, 409);
     const { data: existing } = await sb.from('billing_checkout_sessions').select('id,company_id,plan_id,method,amount_minor,status,expires_at,provider_order_id,provider_payment_id').eq('company_id', companyId).eq('user_id', userData.user.id).eq('plan_id', plan.id).eq('method', method).in('status', ['created', 'pending']).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (existing?.status === 'pending' && (existing.provider_order_id || existing.provider_payment_id)) return json({ code: 'OK', reused: true, checkout: existing, status: 'pending' });

@@ -232,11 +232,33 @@ test('billing health never returns provider secrets and radar is gated server-si
   assert.match(billingHealth, /MERCADO_PAGO_ENVIRONMENT/);
   assert.match(billingHealth, /configured_environment/);
   assert.match(billingHealth, /pix_allowed/);
-  assert.match(checkout, /MERCADO_PAGO_PRODUCTION_BLOCKED/);
+  assert.match(checkout, /MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED/);
+  assert.match(checkout, /PRODUCTION_PAYMENTS_DISABLED/);
   assert.match(checkout, /MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED/);
   assert.doesNotMatch(billingHealth, /isTestUser\s*\)/);
   assert.doesNotMatch(billingHealth, /MERCADO_PAGO_ACCESS_TOKEN[^\n]*(?:return|json)/);
   assert.match(radarService, /company_has_feature/);
   assert.match(radarService, /FEATURE_NOT_AVAILABLE/);
   assert.match(subscriptionService, /trial_ends_at/);
+});
+
+test('production billing is server-controlled and fail-closed without creating an order', () => {
+  assert.match(checkout, /const productionPaymentsEnabled = .*MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED/);
+  assert.match(checkout, /environment === 'production' && !productionPaymentsEnabled/);
+  assert.match(checkout, /code: 'PRODUCTION_PAYMENTS_DISABLED'/);
+  const guardIndex = checkout.indexOf("code: 'PRODUCTION_PAYMENTS_DISABLED'");
+  const fetchIndex = checkout.indexOf("fetch(providerUrl");
+  assert.ok(guardIndex >= 0 && guardIndex < fetchIndex, 'production gate must run before POST /v1/orders');
+  assert.match(checkout, /const isTest = environment === 'test'/);
+  assert.doesNotMatch(checkout, /import\.meta\.env|localStorage.*MERCADO_PAGO|window\..*MERCADO_PAGO/);
+});
+
+test('billing health reports production readiness without enabling payments by default', () => {
+  for (const field of ['configured_environment', 'provider_reachable', 'credentials_configured', 'webhook_secret_configured', 'payments_enabled', 'production_payments_enabled']) {
+    assert.match(billingHealth, new RegExp(`${field}:`));
+  }
+  assert.match(billingHealth, /productionReady/);
+  assert.match(billingHealth, /configuredEnvironment === 'test' \? sandboxAllowed : productionReady && productionPaymentsEnabled/);
+  assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_ACCESS_TOKEN/);
+  assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_WEBHOOK_SECRET/);
 });

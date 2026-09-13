@@ -12,6 +12,7 @@ Deno.serve(async (req) => {
     const configuredEnvironment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
     const validEnvironment = configuredEnvironment === 'test' || configuredEnvironment === 'production';
     const environmentConflict = !validEnvironment;
+    const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
     let providerReachable = false;
     let providerUser: any = null;
     if (token) {
@@ -22,14 +23,19 @@ Deno.serve(async (req) => {
     const isTestUser = Array.isArray(providerUser?.tags) && providerUser.tags.includes('test_user');
     const webhookSecretConfigured = Boolean(Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET'));
     const sandboxAllowed = configuredEnvironment === 'test' && validEnvironment && providerReachable && webhookSecretConfigured && !environmentConflict;
+    const productionReady = configuredEnvironment === 'production' && validEnvironment && providerReachable && webhookSecretConfigured;
+    const paymentsEnabled = configuredEnvironment === 'test' ? sandboxAllowed : productionReady && productionPaymentsEnabled;
     return json({
       provider: 'mercado_pago',
       configured: Boolean(token && webhookSecretConfigured),
       environment: configuredEnvironment || 'unconfigured',
       configured_environment: validEnvironment ? configuredEnvironment : null,
       access_token_configured: Boolean(token),
+      credentials_configured: Boolean(token),
       webhook_secret_configured: webhookSecretConfigured,
       provider_reachable: providerReachable,
+      production_payments_enabled: productionPaymentsEnabled,
+      payments_enabled: paymentsEnabled,
       credential_environment: validEnvironment ? configuredEnvironment : 'unconfirmed',
       environment_confirmed: sandboxAllowed,
       environment_conflict: environmentConflict,
@@ -41,8 +47,8 @@ Deno.serve(async (req) => {
       ],
       provider_user_id: providerUser?.id || null,
       provider_site_id: providerUser?.site_id || null,
-      pix_allowed: sandboxAllowed,
-      pix_enabled: sandboxAllowed,
+      pix_allowed: paymentsEnabled,
+      pix_enabled: paymentsEnabled,
       card_enabled: false,
     });
   } catch (cause) {
