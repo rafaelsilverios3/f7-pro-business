@@ -1,0 +1,10 @@
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { billingService } from '@/services/billingService';
+
+export default function TrialExpired() {
+  const [plans, setPlans] = useState([]);
+  useEffect(() => { billingService.listPlans().then((items) => setPlans(items.filter((plan) => plan.code !== 'free'))); }, []);
+  const money = (minor, currency = 'BRL') => minor == null ? 'Preço a definir' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(minor) / 100);
+  return <div className="flex min-h-screen items-center justify-center bg-slate-950 p-5"><main className="w-full max-w-4xl rounded-3xl border border-slate-700 bg-[#0e1a2b] p-6 text-white shadow-2xl sm:p-10"><p className="text-xs font-semibold uppercase tracking-[.2em] text-blue-300">F7 Business</p><h1 className="mt-3 text-3xl font-semibold sm:text-4xl">Seu teste gratuito terminou</h1><p className="mt-4 max-w-2xl leading-7 text-slate-300">Obrigado por experimentar o F7 Business. Para continuar utilizando a plataforma, escolha o plano que mais combina com a sua empresa.</p><div className="mt-8 grid gap-4 md:grid-cols-3">{plans.map((plan) => <article key={plan.code} className={`rounded-2xl border p-5 ${plan.highlighted ? 'border-blue-400 bg-blue-500/10' : 'border-slate-700'}`}><div className="flex items-center justify-between"><h2 className="font-semibold">{plan.name}</h2>{plan.highlighted && <span className="rounded-full bg-blue-400/20 px-2 py-1 text-[10px] text-blue-200">Mais escolhido</span>}</div><p className="mt-4 text-2xl font-bold">{money(plan.price_minor, plan.currency)}<span className="text-xs font-normal text-slate-400"> / mês</span></p><Link to={`/checkout?plan=${plan.code}`} className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-semibold hover:bg-blue-400">Escolher {plan.name}</Link></article>)}</div><p className="mt-8 text-center text-xs text-slate-500">Seus produtos, clientes, vendas e configurações foram preservados.</p></main></div>;
+}

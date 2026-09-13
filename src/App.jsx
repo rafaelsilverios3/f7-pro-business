@@ -48,16 +48,30 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import Invite from './pages/Invite.jsx';
 import Checkout from './pages/Checkout.jsx';
 import SubscriptionBilling from './pages/SubscriptionBilling.jsx';
+import TrialExpired from './pages/TrialExpired.jsx';
+import FeatureLocked from './pages/FeatureLocked.jsx';
 import PublicSite from './pages/PublicSite.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 import { can } from '@/lib/permissions';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { loadSubscription, trialActive, trialExpired, TRIAL_ALLOWED_PATHS, FEATURE_REQUIREMENTS } from '@/services/subscriptionService';
+import { canUseFeature } from '@/services/planService';
 
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
+  const location = useLocation();
+  const [subscription, setSubscription] = React.useState(null);
+  const [subscriptionLoading, setSubscriptionLoading] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase');
+  React.useEffect(() => { let cancelled = false; if (!company?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setSubscriptionLoading(false); return undefined; } setSubscriptionLoading(true); loadSubscription(company.id).then((result) => { if (!cancelled) setSubscription(result); }).catch(() => { if (!cancelled) setSubscription(null); }).finally(() => { if (!cancelled) setSubscriptionLoading(false); }); return () => { cancelled = true; }; }, [company?.id]);
   if (loading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
-  return company ? <Outlet context={{ company }} /> : <Navigate to="/onboarding" replace />;
+  if (subscriptionLoading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
+  if (!company) return <Navigate to="/onboarding" replace />;
+  if (trialExpired(subscription) && !['/assinatura', '/checkout'].includes(location.pathname)) return <TrialExpired />;
+  if (trialActive(subscription) && !TRIAL_ALLOWED_PATHS.includes(location.pathname)) return <FeatureLocked path={location.pathname} />;
+  const requirement = FEATURE_REQUIREMENTS[location.pathname];
+  if (subscription?.status === 'active' && requirement && !canUseFeature(subscription.plan, requirement[2])) return <FeatureLocked path={location.pathname} />;
+  return <Outlet context={{ company, subscription }} />;
 };
 
 function Forbidden() {

@@ -57,7 +57,7 @@ export async function checkIntegrationHealth(companyId) {
   return data;
 }
 
-export async function invokeEdgeFunction(functionName, body) {
+export async function invokeEdgeFunction(functionName, body, options = {}) {
   if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
     return getDataProvider().rpc(functionName, { body });
   }
@@ -70,14 +70,15 @@ export async function invokeEdgeFunction(functionName, body) {
   const publicKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   if (!supabaseUrl || !publicKey) throw new Error('Supabase não configurado.');
 
+  const method = options.method || 'POST';
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${functionName}`, {
-    method: 'POST',
+    method,
     headers: {
       Authorization: `Bearer ${session.access_token}`,
       apikey: publicKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body),
+    ...(method === 'GET' ? {} : { body: JSON.stringify(body) }),
   });
   let detail = null;
   try { detail = await response.json(); } catch { /* non-JSON provider errors remain generic */ }

@@ -2,6 +2,18 @@ import { createRepository } from '@/data/repositoryFactory';
 import { classifyRadarRisk } from '@/lib/opportunityRadar';
 import { buildCommercialIntelligenceReport } from '@/lib/commercialIntelligence';
 import { detectRadarSignals, toRadarOpportunity, RADAR_EVENT_TYPES } from '@/lib/opportunityRadarDetectors';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+
+async function ensureRadarAllowed(companyId) {
+  if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return;
+  const { data, error } = await getSupabaseClient().rpc('company_has_feature', { target_company: companyId, feature: 'opportunity_radar' });
+  if (error) throw error;
+  if (!data) {
+    const blocked = new Error('FEATURE_NOT_AVAILABLE');
+    blocked.code = 'FEATURE_NOT_AVAILABLE';
+    throw blocked;
+  }
+}
 
 const opportunities = createRepository('ProductOpportunity');
 const market = createRepository('MarketOpportunity');
@@ -30,10 +42,12 @@ const enrich = (item, marketRows, signalRows, supplierRows, supplierRiskRows, ch
 
 export const opportunityRadarService = {
   async list(companyId) {
+    await ensureRadarAllowed(companyId);
     const [items, marketRows, signalRows, supplierRows, supplierRiskRows, channelRows] = await Promise.all([opportunities.list(companyId, '-created_date'), market.list(companyId, '-created_date'), signals.list(companyId, '-created_date'), suppliers.list(companyId, '-created_date'), supplierRiskSignals.list(companyId, '-created_date'), channels.list(companyId, 'name')]);
     return items.map((item) => enrich(item, marketRows, signalRows, supplierRows, supplierRiskRows, channelRows));
   },
   async scan(companyId, now = new Date()) {
+    await ensureRadarAllowed(companyId);
     const [customerRows, productRows, saleRows, existing] = await Promise.all([customers.list(companyId, '-created_date'), products.list(companyId, '-created_date'), sales.list(companyId, '-sale_date'), opportunities.list(companyId, '-created_date')]);
     const events = [{ type: RADAR_EVENT_TYPES[0], at: new Date(now).toISOString() }];
     const detected = detectRadarSignals({ companyId, customers: customerRows, products: productRows, sales: saleRows, now });
@@ -63,6 +77,7 @@ export const opportunityRadarService = {
     return { ...result, total: detected.length, events };
   },
   async update(companyId, id, data = {}) {
+    await ensureRadarAllowed(companyId);
     const current = await opportunities.get(id, companyId); const metadata = { ...(current.metadata || {}) };
     if (data.radar_state) metadata.radar_state = data.radar_state;
     if (data.snooze_until !== undefined) metadata.snooze_until = data.snooze_until;

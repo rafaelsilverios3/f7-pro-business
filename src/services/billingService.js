@@ -20,6 +20,7 @@ export const billingService = {
     } catch { return FALLBACK_PLANS; }
   },
   createCheckout: (companyId, planCode, method = 'pix') => invokeEdgeFunction('billing-checkout', { company_id: companyId, plan_code: planCode, method }),
+  health: () => invokeEdgeFunction('billing-health', null, { method: 'GET' }),
 };
 
 export { FALLBACK_PLANS };

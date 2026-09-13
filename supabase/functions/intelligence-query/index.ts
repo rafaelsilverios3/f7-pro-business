@@ -166,6 +166,14 @@ Deno.serve(async (req) => {
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle();
     if (!member?.active || !ALLOWED_ROLES.has(member.role)) return json({ code: 'FORBIDDEN' }, 403);
     const mode: IntelligenceMode = classifyIntelligenceMode(query, history.map((item: any) => item.mode).filter(Boolean));
+    const { data: intelligenceAllowed, error: intelligenceGateError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'intelligence' });
+    if (intelligenceGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
+    if (!intelligenceAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'F7 Intelligence está disponível a partir do plano PRO.' }, 403);
+    if (mode !== 'internal') {
+      const { data: externalAllowed, error: externalGateError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'external_product_intelligence' });
+      if (externalGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
+      if (!externalAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'Pesquisa externa está disponível a partir do plano BUSINESS.' }, 403);
+    }
     await recordRun(sb, companyId, traceId, { current_stage: 'REQUEST_RECEIVED', status: 'running', provider: mode === 'internal' ? 'internal' : null, started_at: new Date(started).toISOString() });
     await recordEvent(sb, companyId, traceId, 'INTENT_CLASSIFIED', 'success', { mode });
     const [productsResult, customersResult, salesResult, settingsResult] = await Promise.all([

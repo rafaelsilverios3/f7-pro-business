@@ -14,6 +14,13 @@ const subscriptionPage = fs.readFileSync('src/pages/SubscriptionBilling.jsx', 'u
 const planService = fs.readFileSync('src/services/planService.js', 'utf8');
 const featureGate = fs.readFileSync('src/services/featureGate.js', 'utf8');
 const commercialMigration = fs.readFileSync('supabase/migrations/0065_platform_plan_catalog.sql', 'utf8');
+const trialMigration = fs.readFileSync('supabase/migrations/0066_trial_lifecycle.sql', 'utf8');
+const intelligenceEdge = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
+const supplierEdge = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
+const automationEdge = fs.readFileSync('supabase/functions/automation-worker/index.ts', 'utf8');
+const billingHealth = fs.readFileSync('supabase/functions/billing-health/index.ts', 'utf8');
+const radarService = fs.readFileSync('src/services/opportunityRadarService.js', 'utf8');
+const subscriptionService = fs.readFileSync('src/services/subscriptionService.js', 'utf8');
 
 test('billing foundation separates plans, subscriptions, payments, checkouts and webhook events', () => {
   for (const table of ['plans', 'plan_features', 'billing_customers', 'billing_payments', 'billing_checkout_sessions', 'billing_webhook_events']) assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
@@ -92,4 +99,40 @@ test('official commercial catalog keeps prices and Business highlight server-sid
   assert.match(site, /Mais escolhido/);
   assert.match(page, /Preço a definir|money\(plan\.price_minor/);
   assert.match(subscriptionPage, /Preço:/);
+});
+
+test('premium modules fail closed server-side during trial or on an insufficient plan', () => {
+  assert.match(intelligenceEdge, /company_has_feature.*intelligence/);
+  assert.match(intelligenceEdge, /external_product_intelligence/);
+  assert.match(supplierEdge, /company_has_feature.*supplier_intelligence/);
+  assert.match(automationEdge, /company_has_feature.*automations/);
+  for (const source of [intelligenceEdge, supplierEdge, automationEdge]) assert.match(source, /FEATURE_NOT_AVAILABLE/);
+});
+
+test('trial starts once for 24 hours, expires server-side and preserves data', () => {
+  assert.match(trialMigration, /trial_started_at/);
+  assert.match(trialMigration, /trial_used boolean/);
+  assert.match(trialMigration, /interval '24 hours'/);
+  assert.match(trialMigration, /sync_company_trial/);
+  assert.match(trialMigration, /status = 'expired'/);
+  assert.match(trialMigration, /company_has_feature/);
+  assert.match(trialMigration, /status in \('trial','active','past_due','cancelled','suspended','expired'\)/);
+});
+
+test('checkout reuses open intent and webhook validates money before activation', () => {
+  assert.match(checkout, /billing_checkout_sessions.*select/);
+  assert.match(checkout, /in\('status', \['created', 'pending'\]\)/);
+  assert.match(checkout, /reused: true/);
+  assert.match(webhook, /PAYMENT_AMOUNT_MISMATCH/);
+  assert.match(webhook, /transaction_amount/);
+  assert.match(webhook, /currency_id/);
+  assert.match(webhook, /PAYMENT_REFERENCE_MISMATCH/);
+});
+
+test('billing health never returns provider secrets and radar is gated server-side', () => {
+  assert.match(billingHealth, /access_token_configured/);
+  assert.doesNotMatch(billingHealth, /MERCADO_PAGO_ACCESS_TOKEN[^\n]*(?:return|json)/);
+  assert.match(radarService, /company_has_feature/);
+  assert.match(radarService, /FEATURE_NOT_AVAILABLE/);
+  assert.match(subscriptionService, /trial_ends_at/);
 });
