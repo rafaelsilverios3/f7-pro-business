@@ -46,6 +46,12 @@ test('lacunas de follow-up persistente ficam explícitas e não viram tarefas fa
   assert.doesNotMatch(service, /Task\.create|FollowUp\.create|Activity\.create/);
 });
 
+test('falhas parciais são identificadas sem esconder o estado disponível', () => {
+  assert.match(service, /partial\.push\(label\)/);
+  assert.match(service, /partial_errors: partial/);
+  assert.match(page, /Algumas fontes comerciais estão indisponíveis/);
+});
+
 test('integrações só são exibidas conectadas por evidência real do backend', () => {
   assert.match(page, /channel\.connected && channel\.status === 'connected'/);
   assert.match(page, /Nenhuma integração externa está ativa/);
