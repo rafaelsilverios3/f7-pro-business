@@ -47,10 +47,12 @@ Deno.serve(async (req) => {
     const payer = isTest ? { email: 'test_user_br@testuser.com', first_name: 'APRO' } : { email: userData.user.email };
     const orderBody = { type: 'online', external_reference: checkout.id, total_amount: amount, processing_mode: 'automatic', payer, transactions: { payments: [{ amount, payment_method: { id: 'pix', type: 'bank_transfer' } }] } };
     const response = await fetch(providerUrl, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Idempotency-Key': idempotency }, body: JSON.stringify(orderBody) });
-    const payload = await response.json().catch(() => ({}));
+    const rawBody = await response.text();
+    let payload: any = {};
+    try { payload = rawBody ? JSON.parse(rawBody) : {}; } catch { payload = {}; }
     if (!response.ok) {
       const failure = providerError(payload);
-      logProviderFailure({ provider: 'mercado_pago', operation: 'create_order', endpoint: providerUrl, http_status: response.status, provider_code: failure.code, provider_message: failure.message, provider_causes: failure.causes, request_id: response.headers.get('x-request-id'), checkout_id: checkout.id, company_id: companyId });
+      logProviderFailure({ provider: 'mercado_pago', operation: 'create_order', endpoint: providerUrl, http_status: response.status, provider_code: failure.code || `HTTP_${response.status}`, provider_message: failure.message || clean(response.statusText, 240), provider_causes: failure.causes, request_id: response.headers.get('x-request-id'), checkout_id: checkout.id, company_id: companyId });
       await sb.from('billing_checkout_sessions').update({ status: 'failed' }).eq('id', checkout.id).eq('company_id', companyId);
       return json({ code: 'MERCADO_PAGO_ERROR' }, 502);
     }

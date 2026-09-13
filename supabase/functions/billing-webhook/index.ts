@@ -39,9 +39,11 @@ Deno.serve(async (req) => {
   if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);
   const endpoint = isOrder ? `https://api.mercadopago.com/v1/orders/${encodeURIComponent(resourceId)}` : `https://api.mercadopago.com/v1/payments/${encodeURIComponent(resourceId)}`;
   const response = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
-  const resource = await response.json().catch(() => ({}));
+  const rawBody = await response.text();
+  let resource: any = {};
+  try { resource = rawBody ? JSON.parse(rawBody) : {}; } catch { resource = {}; }
   if (!response.ok) {
-    console.error(JSON.stringify({ event: 'BILLING_PROVIDER_REQUEST_FAILED', provider: 'mercado_pago', operation: isOrder ? 'get_order' : 'get_payment', endpoint, http_status: response.status, provider_code: clean(resource?.error || resource?.code, 80), provider_message: clean(resource?.message || resource?.error_description, 240), request_id: response.headers.get('x-request-id'), provider_resource_id: resourceId, timestamp: new Date().toISOString() }));
+    console.error(JSON.stringify({ event: 'BILLING_PROVIDER_REQUEST_FAILED', provider: 'mercado_pago', operation: isOrder ? 'get_order' : 'get_payment', endpoint, http_status: response.status, provider_code: clean(resource?.error || resource?.code, 80) || `HTTP_${response.status}`, provider_message: clean(resource?.message || resource?.error_description, 240) || clean(response.statusText, 240), request_id: response.headers.get('x-request-id'), provider_resource_id: resourceId, timestamp: new Date().toISOString() }));
     return json({ code: isOrder ? 'ORDER_LOOKUP_FAILED' : 'PAYMENT_LOOKUP_FAILED' }, 502);
   }
   const payment = isOrder ? (resource.transactions?.payments?.[0] || {}) : resource;
