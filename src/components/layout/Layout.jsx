@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { Bell, ChevronDown, LogOut, ShieldCheck, UserRound } from 'lucide-react';
+import { Bell, ChevronDown, CreditCard, LogOut, ShieldCheck, UserRound } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useCompany } from '../../lib/useCompany';
 import { base44 } from '../../api/base44Client';
@@ -106,6 +106,7 @@ export default function Layout() {
               <div className="border-b border-slate-700/70 px-3 py-2"><p className="truncate text-xs font-medium text-white">{visibleName}</p><p className="text-[10px] text-slate-400">{role}</p><p className="mt-1 truncate text-[10px] text-slate-500">{user?.email}</p></div>
               <p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Conta</p>
               <button onClick={() => { setUserMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><UserRound className="h-3.5 w-3.5" /> Minha conta</button>
+              {['admin', 'gestor'].includes(String(user?.role || '').toLowerCase()) && <Link to="/assinatura" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><CreditCard className="h-3.5 w-3.5" /> Assinatura e pagamentos</Link>}
               {platformAdmin && <Link to="/administracao-f7" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-blue-200 transition hover:bg-blue-500/10"><ShieldCheck className="h-3.5 w-3.5" /> Administração F7</Link>}
               {['admin', 'gestor'].includes(String(user?.role || '').toLowerCase()) && <><p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Configurações</p><Link to="/configuracoes/integracoes" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><ShieldCheck className="h-3.5 w-3.5" /> Integrações</Link></>}
               <div className="my-1 border-t border-slate-700/70" />

@@ -46,6 +46,8 @@ import Register from './pages/Register.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Invite from './pages/Invite.jsx';
+import Checkout from './pages/Checkout.jsx';
+import SubscriptionBilling from './pages/SubscriptionBilling.jsx';
 import PublicSite from './pages/PublicSite.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
@@ -87,6 +89,7 @@ const AuthenticatedApp = () => {
     '/': 'home',
     '/produtos': 'products',
     '/pro-business': 'pro-business',
+    '/planos': 'plans',
     '/politica-de-privacidade': 'privacy',
     '/termos-de-uso': 'terms',
     '/exclusao-de-dados': 'deletion',
@@ -122,7 +125,7 @@ const AuthenticatedApp = () => {
     }
   }
 
-  if (!authChecked || !isAuthenticated) return <Navigate to="/login" replace />;
+  if (!authChecked || !isAuthenticated) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
 
   if (location.pathname === '/administracao-f7' || location.pathname.startsWith('/administracao-f7/')) {
     return <Routes><Route path="/administracao-f7" element={<PlatformAdmin />} /><Route path="/administracao-f7/empresas/:companyId" element={<PlatformAdmin />} /></Routes>;
@@ -132,7 +135,8 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/checkout" element={<Checkout />} />
         <Route path="/invite/:token" element={<Invite />} />
         <Route element={<CompanyGuard />}>
           <Route path="/f7probusiness" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
@@ -146,6 +150,7 @@ const AuthenticatedApp = () => {
           <Route path="/precificacao" element={<RoleGuard permission="pricing.view"><Precificacao /></RoleGuard>} />
           <Route path="/financeiro" element={<RoleGuard permission="finance.view"><Financeiro /></RoleGuard>} />
           <Route path="/configuracoes" element={<RoleGuard permission="settings.view"><Configuracoes /></RoleGuard>} />
+          <Route path="/assinatura" element={<RoleGuard permission="settings.view"><SubscriptionBilling /></RoleGuard>} />
           <Route path="/configuracoes/atendimento" element={<RoleGuard permission="assistant_settings.view"><AssistenteConfiguracao /></RoleGuard>} />
           <Route path="/configuracoes/integracoes" element={<RoleGuard permission="settings.view"><Integracoes /></RoleGuard>} />
           <Route path="/usuarios" element={<RoleGuard permission="users.view"><Usuarios /></RoleGuard>} />

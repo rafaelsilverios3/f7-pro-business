@@ -119,6 +119,10 @@ function createIntegrationError(rawDetail, httpStatus) {
     FEATURE_NOT_AVAILABLE: 'A IA não está disponível para esta empresa.',
     RATE_LIMITED: 'Limite temporário de sugestões atingido.',
     SUPPLIER_SAVE_FAILED: 'Falha ao salvar fornecedor.',
+    PLAN_PRICE_NOT_CONFIGURED: 'O preço deste plano ainda não foi definido.',
+    MERCADO_PAGO_NOT_CONFIGURED: 'O checkout ainda não está disponível: o provedor de pagamentos não foi configurado.',
+    CARD_CHECKOUT_REQUIRES_TOKENIZATION: 'O pagamento por cartão será liberado após a configuração segura da tokenização.',
+    FREE_PLAN_NO_PAYMENT_REQUIRED: 'O plano gratuito não exige pagamento.',
   };
   const message = safeDetail.code === 'SUPPLIER_SAVE_FAILED' && safeDetail.detail
     ? `Falha ao salvar fornecedor (${redactDiagnosticText(safeDetail.detail)}).`
