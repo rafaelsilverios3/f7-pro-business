@@ -11,7 +11,7 @@ import { getDashboardMetrics } from '@/services/metricsService';
 
 export const REPORT_TABS = Object.freeze([
   { id: 'overview', label: 'Visão geral' }, { id: 'sales', label: 'Vendas' }, { id: 'profit', label: 'Lucro e margem' }, { id: 'customers', label: 'Clientes' }, { id: 'abc', label: 'Curva ABC' },
-  { id: 'products', label: 'Produtos' }, { id: 'stock', label: 'Estoque' }, { id: 'purchases', label: 'Compras' }, { id: 'financial', label: 'Financeiro operacional' }, { id: 'sellers', label: 'Vendedores' },
+  { id: 'products', label: 'Produtos' }, { id: 'stock', label: 'Estoque' }, { id: 'movements', label: 'Movimentações' }, { id: 'purchases', label: 'Compras' }, { id: 'financial', label: 'Financeiro operacional' }, { id: 'sellers', label: 'Vendedores' },
 ]);
 
 const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -69,6 +69,14 @@ function buildRows(companyId, data, periodContext, report, filters) {
     const products = scoped(data.products, companyId).filter((product) => includesText(product.name, filters.search) && (!filters.category || product.category === filters.category) && (!filters.stock || stockStatus(product) === filters.stock));
     const rows = products.map((product) => [product.name, safeNumber(product.stock), safeNumber(product.min_stock ?? product.minimum_stock), stockStatus(product), validSales(scoped(data.sales, companyId)).filter((sale) => within(sale, periodContext)).reduce((sum, sale) => sum + (sale.items || []).filter((item) => item.product_id === product.id).reduce((qty, item) => qty + safeNumber(item.qty ?? item.quantity), 0), 0)]);
     return { headers: ['Produto', 'Estoque atual', 'Mínimo', 'Situação', 'Vendas no período'], rows: rows.sort((a, b) => a[1] - b[1]) };
+  }
+  if (report === 'movements') {
+    const products = productNameMap(scoped(data.products, companyId));
+    const rows = scoped(data.movements, companyId)
+      .filter((movement) => within(movement, periodContext, (row) => row.created_date || row.created_at))
+      .filter((movement) => includesText(`${movement.product_name || products.get(movement.product_id) || ''} ${movement.type || ''} ${movement.reason || ''}`, filters.search))
+      .map((movement) => [movement.created_date || movement.created_at, movement.product_name || products.get(movement.product_id) || 'Produto', movement.type || 'adjust', safeNumber(movement.quantity), movement.reason || '']);
+    return { headers: ['Data', 'Produto', 'Tipo', 'Quantidade', 'Motivo'], rows };
   }
   if (report === 'purchases') {
     const rows = scoped(data.purchases, companyId).filter((purchase) => within(purchase, periodContext, (row) => row.created_date || row.created_at)).filter((purchase) => (!filters.status || purchase.status === filters.status) && includesText(`${purchase.supplier_name} ${purchase.id}`, filters.search)).map((purchase) => [purchase.created_date || purchase.created_at, purchase.id, purchase.supplier_name || 'Sem fornecedor', purchase.status || 'unknown', safeNumber(purchase.total), purchase.expected_date || '']);

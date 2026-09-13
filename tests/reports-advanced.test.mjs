@@ -51,3 +51,10 @@ test('reports provide filtered exports and contextual empty/error states', () =>
   assert.match(page, /Nenhum registro encontrado para os filtros selecionados/);
   assert.match(page, /não foi possível carregar este relatório/i);
 });
+
+test('reports expose a tenant-scoped temporal stock movements report', () => {
+  assert.match(service, /id: 'movements'/);
+  assert.match(service, /scoped\(data\.movements, companyId\)/);
+  assert.match(service, /created_date \|\| row\.created_at/);
+  assert.match(service, /headers: \['Data', 'Produto', 'Tipo', 'Quantidade', 'Motivo'\]/);
+});
