@@ -13,6 +13,7 @@ import { customersRepository } from '@/data/repositories/customersRepository';
 import { financeRepository } from '@/data/repositories/financeRepository';
 import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { getDataProvider } from '@/data/providerSelector';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { fmtMoney, fmtMoneyShort, fmtNum } from '@/lib/business';
 import { createPeriodContext } from '@/lib/metrics';
 import { getDashboardMetrics } from '@/services/metricsService';
@@ -74,6 +75,7 @@ export default function Dashboard() {
   const [executiveSummary, setExecutiveSummary] = useState(null);
   const [executiveSummaryLoading, setExecutiveSummaryLoading] = useState(false);
   const [executiveSummaryRefresh, setExecutiveSummaryRefresh] = useState(0);
+  const [intelligenceRpcGate, setIntelligenceRpcGate] = useState(null);
   const executiveSummaryRequest = useRef('');
   const dashboardRequest = useRef(0);
 
@@ -214,7 +216,21 @@ export default function Dashboard() {
     return buildExecutiveIntelligenceContext(company.id, m, createPeriodContext({ companyId: company.id, periodKey: period }));
   }, [m, company?.id, period]);
 
-  const intelligenceEnabled = canUseSubscriptionFeature(subscription, 'intelligence', { provider: import.meta.env.VITE_DATA_PROVIDER, fallbackPlan: company?.plan || 'free' });
+  useEffect(() => {
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id) { setIntelligenceRpcGate(true); return undefined; }
+    if (subscription) { setIntelligenceRpcGate(null); return undefined; }
+    let cancelled = false;
+    setIntelligenceRpcGate(null);
+    getSupabaseClient().rpc('company_has_feature', { target_company: company.id, feature: 'intelligence' }).then(({ data }) => {
+      if (!cancelled) setIntelligenceRpcGate(data === true);
+    }).catch(() => { if (!cancelled) setIntelligenceRpcGate(false); });
+    return () => { cancelled = true; };
+  }, [company?.id, subscription?.plan, subscription?.status]);
+  const intelligenceEnabled = import.meta.env.VITE_DATA_PROVIDER !== 'supabase'
+    ? true
+    : subscription
+      ? canUseSubscriptionFeature(subscription, 'intelligence', { provider: 'supabase', fallbackPlan: company?.plan || 'free' })
+      : intelligenceRpcGate === true;
   useEffect(() => {
     if (!executiveContext || !company?.id || !intelligenceEnabled) { setExecutiveSummary(null); return undefined; }
     if (refreshing) return undefined;
