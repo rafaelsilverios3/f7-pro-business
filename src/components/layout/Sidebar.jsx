@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Package, Boxes, ShoppingCart, FileText,
   Wallet, Truck, MessageSquare, Zap, BrainCircuit, BarChart3,
-  Settings, Bell, Target, Shield, Store, Pencil, ScanLine, BadgeDollarSign, Globe2, Factory,
+  Settings, Bell, Target, Shield, Store, Pencil, ScanLine, BadgeDollarSign, Globe2, Factory, Megaphone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CompanyLogoDialog from './CompanyLogoDialog';
@@ -47,6 +47,7 @@ const NAV = [
       { to: '/opportunity-radar', label: 'Opportunity Radar', icon: Target, permission: 'opportunity_radar.view' },
       { to: '/ai-observability', label: 'Execuções da IA', icon: BrainCircuit, permission: 'ai_observability.view' },
       { to: '/relatorios', label: 'Relatórios', icon: BarChart3, permission: 'reports.view' },
+      { to: '/marketing', label: 'Marketing', icon: Megaphone, permission: 'reports.view' },
     ],
   },
   {

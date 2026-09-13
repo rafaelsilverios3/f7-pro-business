@@ -65,6 +65,20 @@ function sanitizeContext(value: any) {
     const parsed = cleanText(value[key], 80); if (parsed) context[key] = parsed;
   }
   if (value.evidence && typeof value.evidence === 'object' && !Array.isArray(value.evidence)) context.evidence = JSON.parse(JSON.stringify(value.evidence).slice(0, 4000));
+  if (value.marketing_context && typeof value.marketing_context === 'object' && !Array.isArray(value.marketing_context)) {
+    const marketing = value.marketing_context;
+    const number = (input: unknown) => Number.isFinite(Number(input)) ? Number(input) : 0;
+    const list = (items: unknown, mapper: (item: any) => Record<string, unknown>) => Array.isArray(items) ? items.slice(0, 12).map(mapper) : [];
+    context.marketing_context = {
+      source_module: 'marketing', mode: 'internal', objective: cleanText(marketing.objective, 100), channel: cleanText(marketing.channel, 40),
+      segment_summary: { id: cleanText(marketing.segment_summary?.id, 60), label: cleanText(marketing.segment_summary?.label, 120), rule: cleanText(marketing.segment_summary?.rule, 220), count: number(marketing.segment_summary?.count), historical_revenue: number(marketing.segment_summary?.historical_revenue), average_ticket: number(marketing.segment_summary?.average_ticket) },
+      products: list(marketing.products, (item: any) => ({ id: uuid(item?.id), name: cleanText(item?.name, 120), category: cleanText(item?.category, 80), price: number(item?.price), stock: number(item?.stock) })).filter((item: any) => item.name),
+      sales_signals: Object.fromEntries(['period_sales', 'recurring_customers', 'falling_customers', 'stagnant_products'].map((key) => [key, number(marketing.sales_signals?.[key])])),
+      customer_signals: Object.fromEntries(['active', 'inactive', 'new_customers', 'high_value'].map((key) => [key, number(marketing.customer_signals?.[key])])),
+      opportunities: list(marketing.opportunities, (item: any) => ({ id: uuid(item?.id), title: cleanText(item?.title, 140), signal_type: cleanText(item?.signal_type, 80), summary: cleanText(item?.summary, 260) })).filter((item: any) => item.title),
+      period: marketing.period && typeof marketing.period === 'object' ? { period_key: cleanText(marketing.period.period_key, 30), start_date: cleanText(marketing.period.start_date, 20), end_date: cleanText(marketing.period.end_date, 20), timezone: cleanText(marketing.period.timezone, 80) || 'UTC' } : null,
+    };
+  }
   return context;
 }
 
