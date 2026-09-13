@@ -2,20 +2,50 @@ import { admin, corsHeaders, json } from '../_shared/core.ts';
 
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-async function validSignature(req: Request, body: any) {
+const hexBytes = (value: string) => {
+  if (!/^[0-9a-f]+$/i.test(value) || value.length % 2 !== 0) return null;
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  return bytes;
+};
+
+const constantTimeEqual = (left: string, right: string) => {
+  const leftBytes = hexBytes(left.trim().toLowerCase());
+  const rightBytes = hexBytes(right.trim().toLowerCase());
+  if (!leftBytes || !rightBytes || leftBytes.length !== rightBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) difference |= leftBytes[index] ^ rightBytes[index];
+  return difference === 0;
+};
+
+const resolveDataId = (req: Request, body: any) => {
+  const url = new URL(req.url);
+  const queryDataId = clean(url.searchParams.get('data.id') || url.searchParams.get('data_id'));
+  if (queryDataId) return { value: queryDataId, origin: 'query' };
+  const bodyDataId = clean(body?.data?.id || body?.id);
+  return { value: bodyDataId, origin: bodyDataId ? 'body' : 'none' };
+};
+
+async function validateSignature(req: Request, body: any) {
   const secret = Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET') || '';
-  if (!secret) return false;
   const signature = req.headers.get('x-signature') || '';
   const requestId = req.headers.get('x-request-id') || '';
-  const dataId = clean(body?.data?.id || body?.id);
+  const resolvedDataId = resolveDataId(req, body);
+  const dataId = resolvedDataId.value;
   const ts = signature.match(/(?:^|,)ts=([^,]+)/)?.[1] || '';
   const v1 = signature.match(/(?:^|,)v1=([^,]+)/)?.[1] || '';
-  if (!ts || !v1 || !dataId || !Number.isFinite(Number(ts)) || Math.abs(Date.now() - Number(ts)) > 10 * 60 * 1000) return false;
-  const message = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const diagnostics = { event: 'BILLING_WEBHOOK_SIGNATURE_CHECK', x_request_id_present: Boolean(requestId), x_signature_present: Boolean(signature), ts: ts || null, data_id: dataId || null, data_id_origin: resolvedDataId.origin, received_digest_length: v1.length };
+  const invalid = (reason: string) => { console.error(JSON.stringify({ ...diagnostics, result: 'invalid', reason })); return { valid: false, dataId }; };
+  if (!secret) return invalid('secret_missing');
+  if (!ts || !v1 || !dataId) return invalid('required_signature_field_missing');
+  if (!Number.isFinite(Number(ts)) || Math.abs(Date.now() - Number(ts)) > 10 * 60 * 1000) return invalid('timestamp_invalid_or_expired');
+  const manifest = [`id:${dataId};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(manifest));
   const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  return expected === v1;
+  const valid = constantTimeEqual(expected, v1);
+  console.error(JSON.stringify({ ...diagnostics, result: valid ? 'valid' : 'invalid', reason: valid ? null : 'digest_mismatch' }));
+  return { valid, dataId };
 }
 
 const mapped = (status: string) => ({ approved: 'approved', action_required: 'pending', processing: 'pending', pending: 'pending', in_process: 'pending', rejected: 'rejected', failed: 'rejected', cancelled: 'cancelled', refunded: 'refunded', charged_back: 'charged_back' } as Record<string, string>)[status] || 'pending';
@@ -26,10 +56,11 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   const sb = admin();
   const body = await req.json().catch(() => ({}));
-  if (!(await validSignature(req, body))) return json({ code: 'INVALID_WEBHOOK_SIGNATURE' }, 401);
+  const signature = await validateSignature(req, body);
+  if (!signature.valid) return json({ code: 'INVALID_WEBHOOK_SIGNATURE' }, 401);
   const eventId = clean(body?.id || body?.data?.id);
   const type = clean(body?.type || body?.action, 80);
-  const resourceId = clean(body?.data?.id || body?.data?.object_id);
+  const resourceId = clean(signature.dataId || body?.data?.object_id);
   const isOrder = type === 'order' || type.startsWith('order.');
   const inserted = await sb.from('billing_webhook_events').insert({ provider: 'mercado_pago', provider_event_id: eventId, event_type: type, provider_resource_id: resourceId, status: 'received', metadata: { live_mode: Boolean(body?.live_mode) } });
   if (inserted.error?.code === '23505') return json({ code: 'OK', duplicate: true });

@@ -53,7 +53,7 @@ test('PIX exposes provider evidence and payment activation only comes from webho
   assert.match(checkout, /qr_code/);
   assert.match(checkout, /qr_code_base64/);
   assert.match(page, /webhook do Mercado Pago/);
-  assert.match(webhook, /validSignature/);
+  assert.match(webhook, /validateSignature/);
   assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
   assert.match(webhook, /billing_webhook_events/);
   assert.match(webhook, /duplicate/);
@@ -73,6 +73,11 @@ test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remai
   assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
   assert.match(webhook, /INVALID_WEBHOOK_SIGNATURE.*401/);
   assert.match(webhook, /crypto\.subtle\.sign\('HMAC'/);
+  assert.match(webhook, /searchParams\.get\('data\.id'\)/);
+  assert.match(webhook, /data_id_origin/);
+  assert.match(webhook, /requestId \? `request-id:\$\{requestId\};` : ''/);
+  assert.match(webhook, /constantTimeEqual/);
+  assert.match(webhook, /received_digest_length/);
   assert.match(webhook, /v1\/orders/);
 });
 
