@@ -16,6 +16,7 @@ const featureGate = fs.readFileSync('src/services/featureGate.js', 'utf8');
 const commercialMigration = fs.readFileSync('supabase/migrations/0065_platform_plan_catalog.sql', 'utf8');
 const trialMigration = fs.readFileSync('supabase/migrations/0066_trial_lifecycle.sql', 'utf8');
 const trialGateMigration = fs.readFileSync('supabase/migrations/0067_trial_gate_fail_closed.sql', 'utf8');
+const ordersMigration = fs.readFileSync('supabase/migrations/0068_billing_orders_support.sql', 'utf8');
 const intelligenceEdge = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
 const supplierEdge = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
 const automationEdge = fs.readFileSync('supabase/functions/automation-worker/index.ts', 'utf8');
@@ -41,7 +42,9 @@ test('checkout resolves amount from the active plan and keeps provider secrets s
   assert.match(checkout, /eq\('code', planCode\)\.eq\('active', true\)/);
   assert.match(checkout, /MERCADO_PAGO_ACCESS_TOKEN/);
   assert.match(checkout, /X-Idempotency-Key/);
-  assert.match(checkout, /transaction_amount/);
+  assert.match(checkout, /v1\/orders/);
+  assert.match(checkout, /processing_mode: 'automatic'/);
+  assert.match(checkout, /payment_method: \{ id: 'pix', type: 'bank_transfer' \}/);
   assert.doesNotMatch(service + page, /MERCADO_PAGO_ACCESS_TOKEN|WEBHOOK_SECRET/);
 });
 
@@ -54,8 +57,22 @@ test('PIX exposes provider evidence and payment activation only comes from webho
   assert.match(webhook, /billing_webhook_events/);
   assert.match(webhook, /duplicate/);
   assert.match(webhook, /status === 'approved'/);
+  assert.match(webhook, /type === 'order'/);
+  assert.match(webhook, /v1\/orders/);
+  assert.match(webhook, /provider_order_id/);
   assert.match(webhook, /billing_period/);
   assert.doesNotMatch(webhook, /30 \* 86_400_000/);
+});
+
+test('Orders PIX test contract uses the official deterministic payer without exposing secrets', () => {
+  assert.match(checkout, /test_user_br@testuser\.com/);
+  assert.match(checkout, /first_name: 'APRO'/);
+  assert.match(checkout, /BILLING_PROVIDER_REQUEST_FAILED/);
+  assert.match(checkout, /provider_code/);
+  assert.match(checkout, /provider_causes/);
+  assert.doesNotMatch(checkout, /console\.error\([^\n]*(?:token|Authorization|qr_code)/i);
+  assert.match(ordersMigration, /provider_order_id/);
+  assert.match(ordersMigration, /error_message/);
 });
 
 test('billing authorization and tenant ownership are checked server-side', () => {
