@@ -23,6 +23,7 @@ import { Target, GitBranch, Activity, Clock, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createRepository } from '@/data/repositoryFactory';
 import { ExecutiveChartCard } from '@/components/dashboard/ExecutiveChartCard';
+import ExecutiveInsightCard from '@/components/dashboard/ExecutiveInsightCard';
 
 const radarOpportunityRepository = createRepository('ProductOpportunity');
 
@@ -40,6 +41,23 @@ function RevenueTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload || {};
   return <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg"><p className="font-semibold text-slate-800">{label}</p><p className="mt-1 text-slate-600">Faturamento: {fmtMoney(row.faturamento)}</p><p className="text-slate-600">Vendas: {fmtNum(row.vendas)}</p><p className="text-slate-600">Ticket médio: {fmtMoney(row.ticket_medio)}</p>{row.faturamento_anterior != null && <p className="text-slate-400">Anterior: {fmtMoney(row.faturamento_anterior)}</p>}</div>;
+}
+
+const formatInsightDate = (value, fallback = 'Data indisponível') => {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : format(parsed, 'dd/MM/yyyy');
+};
+
+function OpportunityBadge({ opportunity }) {
+  if (!opportunity) return null;
+  return <Link to="/opportunity-radar" className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100">Oportunidade aberta</Link>;
+}
+
+function EntityLink({ type, id, label }) {
+  if (!id) return null;
+  const to = type === 'customer' ? '/clientes' : type === 'product' ? '/produtos' : '/opportunity-radar';
+  return <Link to={to} className="shrink-0 text-[11px] font-semibold text-indigo-600 hover:underline">{label}</Link>;
 }
 
 export default function Dashboard() {
@@ -118,16 +136,6 @@ export default function Dashboard() {
     const clientesAtivos = shared.customers.active;
     const oportunidadesAbertas = shared.opportunities.open;
 
-    // Produtos mais vendidos
-    const prodMap = {};
-    cur.forEach((s) => (s.items || []).forEach((i) => {
-      const key = i.name;
-      prodMap[key] = prodMap[key] || { name: key, qty: 0, total: 0 };
-      prodMap[key].qty += i.qty || 0;
-      prodMap[key].total += i.total || 0;
-    }));
-    const topProdutos = Object.values(prodMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
-
     // Top vendedores
     const sellerMap = {};
     cur.forEach((s) => {
@@ -137,6 +145,7 @@ export default function Dashboard() {
     const topVendedores = Object.entries(sellerMap).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5);
 
     const evolucao = shared.charts.revenue.rows;
+    const actionable = shared.actionable;
 
     // Metas
     const goalProgress = (data.goals || []).map((g) => {
@@ -178,10 +187,11 @@ export default function Dashboard() {
       faturamento, lucro, margem, despesas, contasReceber, contasPagar,
       ticketMedio, numVendas, novosClientes, clientesTotal: shared.customers.total, estoqueCritico, clientesAtivos, oportunidadesAbertas,
       financeAvailable: shared.finance.available,
-      topProdutos, topVendedores, evolucao,
+      topVendedores, evolucao,
       goalProgress, funnel, projecao, projectionLabel: projection.label, fluxoCaixa, recentActivity,
       insights: data.insights || [],
       opportunities: data.opportunities || [],
+      actionable,
       comparisons: shared.comparisons,
       charts: shared.charts,
       chartErrors,
@@ -288,6 +298,41 @@ export default function Dashboard() {
         </ExecutiveChartCard>
       </div>
 
+      {/* Análises acionáveis */}
+      <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-2" data-executive-actionable>
+        <ExecutiveInsightCard title="Clientes que mais compram" description="Top 5 por faturamento no período selecionado" empty={!m.actionable.topCustomers.available} emptyMessage="Nenhuma compra identificada no período.">
+          <div className="space-y-2">{m.actionable.topCustomers.rows.map((row, index) => <div key={row.customer_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-100 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">{fmtNum(row.purchases)} compra(s) · ticket {fmtMoney(row.average_ticket)}</p></div><div className="text-right"><p className="text-sm font-bold text-slate-800">{fmtMoney(row.revenue)}</p><EntityLink type="customer" id={row.customer_id} label="Ver cliente" /></div><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Clientes em queda" description="Comparação determinística com o período anterior equivalente" empty={!m.actionable.decliningCustomers.available} emptyMessage="Nenhum cliente com queda relevante no período.">
+          <div className="space-y-2">{m.actionable.decliningCustomers.rows.map((row) => <div key={row.customer_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/40 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">Anterior {fmtMoney(row.previous_revenue)} · atual {fmtMoney(row.current_revenue)}</p></div><div className="text-right"><p className="text-sm font-bold text-rose-600">{Number.isFinite(row.variation_percent) ? `${row.variation_percent.toFixed(1)}%` : 'Comparativo indisponível'}</p><EntityLink type="customer" id={row.customer_id} label="Ver cliente" /></div><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Clientes sem comprar" description="Regra operacional alinhada ao Radar: pelo menos 90 dias sem compra" empty={!m.actionable.inactiveCustomers.available} emptyMessage="Nenhum cliente sem comprar há 90 dias ou mais.">
+          <div className="space-y-2">{m.actionable.inactiveCustomers.rows.map((row) => <div key={row.customer_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-100 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">Última compra: {formatInsightDate(row.last_purchase, 'Nunca registrada')} · última movimentação: {formatInsightDate(row.last_activity)}</p></div><div className="text-right"><p className="text-sm font-bold text-amber-600">{fmtNum(row.inactive_days)} dias</p><EntityLink type="customer" id={row.customer_id} label="Ver cliente" /></div><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Produtos mais vendidos" description="Top 5 por faturamento; participação calculada sobre vendas válidas" empty={!m.actionable.topProducts.available} emptyMessage="Nenhum produto vendido no período.">
+          <div className="space-y-2">{m.actionable.topProducts.rows.map((row, index) => <div key={`${row.product_id || row.name}-${index}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-100 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-xs font-semibold text-emerald-700">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">{fmtNum(row.quantity)} un · {fmtMoney(row.revenue)} · {row.share.toFixed(1)}% do faturamento</p></div><EntityLink type="product" id={row.product_id} label="Ver produto" /><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Produtos sem giro" description="Estoque positivo e nenhuma venda na janela do período" empty={!m.actionable.noTurnoverProducts.available} emptyMessage="Nenhum produto sem giro na janela analisada.">
+          <div className="space-y-2">{m.actionable.noTurnoverProducts.rows.map((row) => <div key={row.product_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-100 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">Estoque atual: {fmtNum(row.stock)} · última venda: {formatInsightDate(row.last_sale, 'Nunca registrada')}</p></div><EntityLink type="product" id={row.product_id} label="Ver produto" /><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Estoque crítico" description="Prioridade: zerado, abaixo do mínimo e maior venda recente" empty={!m.actionable.criticalStock.available} emptyMessage="Nenhum item com estoque crítico.">
+          <div className="space-y-2">{m.actionable.criticalStock.rows.map((row) => <div key={row.product_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/40 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">Atual {fmtNum(row.stock)} · mínimo {fmtNum(row.minimum_stock)} · vendas recentes {fmtNum(row.recent_quantity)} un</p></div><span className="shrink-0 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700">{row.status}</span><EntityLink type="product" id={row.product_id} label="Ver estoque" /><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Demanda + estoque baixo" description="Regra objetiva: estoque ≤ mínimo e pelo menos 2 unidades vendidas no período" empty={!m.actionable.demandLowStock.available} emptyMessage="Nenhuma demanda recente com estoque baixo.">
+          <div className="space-y-2">{m.actionable.demandLowStock.rows.map((row) => <div key={row.product_id} className="flex min-w-0 items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/50 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">{fmtNum(row.recent_quantity)} un vendidas · estoque {fmtNum(row.stock)} / mínimo {fmtNum(row.minimum_stock)}</p></div><EntityLink type="product" id={row.product_id} label="Ver produto" /><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
+        </ExecutiveInsightCard>
+
+        <ExecutiveInsightCard title="Oportunidades prioritárias" description="ProductOpportunity/Opportunity Radar: somente estados ativos e snooze vencido" empty={!m.actionable.priorityOpportunities.available} emptyMessage="Nenhuma oportunidade ativa prioritária.">
+          <div className="space-y-2">{m.actionable.priorityOpportunities.rows.map((row) => <div key={row.id} className="flex min-w-0 items-start gap-3 rounded-xl border border-indigo-100 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.title}</p><p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{row.summary}</p><p className="mt-1 text-[10px] text-slate-400">Origem: {row.origin} · {formatInsightDate(row.date)}</p></div><div className="flex shrink-0 flex-col items-end gap-1"><span className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700">{row.priority}</span>{row.score !== null && <span className="text-[10px] text-slate-500">Score {fmtNum(row.score)}</span>}<Link to="/opportunity-radar" className="text-[11px] font-semibold text-indigo-600 hover:underline">Abrir oportunidade</Link></div></div>)}</div>
+        </ExecutiveInsightCard>
+      </div>
+
         <div className="f7-quick-actions mt-6 rounded-2xl border border-slate-700/60 bg-gradient-to-br from-[#10213a] to-[#0b1626] p-5 shadow-[0_12px_32px_rgba(0,0,0,.15)]">
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -313,24 +358,7 @@ export default function Dashboard() {
         </div>
 
       {/* Bottom row */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <Package className="h-4 w-4 text-slate-400" />
-            <h3 className="text-sm font-semibold text-slate-900">Produtos mais vendidos</h3>
-          </div>
-          <div className="space-y-3">
-            {m.topProdutos.length === 0 && <p className="text-xs text-slate-400">Sem vendas no período.</p>}
-            {m.topProdutos.map((p, i) => (
-              <div key={p.name} className="flex items-center gap-3">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-xs font-semibold text-slate-500">{i + 1}</span>
-                <span className="flex-1 truncate text-sm text-slate-700">{p.name}</span>
-                <span className="text-xs font-medium text-slate-500">{fmtNum(p.qty)} un</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <Trophy className="h-4 w-4 text-slate-400" />

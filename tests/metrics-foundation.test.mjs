@@ -11,7 +11,7 @@ import {
   projectionForPeriod,
   safeMargin,
 } from '../src/lib/metrics.js';
-import { getDashboardMetrics, getCustomerCompositionMetrics, getOpportunityOriginMetrics, getOpportunityPriorityMetrics, getPaymentMethodMetrics, getSalesStatusMetrics, getStockHealthMetrics } from '../src/services/metricsService.js';
+import { getActionableMetrics, getDashboardMetrics, getCustomerCompositionMetrics, getCriticalStockMetrics, getDecliningCustomerMetrics, getDemandLowStockMetrics, getInactiveCustomerMetrics, getNoTurnoverProductMetrics, getOpportunityOriginMetrics, getOpportunityPriorityMetrics, getPaymentMethodMetrics, getPriorityOpportunityMetrics, getSalesStatusMetrics, getStockHealthMetrics, getTopCustomerMetrics, getTopProductMetrics } from '../src/services/metricsService.js';
 import { buildRevenueSeries } from '../src/lib/metrics.js';
 import { buildPrintableHtml, escapeCsvCell, escapeHtml, serializeCsv } from '../src/lib/exporters.js';
 import { canUseFeature } from '../src/services/planService.js';
@@ -193,4 +193,75 @@ test('executive charts expose opportunity origins and stock health as snapshots'
     { company_id: 'other', item_type: 'product', stock: 0, minimum_stock: 2 },
   ], context);
   assert.deepEqual(Object.fromEntries(stock.rows.map((row) => [row.health, row.count])), { normal: 1, baixo: 1, zerado: 1 });
+});
+
+test('actionable dashboard rankings are deterministic, tenant-scoped and avoid false declines', () => {
+  const context = createPeriodContext({ companyId, periodKey: 'custom', startDate: '2026-09-01', endDate: '2026-09-30', timezone: 'UTC' });
+  const customers = [
+    { company_id: companyId, id: 'c1', name: 'Cliente em queda', status: 'active', created_date: '2025-01-01' },
+    { company_id: companyId, id: 'c2', name: 'Oscilação irrelevante', status: 'active', created_date: '2025-01-01' },
+    { company_id: companyId, id: 'c3', name: 'Cliente novo', status: 'active', created_date: '2026-09-01' },
+    { company_id: companyId, id: 'inactive', name: 'Cliente inativo', status: 'active', created_date: '2025-01-01' },
+    { company_id: 'other', id: 'foreign', name: 'Outro tenant', status: 'active', created_date: '2025-01-01' },
+  ];
+  const products = [
+    { company_id: companyId, id: 'p1', name: 'Filtro campeão', item_type: 'product', stock: 1, minimum_stock: 2 },
+    { company_id: companyId, id: 'p2', name: 'Produto parado', item_type: 'product', stock: 5, minimum_stock: 1 },
+    { company_id: companyId, id: 'p3', name: 'Produto zerado', item_type: 'product', stock: 0, minimum_stock: 2 },
+    { company_id: companyId, id: 'service', name: 'Serviço', item_type: 'service', stock: 0, minimum_stock: 0 },
+    { company_id: 'other', id: 'foreign-product', name: 'Produto estrangeiro', item_type: 'product', stock: 0, minimum_stock: 2 },
+  ];
+  const sales = [
+    { company_id: companyId, customer_id: 'c1', sale_date: '2026-09-05', status: 'completed', total: 20, items: [{ product_id: 'p1', name: 'Filtro campeão', qty: 5, total: 20 }] },
+    { company_id: companyId, customer_id: 'c1', sale_date: '2026-08-05', status: 'completed', total: 200, items: [{ product_id: 'p2', name: 'Produto parado', qty: 2, total: 200 }] },
+    { company_id: companyId, customer_id: 'c2', sale_date: '2026-09-06', status: 'completed', total: 99, items: [{ product_id: 'p1', name: 'Filtro campeão', qty: 1, total: 99 }] },
+    { company_id: companyId, customer_id: 'c2', sale_date: '2026-08-06', status: 'completed', total: 100, items: [{ product_id: 'p1', name: 'Filtro campeão', qty: 1, total: 100 }] },
+    { company_id: companyId, customer_id: 'c3', sale_date: '2026-09-07', status: 'completed', total: 300, items: [{ product_id: 'p1', name: 'Filtro campeão', qty: 3, total: 300 }] },
+    { company_id: companyId, customer_id: 'inactive', sale_date: '2026-01-01', status: 'completed', total: 40, items: [{ product_id: 'p2', name: 'Produto parado', qty: 1, total: 40 }] },
+    { company_id: 'other', customer_id: 'foreign', sale_date: '2026-09-05', status: 'completed', total: 9999, items: [{ product_id: 'foreign-product', name: 'Produto estrangeiro', qty: 99, total: 9999 }] },
+  ];
+  const opportunities = [
+    { company_id: companyId, id: 'opp-c1', title: 'Reativar cliente', status: 'descoberta', opportunity_score: 80, metadata: { entity_type: 'customer', entity_id: 'c1', priority: 'ALTA', radar_state: 'NOVA' } },
+    { company_id: companyId, id: 'opp-p1', title: 'Repor filtro', status: 'descoberta', opportunity_score: 90, metadata: { entity_type: 'product', entity_id: 'p1', priority: 'CRÍTICA', radar_state: 'NOVA' } },
+    { company_id: companyId, id: 'closed', title: 'Resolvida', status: 'convertida_em_produto', metadata: { entity_type: 'product', entity_id: 'p1' } },
+    { company_id: companyId, id: 'snoozed', title: 'Adiada', status: 'descoberta', metadata: { entity_type: 'product', entity_id: 'p2', snooze_until: '2099-01-01T00:00:00Z' } },
+    { company_id: 'other', id: 'foreign-opp', title: 'Outro tenant', status: 'descoberta', metadata: { entity_type: 'product', entity_id: 'foreign-product', priority: 'CRÍTICA' } },
+  ];
+  const topCustomers = getTopCustomerMetrics(companyId, customers, sales, opportunities, context);
+  assert.deepEqual(topCustomers.rows.map((row) => row.customer_id), ['c3', 'c2', 'c1']);
+  assert.equal(topCustomers.rows[0].average_ticket, 300);
+  const decline = getDecliningCustomerMetrics(companyId, customers, sales, opportunities, context);
+  assert.deepEqual(decline.rows.map((row) => row.customer_id), ['c1']);
+  assert.equal(decline.rows[0].variation_percent, -90);
+  assert.equal(decline.rows.some((row) => row.customer_id === 'c2'), false);
+  assert.equal(decline.rows.some((row) => row.variation_percent === Infinity || Number.isNaN(row.variation_percent)), false);
+  const inactive = getInactiveCustomerMetrics(companyId, customers, sales, opportunities, context);
+  assert.equal(inactive.rows[0].customer_id, 'inactive');
+  assert.equal(inactive.rows[0].last_purchase, '2026-01-01');
+  const topProducts = getTopProductMetrics(companyId, products, sales, opportunities, context);
+  assert.equal(topProducts.rows[0].product_id, 'p1');
+  assert.equal(Math.round(topProducts.rows.reduce((sum, row) => sum + row.share, 0)), 100);
+  assert.equal(topProducts.rows.some((row) => row.product_id === 'foreign-product'), false);
+  const noTurnover = getNoTurnoverProductMetrics(companyId, products, sales, opportunities, context);
+  assert.equal(noTurnover.rows[0].product_id, 'p2');
+  const critical = getCriticalStockMetrics(companyId, products, sales, opportunities, context);
+  assert.deepEqual(critical.rows.map((row) => row.product_id), ['p3', 'p1']);
+  const demandLowStock = getDemandLowStockMetrics(companyId, products, sales, opportunities, context);
+  assert.deepEqual(demandLowStock.rows.map((row) => row.product_id), ['p1']);
+  const prioritized = getPriorityOpportunityMetrics(companyId, opportunities, context);
+  assert.deepEqual(prioritized.rows.map((row) => row.id), ['opp-p1', 'opp-c1']);
+  assert.equal(prioritized.rows.some((row) => row.id === 'closed' || row.id === 'snoozed' || row.id === 'foreign-opp'), false);
+  const actionable = getActionableMetrics(companyId, { customers, products, sales, opportunities }, context);
+  assert.equal(actionable.topCustomers.rows.length, 3);
+  assert.equal(actionable.priorityOpportunities.rows.length, 2);
+});
+
+test('actionable dashboard UI exposes positive empty states and no per-row repository calls', () => {
+  const dashboard = fs.readFileSync(new URL('../src/pages/Dashboard.jsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /Clientes que mais compram/);
+  assert.match(dashboard, /Nenhum cliente com queda relevante/);
+  assert.match(dashboard, /Produtos sem giro/);
+  assert.match(dashboard, /Demanda \+ estoque baixo/);
+  assert.match(dashboard, /Oportunidades prioritárias/);
+  assert.doesNotMatch(dashboard, /rows\.map\([^)]*repository/);
 });
