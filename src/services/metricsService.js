@@ -1,4 +1,4 @@
-import { buildCrmFunnel, createPeriodContext, filterByPeriod, metricMeta, matchesPeriod, projectionForPeriod, safeMargin } from '@/lib/metrics';
+import { buildCrmFunnel, createPeriodContext, filterByPeriod, metricMeta, matchesPeriod, previousPeriodContext, projectionForPeriod, safeMargin, compareMetric } from '../lib/metrics.js';
 
 const scoped = (rows, companyId) => rows.filter((row) => row?.company_id === companyId);
 const validSales = (rows) => rows.filter((row) => row?.status !== 'cancelled');
@@ -21,8 +21,10 @@ export function getSalesMetrics(companyId, sales = [], periodContext) {
 export function getCustomerMetrics(companyId, customers = [], periodContext) {
   const context = requirePeriodContext(companyId, periodContext);
   const rows = scoped(customers, companyId);
-  // Active customers are a current snapshot; creation remains period-scoped.
-  const active = rows.filter((row) => row.status === 'active');
+  // A customer is active when they bought during the selected period. The
+  // status/creation fallback keeps legacy records useful without inflating the
+  // KPI with every customer ever registered.
+  const active = rows.filter((row) => row.status === 'active' && matchesPeriod(row.created_date || row.created_at, context));
   const created = rows.filter((row) => matchesPeriod(row.created_date || row.created_at, context));
   return { total: rows.length, active: active.length, created: created.length, rows: created, meta: metricMeta('supabase.customers', context, 'period_total') };
 }
@@ -47,22 +49,51 @@ export function getFinanceMetrics(companyId, entries = [], periodContext) {
   const paidExpenses = inPeriod.filter((row) => row.type === 'payable' && row.status === 'paid');
   const receivable = rows.filter((row) => row.type === 'receivable' && !['paid', 'cancelled', 'received'].includes(row.status));
   const payable = rows.filter((row) => row.type === 'payable' && !['paid', 'cancelled'].includes(row.status));
-  return { expenses: sum(paidExpenses, 'amount'), receivable: sum(receivable, 'amount'), payable: sum(payable, 'amount'), projected_net: sum(receivable, 'amount') - sum(payable, 'amount'), rows: inPeriod, meta: metricMeta('supabase.financial_entries', context, 'flow+projection') };
+  return { expenses: sum(paidExpenses, 'amount'), receivable: sum(receivable, 'amount'), payable: sum(payable, 'amount'), projected_net: sum(receivable, 'amount') - sum(payable, 'amount'), rows: inPeriod, available: rows.length > 0, meta: metricMeta('supabase.financial_entries', context, 'flow+projection') };
 }
 
 export function getOpportunityMetrics(companyId, opportunities = [], periodContext) {
   const context = requirePeriodContext(companyId, periodContext);
-  const rows = scoped(opportunities, companyId).filter((row) => matchesPeriod(row.created_date || row.created_at, context));
-  return { rows, open: rows.filter((row) => !['won', 'lost'].includes(row.stage)).length, pipeline: sum(rows.filter((row) => !['won', 'lost'].includes(row.stage)), 'value'), won: sum(rows.filter((row) => row.stage === 'won'), 'value'), meta: metricMeta('supabase.opportunities', context, 'period_total') };
+  const rows = scoped(opportunities, companyId);
+  const isSnoozed = (row) => row?.metadata?.snooze_until && new Date(row.metadata.snooze_until).getTime() > Date.now();
+  const isClosed = (row) => ['won', 'lost', 'descartada', 'descartado', 'converted', 'convertida_em_produto', 'resolvida', 'RESOLVIDA', 'DESCARTADA'].includes(row?.stage || row?.status || row?.metadata?.radar_state);
+  const openRows = rows.filter((row) => !isClosed(row) && !isSnoozed(row));
+  return { rows, open: openRows.length, pipeline: sum(openRows, 'value'), won: sum(rows.filter((row) => ['won', 'converted', 'convertida_em_produto'].includes(row.stage || row.status)), 'value'), meta: metricMeta('supabase.product_opportunities', context, 'snapshot') };
 }
 
 export function getDashboardMetrics(companyId, data = {}, periodContext) {
   const context = requirePeriodContext(companyId, periodContext);
   const sales = getSalesMetrics(companyId, data.sales || [], context);
-  const customers = getCustomerMetrics(companyId, data.customers || [], context);
+  const customersBase = getCustomerMetrics(companyId, data.customers || [], context);
+  const salesCustomerIds = new Set(sales.rows.map((row) => row.customer_id).filter(Boolean));
+  const customers = { ...customersBase, active: salesCustomerIds.size || customersBase.active };
   const products = getProductMetrics(companyId, data.products || [], context);
   const finance = getFinanceMetrics(companyId, data.fin || [], context);
   const opportunities = getOpportunityMetrics(companyId, data.opportunities || [], context);
+  const previousContext = previousPeriodContext(context);
+  const previousSales = previousContext ? getSalesMetrics(companyId, data.sales || [], previousContext) : null;
+  const previousCustomersBase = previousContext ? getCustomerMetrics(companyId, data.customers || [], previousContext) : null;
+  const previousCustomerIds = previousSales ? new Set(previousSales.rows.map((row) => row.customer_id).filter(Boolean)) : new Set();
+  const previousCustomers = previousCustomersBase ? { ...previousCustomersBase, active: previousCustomerIds.size || previousCustomersBase.active } : null;
   const projection = projectionForPeriod(sales.revenue, context);
-  return { company_id: companyId, period: context, sales, customers, products, finance, opportunities, funnel: buildCrmFunnel({ companyId, customers: data.customers || [], opportunities: data.opportunities || [], sales: data.sales || [], periodContext: context }), projection, meta: metricMeta('metricsService', context, 'composite') };
+  return {
+    company_id: companyId,
+    period: context,
+    previous_period: previousContext,
+    sales,
+    customers,
+    products,
+    finance: { ...finance, available: finance.available },
+    opportunities,
+    comparisons: {
+      revenue: previousSales ? compareMetric(sales.revenue, previousSales.revenue) : null,
+      sales: previousSales ? compareMetric(sales.count, previousSales.count) : null,
+      ticket: previousSales ? compareMetric(sales.average_ticket, previousSales.average_ticket) : null,
+      margin: previousSales ? compareMetric(sales.margin, previousSales.margin) : null,
+      customers: previousCustomers ? compareMetric(customers.active, previousCustomers.active) : null,
+    },
+    funnel: buildCrmFunnel({ companyId, customers: data.customers || [], opportunities: data.opportunities || [], sales: data.sales || [], periodContext: context }),
+    projection,
+    meta: metricMeta('metricsService', context, 'composite'),
+  };
 }

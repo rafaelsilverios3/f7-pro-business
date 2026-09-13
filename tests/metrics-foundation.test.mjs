@@ -1,13 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   buildAbcRows,
   buildCrmFunnel,
   createPeriodContext,
+  compareMetric,
   matchesPeriod,
+  previousPeriodContext,
   projectionForPeriod,
   safeMargin,
 } from '../src/lib/metrics.js';
+import { getDashboardMetrics } from '../src/services/metricsService.js';
 import { buildPrintableHtml, escapeCsvCell, escapeHtml, serializeCsv } from '../src/lib/exporters.js';
 import { canUseFeature } from '../src/services/planService.js';
 
@@ -83,4 +87,61 @@ test('metric inputs cannot silently mix companies', () => {
 
 test('period context always requires company_id', () => {
   assert.throws(() => createPeriodContext({ periodKey: 'month' }), /company_id/);
+});
+
+test('executive dashboard metrics cover flow, snapshots and safe zero values', () => {
+  const context = createPeriodContext({ companyId, periodKey: 'month', timezone: 'America/Cuiaba', now: new Date('2026-09-13T12:00:00Z') });
+  const metrics = getDashboardMetrics(companyId, {
+    sales: [
+      { company_id: companyId, customer_id: 'customer-a', sale_date: '2026-09-03', status: 'paid', total: 100, profit: 25 },
+      { company_id: companyId, customer_id: 'customer-a', sale_date: '2026-08-03', status: 'paid', total: 50, profit: 10 },
+      { company_id: 'other', customer_id: 'other-customer', sale_date: '2026-09-03', status: 'paid', total: 900, profit: 500 },
+    ],
+    customers: [{ company_id: companyId, id: 'customer-a', status: 'active', created_date: '2026-09-01' }],
+    products: [{ company_id: companyId, stock: 1, minimum_stock: 2 }],
+    opportunities: [
+      { company_id: companyId, status: 'validada', value: 200 },
+      { company_id: companyId, status: 'descartada', value: 300 },
+      { company_id: companyId, status: 'validada', value: 400, metadata: { snooze_until: '2099-01-01T00:00:00Z' } },
+    ],
+    fin: [],
+  }, context);
+  assert.equal(metrics.sales.revenue, 100);
+  assert.equal(metrics.sales.count, 1);
+  assert.equal(metrics.sales.average_ticket, 100);
+  assert.equal(metrics.sales.margin, 25);
+  assert.equal(metrics.customers.active, 1);
+  assert.equal(metrics.products.critical, 1);
+  assert.equal(metrics.opportunities.open, 1);
+  assert.equal(metrics.finance.available, false);
+  assert.equal(metrics.comparisons.revenue.state, 'positive');
+  assert.equal(metrics.comparisons.revenue.delta_percent, 100);
+});
+
+test('executive comparison handles previous zero and all-time without Infinity', () => {
+  assert.deepEqual(compareMetric(10, 0), { current: 10, previous: 0, delta: 10, delta_percent: null, state: 'new' });
+  assert.equal(compareMetric(0, 0).state, 'neutral');
+  const all = createPeriodContext({ companyId, periodKey: 'all' });
+  assert.equal(previousPeriodContext(all), null);
+  const previous = previousPeriodContext(createPeriodContext({ companyId, periodKey: 'month', now: new Date('2026-09-13T12:00:00Z') }));
+  assert.equal(previous.start_date, '2026-08-02');
+  assert.equal(previous.end_date, '2026-08-31');
+});
+
+test('snapshot opportunity states exclude closed and active snoozed records', () => {
+  const context = createPeriodContext({ companyId, periodKey: 'all' });
+  const metrics = getDashboardMetrics(companyId, { opportunities: [
+    { company_id: companyId, status: 'validada' },
+    { company_id: companyId, status: 'convertida_em_produto' },
+    { company_id: companyId, status: 'validada', metadata: { snooze_until: '2099-01-01T00:00:00Z' } },
+  ] }, context);
+  assert.equal(metrics.opportunities.open, 1);
+});
+
+test('executive dashboard has explicit loading, partial-error and empty-safe UI states', () => {
+  const dashboard = fs.readFileSync(new URL('../src/pages/Dashboard.jsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /Array\.from\(\{ length: 8 \}/);
+  assert.match(dashboard, /m\.partialErrors\.length > 0/);
+  assert.match(dashboard, /Indisponível/);
+  assert.match(dashboard, /Number\(m\.margem \|\| 0\)\.toFixed/);
 });

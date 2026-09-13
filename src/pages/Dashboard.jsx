@@ -5,7 +5,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import {
-  DollarSign, TrendingUp, Wallet, Users, Package, ShoppingCart, AlertTriangle, Trophy, FileText, Zap as ZapIcon,
+  DollarSign, TrendingUp, Wallet, Users, Package, ShoppingCart, AlertTriangle, Trophy, FileText, Zap as ZapIcon, RefreshCw,
 } from 'lucide-react';
 import { salesRepository } from '@/data/repositories/salesRepository';
 import { productsRepository } from '@/data/repositories/productsRepository';
@@ -13,87 +13,92 @@ import { customersRepository } from '@/data/repositories/customersRepository';
 import { financeRepository } from '@/data/repositories/financeRepository';
 import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { getDataProvider } from '@/data/providerSelector';
-import { fmtMoney, fmtMoneyShort, fmtNum, periodKeyPrev } from '@/lib/business';
+import { fmtMoney, fmtMoneyShort, fmtNum } from '@/lib/business';
 import { buildEvolution, createPeriodContext } from '@/lib/metrics';
 import { getDashboardMetrics } from '@/services/metricsService';
 import { generateInsights } from '@/lib/intelligence';
 import KpiCard from '@/components/dashboard/KpiCard';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { Target, GitBranch, Activity, Clock, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '@/lib/AuthContext';
+import { createRepository } from '@/data/repositoryFactory';
+
+const radarOpportunityRepository = createRepository('ProductOpportunity');
 
 const PERIODS = [
   { value: 'day', label: 'Hoje' },
+  { value: '7d', label: '7 dias' },
+  { value: '30d', label: '30 dias' },
   { value: 'month', label: 'Mês' },
+  { value: 'quarter', label: 'Trimestre' },
   { value: 'year', label: 'Ano' },
+  { value: 'all', label: 'Tudo' },
 ];
 
 export default function Dashboard() {
   const { company } = useOutletContext();
-  const { user } = useAuth();
-  const [profileName, setProfileName] = useState('');
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadProfileName = async () => {
-      if (!user?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return;
-      try {
-        const profile = await getDataProvider().entity('Profile').get(user.id);
-        const name = profile?.name?.trim();
-        if (!cancelled && name) setProfileName(name);
-      } catch {
-        // Profile is optional; Auth metadata remains the fallback.
-      }
-    };
-    loadProfileName();
-    return () => { cancelled = true; };
-  }, [user?.id]);
-
-  useEffect(() => {
+  const loadDashboard = async () => {
     if (!company) return;
-    (async () => {
-      setError(null);
-      try {
-        const isSupabase = import.meta.env.VITE_DATA_PROVIDER === 'supabase';
-        const legacy = isSupabase ? [[], [], []] : await Promise.all([
-          getDataProvider().entity('Goal').filter({ company_id: company.id, active: true }, '-created_date', 100),
-          getDataProvider().entity('Opportunity').filter({ company_id: company.id }, '-created_date', 100),
-          generateInsights(company.id, period),
-        ]);
-        const [sales, products, customers, fin, movements] = await Promise.all([
-          salesRepository.list(company.id, '-sale_date', 500),
-          productsRepository.list(company.id, '-created_date', 500),
-          customersRepository.list(company.id, '-created_date', 500),
-          financeRepository.list(company.id, '-due_date', 500),
-          inventoryRepository.list(company.id, '-created_date', 10),
-        ]);
-        setData({ sales, products, customers, fin, goals: legacy[0], opportunities: legacy[1], insights: legacy[2], movements });
-      } catch (cause) { setError(cause); setData(null); }
-    })();
+    setLoading((current) => !data || current);
+    setRefreshing(Boolean(data));
+    setError(null);
+    try {
+      const isSupabase = import.meta.env.VITE_DATA_PROVIDER === 'supabase';
+      const legacyPromise = isSupabase ? Promise.resolve([[], [], []]) : Promise.all([
+        getDataProvider().entity('Goal').filter({ company_id: company.id, active: true }, '-created_date', 100),
+        getDataProvider().entity('Opportunity').filter({ company_id: company.id }, '-created_date', 100),
+        generateInsights(company.id, period),
+      ]);
+      const results = await Promise.allSettled([
+        legacyPromise,
+        salesRepository.list(company.id, '-sale_date', 500),
+        productsRepository.list(company.id, '-created_date', 500),
+        customersRepository.list(company.id, '-created_date', 500),
+        financeRepository.list(company.id, '-due_date', 500),
+        inventoryRepository.list(company.id, '-created_date', 10),
+        isSupabase ? radarOpportunityRepository.list(company.id, '-created_date', 500) : Promise.resolve([]),
+      ]);
+      const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
+      const legacy = value(0, [[], [], []]);
+      const radar = value(6, []);
+      const failures = results.map((result, index) => result.status === 'rejected' ? { index, message: result.reason?.message || 'Não foi possível carregar este bloco.' } : null).filter(Boolean);
+      setData({
+        sales: value(1, []),
+        products: value(2, []),
+        customers: value(3, []),
+        fin: value(4, []),
+        goals: legacy[0] || [],
+        opportunities: isSupabase ? radar : (legacy[1] || []),
+        insights: legacy[2] || [],
+        movements: value(5, []),
+        failures,
+      });
+      setUpdatedAt(new Date());
+      if (failures.length === results.length) setError(new Error('Não foi possível carregar as métricas do dashboard.'));
+    } catch (cause) { setError(cause); }
+    finally { setLoading(false); setRefreshing(false); }
+  };
+
+  useEffect(() => {
+    if (company) loadDashboard();
   }, [company, period]);
 
   const m = useMemo(() => {
     if (!data) return null;
     const periodContext = createPeriodContext({ companyId: company.id, periodKey: period });
-    const valid = data.sales.filter((s) => s.status !== 'cancelled');
     const shared = getDashboardMetrics(company.id, data, periodContext);
     const cur = shared.sales.rows;
-    const prev = valid.filter((s) => periodKeyPrev(s.sale_date, period));
-
-    const sumTotal = (arr) => arr.reduce((s, x) => s + (x.total || 0), 0);
-    const sumProfit = (arr) => arr.reduce((s, x) => s + (x.profit || 0), 0);
 
     const faturamento = shared.sales.revenue;
-    const faturamentoPrev = sumTotal(prev);
     const lucro = shared.sales.profit;
-    const lucroPrev = sumProfit(prev);
     const margem = shared.sales.margin;
-    const margemPrev = faturamentoPrev > 0 ? (lucroPrev / faturamentoPrev) * 100 : 0;
     const numVendas = cur.length;
     const ticketMedio = shared.sales.average_ticket;
 
@@ -103,6 +108,8 @@ export default function Dashboard() {
 
     const novosClientes = shared.customers.created;
     const estoqueCritico = shared.products.critical;
+    const clientesAtivos = shared.customers.active;
+    const oportunidadesAbertas = shared.opportunities.open;
 
     // Produtos mais vendidos
     const prodMap = {};
@@ -122,9 +129,7 @@ export default function Dashboard() {
     });
     const topVendedores = Object.entries(sellerMap).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 5);
 
-    const evolucao = buildEvolution(valid, periodContext);
-
-    const pct = (a, b) => (b > 0 ? ((a - b) / b) * 100 : a > 0 ? 100 : 0);
+    const evolucao = buildEvolution(data.sales, periodContext);
 
     // Metas
     const goalProgress = (data.goals || []).map((g) => {
@@ -142,7 +147,7 @@ export default function Dashboard() {
     const projecao = projection.value;
 
     // Fluxo de caixa projetado (receber - pagar)
-    const fluxoCaixa = contasReceber - contasPagar;
+    const fluxoCaixa = shared.finance.projected_net;
 
     // Atividades recentes
     const recentActivity = (data.movements || []).slice(0, 8).map((mv) => ({
@@ -155,65 +160,66 @@ export default function Dashboard() {
 
     return {
       faturamento, lucro, margem, despesas, contasReceber, contasPagar,
-      ticketMedio, numVendas, novosClientes, estoqueCritico,
+      ticketMedio, numVendas, novosClientes, clientesTotal: shared.customers.total, estoqueCritico, clientesAtivos, oportunidadesAbertas,
+      financeAvailable: shared.finance.available,
       topProdutos, topVendedores, evolucao,
       goalProgress, funnel, projecao, projectionLabel: projection.label, fluxoCaixa, recentActivity,
       insights: data.insights || [],
       opportunities: data.opportunities || [],
-      trends: {
-        faturamento: pct(faturamento, faturamentoPrev),
-        lucro: pct(lucro, lucroPrev),
-        margem: margem - margemPrev,
-      },
+      comparisons: shared.comparisons,
+      partialErrors: data.failures || [],
     };
   }, [data, period, company?.id]);
 
-  if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={() => window.location.reload()}>Tentar novamente</button></div>;
-  if (!m) return <div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-slate-800" /></div>;
+  if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">{error.message}</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={loadDashboard}>Tentar novamente</button></div>;
+  if (!m) return <div className="mx-auto w-full max-w-[1760px] px-5 py-7 xl:px-8 2xl:px-10"><div className="mb-7 h-28 animate-pulse rounded-2xl bg-slate-800/60" /><div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-44 animate-pulse rounded-2xl border border-slate-700/60 bg-slate-800/60" />)}</div></div>;
 
-  const metadata = user?.user_metadata || user?.raw_user_meta_data || {};
-  const realName = (...values) => values.find((value) => typeof value === 'string' && value.trim() && !value.includes('@'))?.trim() || '';
-  const displayName = realName(profileName, user?.full_name, user?.name, metadata.full_name, metadata.name);
-  const firstName = displayName.trim().split(/\s+/)[0];
-  const today = format(new Date(), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR });
+  const today = format(new Date(), 'dd/MM/yyyy HH:mm');
 
   return (
     <div className="mx-auto w-full max-w-[1760px] px-5 py-7 xl:px-8 2xl:px-10">
       <div className="mb-7 flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">F7 PRO BUSINESS</p>
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">{firstName ? `Olá, ${firstName}!` : 'Olá!'} <span aria-hidden="true">👋</span></h1>
-          <p className="mt-2 text-sm text-slate-400">Aqui está o resumo do seu negócio em tempo real.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Visão Executiva</h1>
+          <p className="mt-2 text-sm text-slate-400">{company.name || 'Sua empresa'} · resumo executivo do negócio.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-xl border border-slate-700/70 bg-[#0d1b2e] px-4 py-2.5 text-right">
-            <p className="text-xs font-medium capitalize text-slate-200">{today}</p>
-            <p className="mt-0.5 text-[10px] text-slate-500">Dados atualizados agora</p>
+            <p className="text-xs font-medium capitalize text-slate-200">{PERIODS.find((item) => item.value === period)?.label || period}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">Atualizado {updatedAt ? format(updatedAt, 'dd/MM/yyyy HH:mm') : today}</p>
           </div>
           <div className="flex gap-1 rounded-xl border border-slate-700/70 bg-[#0d1b2e] p-1">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
+                type="button"
+                aria-pressed={period === p.value}
                 onClick={() => setPeriod(p.value)}
-                className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-200 ${period === p.value ? 'f7-period-active bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                className={`rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-200 sm:px-3 ${period === p.value ? 'f7-period-active bg-[#1677ff] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
               >
                 {p.label}
               </button>
             ))}
           </div>
+          <button type="button" aria-label="Atualizar métricas" onClick={loadDashboard} disabled={refreshing} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700/70 bg-[#0d1b2e] text-slate-300 hover:text-white disabled:opacity-50">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
+      {m.partialErrors.length > 0 && <div role="status" className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">Alguns indicadores estão indisponíveis no momento; os demais continuam calculados com os dados autorizados.</div>}
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <KpiCard primary label="Faturamento" value={fmtMoney(m.faturamento)} icon={DollarSign} trend={m.trends.faturamento} accent="bg-blue-500/15 text-blue-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#3aa0ff" />
-        <KpiCard primary label="Lucro" value={fmtMoney(m.lucro)} icon={TrendingUp} trend={m.trends.lucro} accent="bg-emerald-500/15 text-emerald-300" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#20d49a" />
-        <KpiCard primary label="Margem das vendas" value={`${m.margem.toFixed(1)}%`} icon={TrendingUp} trend={m.trends.margem} accent="bg-violet-500/15 text-violet-300" sub="lucro das vendas / faturamento" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#9b70ff" />
-        <KpiCard primary label="Despesas" value={fmtMoney(m.despesas)} icon={Wallet} accent="bg-rose-500/15 text-rose-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#ff647c" />
-        <KpiCard label="Contas a Receber" value={fmtMoney(m.contasReceber)} icon={Wallet} accent="bg-amber-500/15 text-amber-300" />
-        <KpiCard label="Contas a Pagar" value={fmtMoney(m.contasPagar)} icon={Wallet} accent="bg-orange-500/15 text-orange-300" />
-        <KpiCard label="Ticket Médio" value={fmtMoney(m.ticketMedio)} icon={ShoppingCart} accent="bg-blue-500/15 text-blue-300" sub={`${m.numVendas} vendas`} />
-        <KpiCard label="Novos Clientes" value={fmtNum(m.novosClientes)} icon={Users} accent="bg-teal-500/15 text-teal-300" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard primary label="Faturamento" value={fmtMoney(m.faturamento)} icon={DollarSign} comparison={m.comparisons.revenue} accent="bg-blue-500/15 text-blue-300" sparklineData={m.evolucao} sparklineKey="faturamento" sparklineColor="#3aa0ff" />
+        <KpiCard primary label="Vendas" value={fmtNum(m.numVendas)} icon={ShoppingCart} comparison={m.comparisons.sales} accent="bg-cyan-500/15 text-cyan-300" sub="vendas válidas no período" />
+        <KpiCard primary label="Ticket médio" value={fmtMoney(m.ticketMedio)} icon={ShoppingCart} comparison={m.comparisons.ticket} accent="bg-indigo-500/15 text-indigo-300" sub="faturamento / vendas" />
+        <KpiCard primary label="Margem das vendas" value={`${Number(m.margem || 0).toFixed(1)}%`} icon={TrendingUp} comparison={m.comparisons.margin} accent="bg-violet-500/15 text-violet-300" sub="lucro das vendas / faturamento" sparklineData={m.evolucao} sparklineKey="lucro" sparklineColor="#9b70ff" />
+        <KpiCard label="Clientes ativos" value={fmtNum(m.clientesAtivos)} icon={Users} comparison={m.comparisons.customers} accent="bg-teal-500/15 text-teal-300" sub={`${fmtNum(m.clientesTotal)} cadastrados`} />
+        <Link to="/estoque" className="block"><KpiCard label="Estoque baixo" value={fmtNum(m.estoqueCritico)} icon={Package} snapshot accent="bg-rose-500/15 text-rose-300" sub="posição atual · ver estoque" /></Link>
+        <KpiCard label="Oportunidades abertas" value={fmtNum(m.oportunidadesAbertas)} icon={Target} snapshot accent="bg-amber-500/15 text-amber-300" sub="Opportunity Radar" />
+        <KpiCard label="Projeção líquida de compromissos" value={m.financeAvailable ? fmtMoney(m.fluxoCaixa) : 'Indisponível'} icon={Wallet} snapshot accent="bg-orange-500/15 text-orange-300" sub={m.financeAvailable ? `A receber ${fmtMoneyShort(m.contasReceber)} · a pagar ${fmtMoneyShort(m.contasPagar)}` : 'dados financeiros indisponíveis'} />
       </div>
 
       {/* Charts row */}

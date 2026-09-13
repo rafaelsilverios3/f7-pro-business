@@ -61,6 +61,34 @@ export function createPeriodContext({ companyId, periodKey = 'month', timezone, 
   return Object.freeze({ company_id: companyId, start_date: start, end_date: end, timezone: tz, period_key: periodKey });
 }
 
+/** Return the immediately preceding comparable period, or null for snapshots/all-time. */
+export function previousPeriodContext(periodContext) {
+  if (!periodContext?.company_id || periodContext.period_key === 'all' || !periodContext.start_date || !periodContext.end_date) return null;
+  const start = new Date(`${periodContext.start_date}T12:00:00Z`);
+  const end = new Date(`${periodContext.end_date}T12:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const days = Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+  const previousEnd = shiftDays(periodContext.start_date, -1);
+  const previousStart = shiftDays(previousEnd, -days + 1);
+  return Object.freeze({
+    company_id: periodContext.company_id,
+    start_date: previousStart,
+    end_date: previousEnd,
+    timezone: periodContext.timezone,
+    period_key: 'previous',
+  });
+}
+
+/** Deterministic comparison used by executive KPI cards. Never emits Infinity/NaN. */
+export function compareMetric(current, previous) {
+  const currentValue = Number(current);
+  const previousValue = Number(previous);
+  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)) return { current: null, previous: null, delta: null, delta_percent: null, state: 'unavailable' };
+  const delta = currentValue - previousValue;
+  if (previousValue === 0) return { current: currentValue, previous: previousValue, delta, delta_percent: null, state: currentValue === 0 ? 'neutral' : 'new' };
+  return { current: currentValue, previous: previousValue, delta, delta_percent: (delta / Math.abs(previousValue)) * 100, state: delta === 0 ? 'neutral' : delta > 0 ? 'positive' : 'negative' };
+}
+
 export function matchesPeriod(value, periodContext) {
   if (!periodContext || periodContext.period_key === 'all') return true;
   const date = dateOnly(value, periodContext.timezone);

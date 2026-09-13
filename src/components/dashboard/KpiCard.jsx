@@ -3,11 +3,19 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { ResponsiveContainer, LineChart, Line } from 'recharts';
 
-export default function KpiCard({ label, value, sub, icon: Icon, trend, accent, primary = false, sparklineData, sparklineKey, sparklineColor = '#3aa0ff' }) {
-  const trendUp = trend && trend > 0;
-  const trendDown = trend && trend < 0;
+export default function KpiCard({ label, value, sub, icon: Icon, trend, comparison, accent, primary = false, snapshot = false, status, sparklineData, sparklineKey, sparklineColor = '#3aa0ff' }) {
+  const trendValue = typeof trend === 'number' ? trend : comparison?.delta_percent;
+  const trendUp = trendValue > 0;
+  const trendDown = trendValue < 0;
+  const comparisonText = comparison?.state === 'new'
+    ? 'novo no período'
+    : comparison?.state === 'unavailable'
+      ? 'comparativo indisponível'
+      : Number.isFinite(comparison?.delta_percent)
+        ? `${trendUp ? '↑' : trendDown ? '↓' : '—'} ${Math.abs(comparison.delta_percent).toFixed(1)}% vs período anterior`
+        : null;
   return (
-    <div className={cn('f7-kpi-card group relative overflow-hidden rounded-2xl border border-slate-700/60 bg-gradient-to-br from-[#10213a] to-[#0c1728] p-5 shadow-[0_12px_32px_rgba(0,0,0,.16)] transition duration-200 hover:-translate-y-0.5 hover:border-slate-600', primary && 'min-h-[178px] lg:p-6')}>
+    <div className={cn('f7-kpi-card group relative overflow-hidden rounded-2xl border border-slate-700/60 bg-gradient-to-br from-[#10213a] to-[#0c1728] p-5 shadow-[0_12px_32px_rgba(0,0,0,.16)] transition duration-200 hover:-translate-y-0.5 hover:border-slate-600', primary && 'min-h-[178px] lg:p-6')} data-kpi-status={status || (snapshot ? 'snapshot' : 'period')}>
       <div className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full opacity-10 blur-2xl" style={{ background: sparklineColor }} />
       <div className="flex items-center justify-between">
         <span className={cn('text-xs font-semibold uppercase tracking-wide text-slate-300', primary && 'text-sm')}>{label}</span>
@@ -19,9 +27,9 @@ export default function KpiCard({ label, value, sub, icon: Icon, trend, accent, 
       </div>
       <p className={cn('relative mt-4 text-2xl font-bold tracking-tight text-white', primary && 'text-3xl')}>{value}</p>
       <div className="mt-1.5 flex items-center gap-1.5">
-        {trend !== undefined && trend !== null && (
-          <span className={cn('text-xs font-semibold', trendUp ? 'text-emerald-400' : trendDown ? 'text-rose-400' : 'text-slate-400')}>
-            {trendUp ? '↑' : trendDown ? '↓' : '—'} {Math.abs(trend || 0).toFixed(1)}%
+        {(comparisonText || (trend !== undefined && trend !== null)) && (
+          <span className={cn('text-xs font-semibold', trendUp ? 'text-emerald-400' : trendDown ? 'text-rose-400' : 'text-slate-400')} aria-label={comparisonText || 'Variação percentual'}>
+            {comparisonText || `${trendUp ? '↑' : trendDown ? '↓' : '—'} ${Math.abs(trend || 0).toFixed(1)}%`}
           </span>
         )}
         {sub && <span className="text-xs text-slate-400">{sub}</span>}
