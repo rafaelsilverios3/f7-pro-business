@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
 const migration = fs.readFileSync('supabase/migrations/0064_platform_billing_foundation.sql', 'utf8');
 const checkout = fs.readFileSync('supabase/functions/billing-checkout/index.ts', 'utf8');
@@ -79,6 +80,24 @@ test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remai
   assert.match(webhook, /constantTimeEqual/);
   assert.match(webhook, /received_digest_length/);
   assert.match(webhook, /v1\/orders/);
+});
+
+test('billing webhook validates Mercado Pago timestamps in Unix seconds and fails closed', () => {
+  assert.match(webhook, /WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 10 \* 60/);
+  assert.match(webhook, /Math\.floor\(Date\.now\(\) \/ 1000\)/);
+  assert.match(webhook, /const tsSeconds = Number\(value\)/);
+  assert.doesNotMatch(webhook, /Math\.abs\(Date\.now\(\) - Number\(ts\)\)/);
+
+  const helperSource = webhook.match(/const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS[\s\S]*?;\n\nconst resolveDataId/)?.[0]?.replace(/\n\nconst resolveDataId[\s\S]*$/, '').replace(/\(value: string, nowSeconds =/, '(value, nowSeconds =');
+  assert.ok(helperSource, 'timestamp helper must remain isolated and testable');
+  const context = {};
+  vm.runInNewContext(`${helperSource}; this.validate = isWebhookTimestampValid;`, context);
+  const now = 1_789_309_220;
+  assert.equal(context.validate(String(now), now), true, 'current seconds timestamp is valid');
+  assert.equal(context.validate(String(now - 601), now), false, 'old timestamp is rejected');
+  assert.equal(context.validate(String(now + 601), now), false, 'future timestamp is rejected');
+  assert.equal(context.validate('not-a-number', now), false, 'non-numeric timestamp is rejected');
+  assert.equal(context.validate(String(now), now + 0.5), true, 'seconds remain seconds throughout comparison');
 });
 
 test('Orders PIX test contract uses the official deterministic payer without exposing secrets', () => {

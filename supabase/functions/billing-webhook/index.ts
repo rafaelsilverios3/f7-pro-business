@@ -18,6 +18,12 @@ const constantTimeEqual = (left: string, right: string) => {
   return difference === 0;
 };
 
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 10 * 60;
+const isWebhookTimestampValid = (value: string, nowSeconds = Math.floor(Date.now() / 1000)) => {
+  const tsSeconds = Number(value);
+  return Number.isFinite(tsSeconds) && Math.abs(nowSeconds - tsSeconds) <= WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS;
+};
+
 const resolveDataId = (req: Request, body: any) => {
   const url = new URL(req.url);
   const queryDataId = clean(url.searchParams.get('data.id') || url.searchParams.get('data_id'));
@@ -38,7 +44,7 @@ async function validateSignature(req: Request, body: any) {
   const invalid = (reason: string) => { console.error(JSON.stringify({ ...diagnostics, result: 'invalid', reason })); return { valid: false, dataId }; };
   if (!secret) return invalid('secret_missing');
   if (!ts || !v1 || !dataId) return invalid('required_signature_field_missing');
-  if (!Number.isFinite(Number(ts)) || Math.abs(Date.now() - Number(ts)) > 10 * 60 * 1000) return invalid('timestamp_invalid_or_expired');
+  if (!isWebhookTimestampValid(ts)) return invalid('timestamp_invalid_or_expired');
   const manifest = [`id:${dataId};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(manifest));
