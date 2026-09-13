@@ -15,6 +15,7 @@ const planService = fs.readFileSync('src/services/planService.js', 'utf8');
 const featureGate = fs.readFileSync('src/services/featureGate.js', 'utf8');
 const commercialMigration = fs.readFileSync('supabase/migrations/0065_platform_plan_catalog.sql', 'utf8');
 const trialMigration = fs.readFileSync('supabase/migrations/0066_trial_lifecycle.sql', 'utf8');
+const trialGateMigration = fs.readFileSync('supabase/migrations/0067_trial_gate_fail_closed.sql', 'utf8');
 const intelligenceEdge = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
 const supplierEdge = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
 const automationEdge = fs.readFileSync('supabase/functions/automation-worker/index.ts', 'utf8');
@@ -117,6 +118,12 @@ test('trial starts once for 24 hours, expires server-side and preserves data', (
   assert.match(trialMigration, /status = 'expired'/);
   assert.match(trialMigration, /company_has_feature/);
   assert.match(trialMigration, /status in \('trial','active','past_due','cancelled','suspended','expired'\)/);
+});
+
+test('active trial cannot be entitled by overrides or plan features', () => {
+  assert.match(trialGateMigration, /if subscription_status = 'trial' then return false; end if/);
+  assert.match(trialGateMigration, /company_feature_overrides/);
+  assert.match(trialGateMigration, /company_has_feature/);
 });
 
 test('checkout reuses open intent and webhook validates money before activation', () => {
