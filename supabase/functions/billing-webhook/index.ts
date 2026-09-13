@@ -54,7 +54,32 @@ async function validateSignature(req: Request, body: any) {
   return { valid, dataId };
 }
 
-const mapped = (status: string) => ({ approved: 'approved', action_required: 'pending', processing: 'pending', pending: 'pending', in_process: 'pending', rejected: 'rejected', failed: 'rejected', cancelled: 'cancelled', refunded: 'refunded', charged_back: 'charged_back' } as Record<string, string>)[status] || 'pending';
+const normalizeLegacyPaymentStatus = (status: unknown) => {
+  const normalized = String(status || '').toLowerCase();
+  const result = ({ approved: 'approved', action_required: 'pending', processing: 'pending', pending: 'pending', in_process: 'pending', rejected: 'rejected', failed: 'rejected', cancelled: 'cancelled', refunded: 'refunded', charged_back: 'charged_back' } as Record<string, string>)[normalized] || 'pending';
+  return { status: result, activationEligible: result === 'approved', reason: result === 'approved' ? null : `legacy_${normalized || 'unknown'}` };
+};
+
+const normalizeOrdersPaymentStatus = ({ orderStatus, orderStatusDetail, transactionStatus, transactionStatusDetail }) => {
+  const order = String(orderStatus || '').toLowerCase();
+  const orderDetail = String(orderStatusDetail || '').toLowerCase();
+  const transaction = String(transactionStatus || '').toLowerCase();
+  const transactionDetail = String(transactionStatusDetail || '').toLowerCase();
+  const hasTransaction = Boolean(transaction || transactionDetail);
+  const transactionApproved = transaction === 'processed' && transactionDetail === 'accredited';
+  if (order === 'processed' && orderDetail === 'partially_refunded' || transaction === 'processed' && transactionDetail === 'partially_refunded') return { status: 'refunded', activationEligible: false, reason: 'partial_refund' };
+  if (order === 'processed' && orderDetail === 'accredited' && (!hasTransaction || transactionApproved)) return { status: 'approved', activationEligible: true, reason: null };
+  if (order === 'processed' && orderDetail === 'accredited' && hasTransaction && !transactionApproved) return { status: 'pending', activationEligible: false, reason: 'transaction_status_mismatch' };
+  if (order === 'action_required' && orderDetail === 'waiting_payment') return { status: 'pending', activationEligible: false, reason: 'waiting_payment' };
+  if (order === 'processing' && orderDetail === 'in_process') return { status: 'pending', activationEligible: false, reason: 'in_process' };
+  if (order === 'created' && orderDetail === 'created') return { status: 'pending', activationEligible: false, reason: 'created' };
+  if (order === 'refunded' || transaction === 'refunded') return { status: 'refunded', activationEligible: false, reason: 'refunded' };
+  if (order === 'cancelled' || order === 'canceled' || transaction === 'cancelled' || transaction === 'canceled') return { status: 'cancelled', activationEligible: false, reason: 'cancelled' };
+  if (order === 'failed' || transaction === 'failed') return { status: 'rejected', activationEligible: false, reason: 'failed' };
+  if (order === 'expired' || transaction === 'expired') return { status: 'rejected', activationEligible: false, reason: 'expired' };
+  if (order === 'processed') return { status: 'pending', activationEligible: false, reason: 'order_status_detail_unverified' };
+  return { status: 'pending', activationEligible: false, reason: 'provider_status_unverified' };
+};
 const periodEnd = (start: Date, billingPeriod: string) => { const end = new Date(start); if (billingPeriod === 'year') end.setUTCFullYear(end.getUTCFullYear() + 1); else end.setUTCMonth(end.getUTCMonth() + 1); return end; };
 
 Deno.serve(async (req) => {
@@ -68,10 +93,16 @@ Deno.serve(async (req) => {
   const type = clean(body?.type || body?.action, 80);
   const resourceId = clean(signature.dataId || body?.data?.object_id);
   const isOrder = type === 'order' || type.startsWith('order.');
-  const inserted = await sb.from('billing_webhook_events').insert({ provider: 'mercado_pago', provider_event_id: eventId, event_type: type, provider_resource_id: resourceId, status: 'received', metadata: { live_mode: Boolean(body?.live_mode) } });
-  if (inserted.error?.code === '23505') return json({ code: 'OK', duplicate: true });
-  if (inserted.error) return json({ code: 'WEBHOOK_PERSIST_FAILED' }, 500);
-  if ((!isOrder && type !== 'payment') || !resourceId) { await sb.from('billing_webhook_events').update({ status: 'ignored', processed_at: new Date().toISOString() }).eq('provider_event_id', eventId); return json({ code: 'OK', ignored: true }); }
+  const { data: existingEvent } = await sb.from('billing_webhook_events').select('status,metadata').eq('provider_event_id', eventId).maybeSingle();
+  const legacyEventNeedsReconciliation = existingEvent?.status === 'processed' && !existingEvent.metadata?.normalized_payment_status;
+  if (existingEvent && !legacyEventNeedsReconciliation) return json({ code: 'OK', duplicate: true });
+  if (!existingEvent) {
+    const inserted = await sb.from('billing_webhook_events').insert({ provider: 'mercado_pago', provider_event_id: eventId, event_type: type, provider_resource_id: resourceId, status: 'received', metadata: { live_mode: Boolean(body?.live_mode) } });
+    if (inserted.error?.code === '23505') return json({ code: 'OK', duplicate: true });
+    if (inserted.error) return json({ code: 'WEBHOOK_PERSIST_FAILED' }, 500);
+  }
+  const updateEvent = (values: Record<string, unknown>, evidence: Record<string, unknown> = {}) => sb.from('billing_webhook_events').update({ ...values, metadata: { ...(existingEvent?.metadata || {}), live_mode: Boolean(body?.live_mode), ...evidence } }).eq('provider_event_id', eventId);
+  if ((!isOrder && type !== 'payment') || !resourceId) { await updateEvent({ status: 'ignored', processed: true, processed_at: new Date().toISOString() }); return json({ code: 'OK', ignored: true }); }
   const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
   if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);
   const endpoint = isOrder ? `https://api.mercadopago.com/v1/orders/${encodeURIComponent(resourceId)}` : `https://api.mercadopago.com/v1/payments/${encodeURIComponent(resourceId)}`;
@@ -84,32 +115,69 @@ Deno.serve(async (req) => {
     return json({ code: isOrder ? 'ORDER_LOOKUP_FAILED' : 'PAYMENT_LOOKUP_FAILED' }, 502);
   }
   const payment = isOrder ? (resource.transactions?.payments?.[0] || {}) : resource;
+  const providerEvidence = {
+    provider_order_status: isOrder ? clean(resource.status, 80) || null : null,
+    provider_order_status_detail: isOrder ? clean(resource.status_detail, 120) || null : null,
+    provider_transaction_status: isOrder ? clean(payment.status, 80) || null : clean(resource.status, 80) || null,
+    provider_transaction_status_detail: isOrder ? clean(payment.status_detail, 120) || null : clean(resource.status_detail, 120) || null,
+  };
+  const normalized = isOrder
+    ? normalizeOrdersPaymentStatus({ orderStatus: resource.status, orderStatusDetail: resource.status_detail, transactionStatus: payment.status, transactionStatusDetail: payment.status_detail })
+    : normalizeLegacyPaymentStatus(payment.status || resource.status);
+  const evidence = { ...providerEvidence, normalized_payment_status: normalized.status, normalization_reason: normalized.reason };
+  console.error(JSON.stringify({ event: 'BILLING_WEBHOOK_STATUS_NORMALIZED', provider: 'mercado_pago', provider_resource_id: resourceId, ...evidence }));
   const paymentId = clean(payment.id);
-  let { data: local } = paymentId ? await sb.from('billing_payments').select('id,company_id,metadata,amount_minor,currency,provider_payment_id').eq('provider', 'mercado_pago').eq('provider_payment_id', paymentId).maybeSingle() : { data: null };
+  const { data: orderCheckout } = isOrder ? await sb.from('billing_checkout_sessions').select('id,company_id,plan_id,amount_minor,provider_order_id').eq('provider', 'mercado_pago').eq('provider_order_id', resourceId).maybeSingle() : { data: null };
+  let { data: local } = paymentId ? await sb.from('billing_payments').select('id,company_id,metadata,amount_minor,currency,provider_payment_id,status,provider_status').eq('provider', 'mercado_pago').eq('provider_payment_id', paymentId).maybeSingle() : { data: null };
   if (!local && isOrder) {
-    const { data: checkout } = await sb.from('billing_checkout_sessions').select('id,company_id,plan_id,amount_minor,provider_order_id').eq('provider', 'mercado_pago').eq('provider_order_id', resourceId).maybeSingle();
-    if (checkout && paymentId) {
-      const { data: created } = await sb.from('billing_payments').upsert({ company_id: checkout.company_id, provider: 'mercado_pago', provider_payment_id: paymentId, provider_status: payment.status || resource.status || 'pending', amount_minor: checkout.amount_minor, currency: 'BRL', status: 'pending', metadata: { checkout_id: checkout.id, provider_order_id: resourceId } }, { onConflict: 'provider,provider_payment_id' }).select('id,company_id,metadata,amount_minor,currency,provider_payment_id').maybeSingle();
+    if (orderCheckout && paymentId) {
+      const { data: created } = await sb.from('billing_payments').upsert({ company_id: orderCheckout.company_id, provider: 'mercado_pago', provider_payment_id: paymentId, provider_status: payment.status || resource.status || 'pending', amount_minor: orderCheckout.amount_minor, currency: 'BRL', status: 'pending', metadata: { checkout_id: orderCheckout.id, plan_code: null, provider_order_id: resourceId } }, { onConflict: 'provider,provider_payment_id' }).select('id,company_id,metadata,amount_minor,currency,provider_payment_id,status,provider_status').maybeSingle();
       local = created || null;
     }
   }
-  if (!local) { await sb.from('billing_webhook_events').update({ status: 'ignored', processed_at: new Date().toISOString() }).eq('provider_event_id', eventId); return json({ code: 'OK', ignored: true }); }
-  const status = mapped(String(payment.status || resource.status || 'pending'));
+  if (!local) { await updateEvent({ status: 'ignored', processed: true, processed_at: new Date().toISOString() }, evidence); return json({ code: 'OK', ignored: true }); }
+  const checkoutId = clean(local.metadata?.checkout_id);
+  const { data: checkout } = checkoutId
+    ? await sb.from('billing_checkout_sessions').select('id,company_id,plan_id,amount_minor,provider_order_id').eq('id', checkoutId).eq('company_id', local.company_id).maybeSingle()
+    : orderCheckout && orderCheckout.company_id === local.company_id ? { data: orderCheckout } : { data: null };
+  const { data: plan } = checkout ? await sb.from('plans').select('code,billing_period,price_minor,currency').eq('id', checkout.plan_id).maybeSingle() : { data: null };
+  const externalReference = clean(resource.external_reference || payment.external_reference);
+  const referenceMismatch = isOrder && (!externalReference || !checkout || externalReference !== String(checkout.id));
+  const orderMismatch = isOrder && (!checkout || checkout.provider_order_id !== resourceId || (checkoutId && checkoutId !== checkout.id));
+  const companyMismatch = !checkout || checkout.company_id !== local.company_id;
+  const planMismatch = !plan || (local.metadata?.plan_code && local.metadata.plan_code !== plan.code);
+  if (referenceMismatch || orderMismatch || companyMismatch || planMismatch) {
+    const code = referenceMismatch ? 'PAYMENT_REFERENCE_MISMATCH' : orderMismatch ? 'PROVIDER_ORDER_MISMATCH' : companyMismatch ? 'PAYMENT_COMPANY_MISMATCH' : 'PLAN_REFERENCE_MISMATCH';
+    await sb.from('billing_payments').update({ metadata: { ...(local.metadata || {}), ...evidence, rejection_code: code }, updated_at: new Date().toISOString() }).eq('id', local.id).eq('company_id', local.company_id);
+    await updateEvent({ status: 'failed', error_message: code, processed_at: new Date().toISOString() }, evidence);
+    return json({ code }, 422);
+  }
   const providerAmountMinor = Number.isFinite(Number(payment.amount || resource.total_amount || resource.transaction_amount)) ? Math.round(Number(payment.amount || resource.total_amount || resource.transaction_amount) * 100) : null;
   const providerCurrency = String(payment.currency_id || resource.currency_id || (resource.country_code === 'BRA' ? 'BRL' : '')).toUpperCase();
-  const expectedCurrency = String(local.currency || '').toUpperCase();
-  if (providerAmountMinor == null || providerAmountMinor !== Number(local.amount_minor) || providerCurrency !== expectedCurrency) {
-    await sb.from('billing_payments').update({ provider_status: payment.status || resource.status || null, status: 'rejected', updated_at: new Date().toISOString(), metadata: { ...(local.metadata || {}), rejection_code: 'PAYMENT_AMOUNT_MISMATCH', provider_amount_minor: providerAmountMinor, provider_currency: providerCurrency } }).eq('id', local.id).eq('company_id', local.company_id);
-    await sb.from('billing_webhook_events').update({ status: 'failed', error_message: 'PAYMENT_AMOUNT_MISMATCH', processed_at: new Date().toISOString() }).eq('provider_event_id', eventId);
+  const expectedAmountMinor = Number(checkout?.amount_minor);
+  const expectedCurrency = String(plan?.currency || local.currency || '').toUpperCase();
+  if (providerAmountMinor == null || providerAmountMinor !== expectedAmountMinor || providerAmountMinor !== Number(local.amount_minor) || plan?.price_minor == null || Number(plan.price_minor) !== expectedAmountMinor) {
+    const rejection = { ...evidence, rejection_code: 'PAYMENT_AMOUNT_MISMATCH', provider_amount_minor: providerAmountMinor, expected_amount_minor: expectedAmountMinor, provider_currency: providerCurrency, expected_currency: expectedCurrency };
+    await sb.from('billing_payments').update({ provider_status: payment.status || resource.status || null, status: 'rejected', updated_at: new Date().toISOString(), metadata: { ...(local.metadata || {}), ...rejection } }).eq('id', local.id).eq('company_id', local.company_id);
+    await updateEvent({ status: 'failed', error_message: 'PAYMENT_AMOUNT_MISMATCH', processed_at: new Date().toISOString() }, rejection);
     return json({ code: 'PAYMENT_AMOUNT_MISMATCH' }, 422);
   }
-  const externalReference = clean(resource.external_reference || payment.external_reference);
-  if (externalReference && local.metadata?.checkout_id && externalReference !== String(local.metadata.checkout_id)) { await sb.from('billing_webhook_events').update({ status: 'failed', error_message: 'PAYMENT_REFERENCE_MISMATCH', processed_at: new Date().toISOString() }).eq('provider_event_id', eventId); return json({ code: 'PAYMENT_REFERENCE_MISMATCH' }, 422); }
+  if (providerCurrency !== expectedCurrency) {
+    const rejection = { ...evidence, rejection_code: 'PAYMENT_CURRENCY_MISMATCH', provider_currency: providerCurrency, expected_currency: expectedCurrency };
+    await sb.from('billing_payments').update({ provider_status: payment.status || resource.status || null, status: 'rejected', updated_at: new Date().toISOString(), metadata: { ...(local.metadata || {}), ...rejection } }).eq('id', local.id).eq('company_id', local.company_id);
+    await updateEvent({ status: 'failed', error_message: 'PAYMENT_CURRENCY_MISMATCH', processed_at: new Date().toISOString() }, rejection);
+    return json({ code: 'PAYMENT_CURRENCY_MISMATCH' }, 422);
+  }
+  const status = normalized.status;
   const paidAt = status === 'approved' ? new Date().toISOString() : null;
-  await sb.from('billing_payments').update({ provider_status: payment.status || resource.status || null, status, paid_at: paidAt, updated_at: new Date().toISOString() }).eq('id', local.id).eq('company_id', local.company_id);
-  const checkoutId = local.metadata?.checkout_id;
-  const { data: checkout } = checkoutId ? await sb.from('billing_checkout_sessions').select('id,plan_id,company_id').eq('id', checkoutId).eq('company_id', local.company_id).maybeSingle() : { data: null };
-  if (checkout) { await sb.from('billing_checkout_sessions').update({ status: status === 'approved' ? 'approved' : status === 'pending' ? 'pending' : 'failed', updated_at: new Date().toISOString() }).eq('id', checkout.id); if (status === 'approved') { const { data: plan } = await sb.from('plans').select('code,billing_period').eq('id', checkout.plan_id).maybeSingle(); const periodStart = new Date(); if (plan) await sb.from('company_subscriptions').upsert({ company_id: checkout.company_id, plan: plan.code, status: 'active', current_period_start: periodStart.toISOString(), current_period_end: periodEnd(periodStart, plan.billing_period).toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'company_id' }); await sb.from('audit_logs').insert({ company_id: checkout.company_id, action: 'billing.subscription_activated', entity: 'company_subscriptions', entity_id: checkout.company_id, new_data: { plan: plan?.code || null, payment_id: paymentId, order_id: isOrder ? resourceId : null } }); } }
-  await sb.from('billing_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('provider_event_id', eventId);
+  await sb.from('billing_payments').update({ provider_status: payment.status || resource.status || null, status, paid_at: paidAt, updated_at: new Date().toISOString(), metadata: { ...(local.metadata || {}), ...evidence } }).eq('id', local.id).eq('company_id', local.company_id);
+  const checkoutStatus = status === 'approved' ? 'approved' : status === 'pending' || status === 'refunded' ? 'pending' : 'failed';
+  await sb.from('billing_checkout_sessions').update({ status: checkoutStatus, updated_at: new Date().toISOString() }).eq('id', checkout.id).eq('company_id', local.company_id);
+  if (status === 'approved' && normalized.activationEligible) {
+    const periodStart = new Date();
+    await sb.from('company_subscriptions').upsert({ company_id: checkout.company_id, plan: plan.code, status: 'active', trial_used: true, current_period_start: periodStart.toISOString(), current_period_end: periodEnd(periodStart, plan.billing_period).toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'company_id' });
+    await sb.from('audit_logs').insert({ company_id: checkout.company_id, action: 'billing.subscription_activated', entity: 'company_subscriptions', entity_id: checkout.company_id, new_data: { plan: plan.code, payment_id: paymentId, order_id: isOrder ? resourceId : null, ...evidence } });
+  }
+  await updateEvent({ status: 'processed', processed: true, processed_at: new Date().toISOString() }, evidence);
   return json({ code: 'OK', status });
 });

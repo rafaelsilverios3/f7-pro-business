@@ -100,6 +100,41 @@ test('billing webhook validates Mercado Pago timestamps in Unix seconds and fail
   assert.equal(context.validate(String(now), now + 0.5), true, 'seconds remain seconds throughout comparison');
 });
 
+test('Orders API normalizer requires accredited evidence and keeps legacy payment semantics separate', () => {
+  assert.match(webhook, /normalizeLegacyPaymentStatus/);
+  assert.match(webhook, /normalizeOrdersPaymentStatus/);
+  assert.match(webhook, /provider_order_status_detail/);
+  assert.match(webhook, /provider_transaction_status_detail/);
+  assert.match(webhook, /trial_used: true/);
+  assert.match(webhook, /legacyEventNeedsReconciliation/);
+
+  const helperSource = webhook.match(/const normalizeOrdersPaymentStatus[\s\S]*?\nconst periodEnd/)?.[0].replace(/\nconst periodEnd[\s\S]*$/, '');
+  assert.ok(helperSource, 'Orders normalizer must remain isolated and testable');
+  const context = {};
+  vm.runInNewContext(`${helperSource}; this.normalize = normalizeOrdersPaymentStatus;`, context);
+  const normalize = context.normalize;
+  const expectNormalized = (input, expected) => assert.deepEqual(JSON.parse(JSON.stringify(normalize(input))), expected);
+  expectNormalized({ orderStatus: 'processed', orderStatusDetail: 'accredited', transactionStatus: 'processed', transactionStatusDetail: 'accredited' }, { status: 'approved', activationEligible: true, reason: null });
+  expectNormalized({ orderStatus: 'action_required', orderStatusDetail: 'waiting_payment' }, { status: 'pending', activationEligible: false, reason: 'waiting_payment' });
+  expectNormalized({ orderStatus: 'processing', orderStatusDetail: 'in_process' }, { status: 'pending', activationEligible: false, reason: 'in_process' });
+  expectNormalized({ orderStatus: 'created', orderStatusDetail: 'created' }, { status: 'pending', activationEligible: false, reason: 'created' });
+  expectNormalized({ orderStatus: 'processed', orderStatusDetail: 'partially_refunded', transactionStatus: 'processed', transactionStatusDetail: 'partially_refunded' }, { status: 'refunded', activationEligible: false, reason: 'partial_refund' });
+  expectNormalized({ orderStatus: 'processed', orderStatusDetail: 'accredited', transactionStatus: 'processing', transactionStatusDetail: 'in_process' }, { status: 'pending', activationEligible: false, reason: 'transaction_status_mismatch' });
+  expectNormalized({ orderStatus: 'processed', orderStatusDetail: 'unknown' }, { status: 'pending', activationEligible: false, reason: 'order_status_detail_unverified' });
+  expectNormalized({ orderStatus: 'failed', orderStatusDetail: 'failed' }, { status: 'rejected', activationEligible: false, reason: 'failed' });
+  expectNormalized({ orderStatus: 'expired', orderStatusDetail: 'expired' }, { status: 'rejected', activationEligible: false, reason: 'expired' });
+  expectNormalized({ orderStatus: 'canceled', orderStatusDetail: 'canceled' }, { status: 'cancelled', activationEligible: false, reason: 'cancelled' });
+  expectNormalized({ orderStatus: 'refunded', orderStatusDetail: 'refunded' }, { status: 'refunded', activationEligible: false, reason: 'refunded' });
+});
+
+test('Orders activation is tenant, checkout, money and idempotency safe', () => {
+  for (const marker of ['providerAmountMinor', 'providerCurrency', 'companyMismatch', 'referenceMismatch', 'orderMismatch', 'PLAN_REFERENCE_MISMATCH', 'PAYMENT_AMOUNT_MISMATCH', 'PAYMENT_CURRENCY_MISMATCH', 'duplicate: true']) assert.match(webhook, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(webhook, /checkout\.provider_order_id !== resourceId/);
+  assert.match(webhook, /checkout\.company_id !== local\.company_id/);
+  assert.match(webhook, /externalReference !== String\(checkout\.id\)/);
+  assert.match(webhook, /normalized\.activationEligible/);
+});
+
 test('Orders PIX test contract uses the official deterministic payer without exposing secrets', () => {
   assert.match(checkout, /test_user_br@testuser\.com/);
   assert.match(checkout, /first_name: 'APRO'/);
