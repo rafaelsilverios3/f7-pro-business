@@ -1,8 +1,14 @@
-import { buildCrmFunnel, createPeriodContext, filterByPeriod, metricMeta, matchesPeriod, previousPeriodContext, projectionForPeriod, safeMargin, compareMetric } from '../lib/metrics.js';
+import { buildCrmFunnel, buildRevenueSeries, createPeriodContext, filterByPeriod, metricMeta, matchesPeriod, previousPeriodContext, projectionForPeriod, safeMargin, compareMetric } from '../lib/metrics.js';
 
 const scoped = (rows, companyId) => rows.filter((row) => row?.company_id === companyId);
 const validSales = (rows) => rows.filter((row) => row?.status !== 'cancelled');
 const sum = (rows, field) => rows.reduce((total, row) => total + (Number(row?.[field]) || 0), 0);
+const openOpportunity = (row) => {
+  const state = row?.stage || row?.status || row?.metadata?.radar_state;
+  const closed = ['won', 'lost', 'descartada', 'descartado', 'converted', 'convertida_em_produto', 'resolvida', 'RESOLVIDA', 'DESCARTADA'].includes(state);
+  const snoozed = row?.metadata?.snooze_until && new Date(row.metadata.snooze_until).getTime() > Date.now();
+  return !closed && !snoozed;
+};
 
 export function requirePeriodContext(companyId, periodContext) {
   if (!companyId) throw new Error('company_id é obrigatório para métricas.');
@@ -55,10 +61,96 @@ export function getFinanceMetrics(companyId, entries = [], periodContext) {
 export function getOpportunityMetrics(companyId, opportunities = [], periodContext) {
   const context = requirePeriodContext(companyId, periodContext);
   const rows = scoped(opportunities, companyId);
-  const isSnoozed = (row) => row?.metadata?.snooze_until && new Date(row.metadata.snooze_until).getTime() > Date.now();
-  const isClosed = (row) => ['won', 'lost', 'descartada', 'descartado', 'converted', 'convertida_em_produto', 'resolvida', 'RESOLVIDA', 'DESCARTADA'].includes(row?.stage || row?.status || row?.metadata?.radar_state);
-  const openRows = rows.filter((row) => !isClosed(row) && !isSnoozed(row));
+  const openRows = rows.filter(openOpportunity);
   return { rows, open: openRows.length, pipeline: sum(openRows, 'value'), won: sum(rows.filter((row) => ['won', 'converted', 'convertida_em_produto'].includes(row.stage || row.status)), 'value'), meta: metricMeta('supabase.product_opportunities', context, 'snapshot') };
+}
+
+export function getSalesStatusMetrics(companyId, sales = [], periodContext) {
+  const context = requirePeriodContext(companyId, periodContext);
+  const rows = scoped(sales, companyId).filter((row) => matchesPeriod(row.sale_date || row.created_at, context));
+  const groups = new Map();
+  rows.forEach((row) => {
+    const status = String(row.status || 'unknown');
+    const item = groups.get(status) || { status, count: 0, value: 0 };
+    item.count += 1; item.value += Number(row.total) || 0; groups.set(status, item);
+  });
+  return { rows: [...groups.values()].sort((a, b) => b.count - a.count), meta: metricMeta('supabase.sales', context, 'period_distribution') };
+}
+
+export function getPaymentMethodMetrics(companyId, sales = [], periodContext) {
+  const context = requirePeriodContext(companyId, periodContext);
+  const rows = validSales(scoped(sales, companyId)).filter((row) => matchesPeriod(row.sale_date || row.created_at, context));
+  const groups = new Map();
+  rows.forEach((row) => {
+    const method = String(row.payment_method || '').trim();
+    if (!method) return;
+    const item = groups.get(method) || { method, count: 0, value: 0 };
+    item.count += 1; item.value += Number(row.total) || 0; groups.set(method, item);
+  });
+  const result = [...groups.values()].sort((a, b) => b.value - a.value);
+  const total = result.reduce((value, row) => value + row.value, 0);
+  return { rows: result.map((row) => ({ ...row, percent: total > 0 ? row.value / total * 100 : 0 })), available: result.length > 0, meta: metricMeta('supabase.sales.payment_method', context, 'period_distribution') };
+}
+
+export function getCustomerCompositionMetrics(companyId, sales = [], periodContext) {
+  const context = requirePeriodContext(companyId, periodContext);
+  const rows = validSales(scoped(sales, companyId));
+  const current = rows.filter((row) => matchesPeriod(row.sale_date || row.created_at, context));
+  const firstPurchase = new Map();
+  rows.forEach((row) => {
+    if (!row.customer_id) return;
+    const date = row.sale_date || row.created_at;
+    if (!date) return;
+    const previous = firstPurchase.get(row.customer_id);
+    if (!previous || new Date(date).getTime() < new Date(previous).getTime()) firstPurchase.set(row.customer_id, date);
+  });
+  const ids = new Set(current.map((row) => row.customer_id).filter(Boolean));
+  let novo = 0; let recorrente = 0;
+  ids.forEach((id) => {
+    const first = firstPurchase.get(id);
+    if (first && matchesPeriod(first, context)) novo += 1;
+    else if (first) recorrente += 1;
+  });
+  return { active: ids.size, novo, recorrente, available: ids.size > 0, meta: metricMeta('supabase.sales.customer_id', context, 'period_composition') };
+}
+
+export function getOpportunityOriginMetrics(companyId, opportunities = [], periodContext) {
+  const context = requirePeriodContext(companyId, periodContext);
+  const groups = new Map();
+  scoped(opportunities, companyId).filter(openOpportunity).forEach((row) => {
+    const origin = String(row.metadata?.entity_type || row.source || row.metadata?.signal_type || '').trim();
+    if (!origin) return;
+    const item = groups.get(origin) || { origin, count: 0 };
+    item.count += 1; groups.set(origin, item);
+  });
+  return { rows: [...groups.values()].sort((a, b) => b.count - a.count), available: groups.size > 0, meta: metricMeta('supabase.product_opportunities', context, 'snapshot_distribution') };
+}
+
+export function getOpportunityPriorityMetrics(companyId, opportunities = [], periodContext) {
+  const context = requirePeriodContext(companyId, periodContext);
+  const labels = { high: 'Alta', alta: 'Alta', medium: 'Média', media: 'Média', médio: 'Média', low: 'Baixa', baixa: 'Baixa' };
+  const groups = new Map();
+  scoped(opportunities, companyId).filter(openOpportunity).forEach((row) => {
+    const raw = String(row.metadata?.priority || row.confidence_level || '').trim().toLocaleLowerCase('pt-BR');
+    const priority = labels[raw];
+    if (!priority) return;
+    groups.set(priority, (groups.get(priority) || 0) + 1);
+  });
+  const order = ['Alta', 'Média', 'Baixa'];
+  return { rows: order.filter((priority) => groups.has(priority)).map((priority) => ({ priority, count: groups.get(priority) })), available: groups.size > 0, meta: metricMeta('supabase.product_opportunities.priority', context, 'snapshot_distribution') };
+}
+
+export function getStockHealthMetrics(companyId, products = [], periodContext) {
+  const context = requirePeriodContext(companyId, periodContext);
+  const groups = { normal: 0, baixo: 0, zerado: 0 };
+  scoped(products, companyId).filter((row) => row.item_type !== 'service').forEach((row) => {
+    const stock = Number(row.stock) || 0;
+    const minimum = Number(row.min_stock ?? row.minimum_stock) || 0;
+    if (stock <= 0) groups.zerado += 1;
+    else if (stock <= minimum) groups.baixo += 1;
+    else groups.normal += 1;
+  });
+  return { rows: Object.entries(groups).map(([health, count]) => ({ health, count })), meta: metricMeta('supabase.products', context, 'snapshot_distribution') };
 }
 
 export function getDashboardMetrics(companyId, data = {}, periodContext) {
@@ -76,6 +168,15 @@ export function getDashboardMetrics(companyId, data = {}, periodContext) {
   const previousCustomerIds = previousSales ? new Set(previousSales.rows.map((row) => row.customer_id).filter(Boolean)) : new Set();
   const previousCustomers = previousCustomersBase ? { ...previousCustomersBase, active: previousCustomerIds.size || previousCustomersBase.active } : null;
   const projection = projectionForPeriod(sales.revenue, context);
+  const charts = {
+    revenue: buildRevenueSeries(data.sales || [], context),
+    salesStatus: getSalesStatusMetrics(companyId, data.sales || [], context),
+    payments: getPaymentMethodMetrics(companyId, data.sales || [], context),
+    customers: getCustomerCompositionMetrics(companyId, data.sales || [], context),
+    opportunitiesByOrigin: getOpportunityOriginMetrics(companyId, data.opportunities || [], context),
+    opportunityPriority: getOpportunityPriorityMetrics(companyId, data.opportunities || [], context),
+    stockHealth: getStockHealthMetrics(companyId, data.products || [], context),
+  };
   return {
     company_id: companyId,
     period: context,
@@ -85,6 +186,7 @@ export function getDashboardMetrics(companyId, data = {}, periodContext) {
     products,
     finance: { ...finance, available: finance.available },
     opportunities,
+    charts,
     comparisons: {
       revenue: previousSales ? compareMetric(sales.revenue, previousSales.revenue) : null,
       sales: previousSales ? compareMetric(sales.count, previousSales.count) : null,

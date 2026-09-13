@@ -11,7 +11,8 @@ import {
   projectionForPeriod,
   safeMargin,
 } from '../src/lib/metrics.js';
-import { getDashboardMetrics } from '../src/services/metricsService.js';
+import { getDashboardMetrics, getCustomerCompositionMetrics, getOpportunityOriginMetrics, getOpportunityPriorityMetrics, getPaymentMethodMetrics, getSalesStatusMetrics, getStockHealthMetrics } from '../src/services/metricsService.js';
+import { buildRevenueSeries } from '../src/lib/metrics.js';
 import { buildPrintableHtml, escapeCsvCell, escapeHtml, serializeCsv } from '../src/lib/exporters.js';
 import { canUseFeature } from '../src/services/planService.js';
 
@@ -144,4 +145,52 @@ test('executive dashboard has explicit loading, partial-error and empty-safe UI 
   assert.match(dashboard, /m\.partialErrors\.length > 0/);
   assert.match(dashboard, /Indisponível/);
   assert.match(dashboard, /Number\(m\.margem \|\| 0\)\.toFixed/);
+});
+
+test('executive charts aggregate real periods and keep cancelled sales out of revenue', () => {
+  const sales = [
+    { company_id: companyId, customer_id: 'new', sale_date: '2026-09-02T10:00:00Z', status: 'paid', total: 100, payment_method: 'PIX' },
+    { company_id: companyId, customer_id: 'recurring', sale_date: '2026-09-03', status: 'completed', total: 50, payment_method: 'Cartão' },
+    { company_id: companyId, customer_id: 'recurring', sale_date: '2026-08-03', status: 'paid', total: 25, payment_method: 'PIX' },
+    { company_id: companyId, sale_date: '2026-09-04', status: 'cancelled', total: 999, payment_method: 'PIX' },
+    { company_id: 'other', sale_date: '2026-09-02', status: 'paid', total: 1000 },
+  ];
+  for (const periodKey of ['day', '7d', '30d', 'month', 'quarter', 'year', 'all']) {
+    const context = createPeriodContext({ companyId, periodKey, timezone: 'America/Cuiaba', now: new Date('2026-09-13T12:00:00Z') });
+    const series = buildRevenueSeries(sales, context);
+    const expected = { day: 0, '7d': 0, '30d': 150, month: 150, quarter: 175, year: 175, all: 175 }[periodKey];
+    assert.equal(series.rows.reduce((sum, row) => sum + row.faturamento, 0), expected);
+    assert.equal(series.rows.some((row) => row.faturamento >= 999), false);
+    if (periodKey === 'all') assert.equal(series.comparable, false);
+  }
+  const context = createPeriodContext({ companyId, periodKey: 'month', timezone: 'America/Cuiaba', now: new Date('2026-09-13T12:00:00Z') });
+  assert.deepEqual(getSalesStatusMetrics(companyId, sales, context).rows.map((row) => row.status).sort(), ['cancelled', 'completed', 'paid']);
+  const payments = getPaymentMethodMetrics(companyId, sales, context);
+  assert.equal(payments.available, true);
+  assert.equal(Math.round(payments.rows.reduce((sum, row) => sum + row.percent, 0)), 100);
+  const customers = getCustomerCompositionMetrics(companyId, sales, context);
+  assert.deepEqual({ active: customers.active, novo: customers.novo, recorrente: customers.recorrente }, { active: 2, novo: 1, recorrente: 1 });
+});
+
+test('executive charts expose opportunity origins and stock health as snapshots', () => {
+  const context = createPeriodContext({ companyId, periodKey: 'month' });
+  const origins = getOpportunityOriginMetrics(companyId, [
+    { company_id: companyId, status: 'validada', source: 'estoque' },
+    { company_id: companyId, status: 'validada', metadata: { entity_type: 'cliente' } },
+    { company_id: companyId, status: 'descartada', source: 'externa' },
+    { company_id: 'other', status: 'validada', source: 'fornecedor' },
+  ], context);
+  assert.deepEqual(origins.rows.map((row) => row.origin).sort(), ['cliente', 'estoque']);
+  assert.deepEqual(getOpportunityPriorityMetrics(companyId, [
+    { company_id: companyId, status: 'validada', confidence_level: 'HIGH' },
+    { company_id: companyId, status: 'validada', metadata: { priority: 'baixa' } },
+  ], context).rows, [{ priority: 'Alta', count: 1 }, { priority: 'Baixa', count: 1 }]);
+  const stock = getStockHealthMetrics(companyId, [
+    { company_id: companyId, item_type: 'product', stock: 0, minimum_stock: 2 },
+    { company_id: companyId, item_type: 'product', stock: 1, minimum_stock: 2 },
+    { company_id: companyId, item_type: 'product', stock: 5, minimum_stock: 2 },
+    { company_id: companyId, item_type: 'service', stock: 0, minimum_stock: 0 },
+    { company_id: 'other', item_type: 'product', stock: 0, minimum_stock: 2 },
+  ], context);
+  assert.deepEqual(Object.fromEntries(stock.rows.map((row) => [row.health, row.count])), { normal: 1, baixo: 1, zerado: 1 });
 });

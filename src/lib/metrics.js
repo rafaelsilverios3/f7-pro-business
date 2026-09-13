@@ -155,6 +155,56 @@ export function buildEvolution(sales = [], periodContext, now = new Date()) {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([label, values]) => ({ mes: label, ...values }));
 }
 
+function periodGranularity(periodContext) {
+  const key = periodContext?.period_key;
+  if (key === 'day' || key === 'today') return 'hour';
+  if (key === '7d' || key === '30d' || key === 'month' || key === 'custom') return 'day';
+  return 'month';
+}
+
+function bucketLabel(value, periodContext) {
+  const date = dateOnly(value, periodContext?.timezone || resolveTimezone());
+  if (!date) return null;
+  if (periodGranularity(periodContext) === 'month') return date.slice(0, 7);
+  if (periodGranularity(periodContext) === 'hour') {
+    const parsed = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : new Intl.DateTimeFormat('pt-BR', { timeZone: periodContext?.timezone || resolveTimezone(), hour: '2-digit' }).format(parsed);
+  }
+  return date;
+}
+
+function aggregateRevenueRows(rows, periodContext) {
+  const groups = new Map();
+  rows.filter((row) => row?.company_id === periodContext?.company_id && row?.status !== 'cancelled' && matchesPeriod(row.sale_date || row.created_at, periodContext)).forEach((row) => {
+    const label = bucketLabel(row.sale_date || row.created_at, periodContext);
+    if (!label) return;
+    const current = groups.get(label) || { label, faturamento: 0, lucro: 0, vendas: 0, ticket_medio: 0 };
+    current.faturamento += Number(row.total) || 0;
+    current.lucro += Number(row.profit) || 0;
+    current.vendas += 1;
+    groups.set(label, current);
+  });
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label)).map((row) => ({ ...row, ticket_medio: row.vendas ? row.faturamento / row.vendas : 0 }));
+}
+
+/** Builds a sparse, real-data revenue series and an ordinal previous comparison. */
+export function buildRevenueSeries(sales = [], periodContext) {
+  const current = aggregateRevenueRows(sales, periodContext);
+  if (!current.length) return { rows: [], current, previous: [], comparable: false, granularity: periodGranularity(periodContext) };
+  const previousContext = previousPeriodContext(periodContext);
+  const previous = previousContext ? aggregateRevenueRows(sales, previousContext) : [];
+  const rows = current.map((row, index) => ({
+    label: row.label,
+    faturamento: row.faturamento,
+    vendas: row.vendas,
+    ticket_medio: row.ticket_medio,
+    faturamento_anterior: previous[index]?.faturamento ?? null,
+    vendas_anterior: previous[index]?.vendas ?? null,
+    ticket_medio_anterior: previous[index]?.ticket_medio ?? null,
+  }));
+  return { rows, current, previous, comparable: Boolean(previousContext), granularity: periodGranularity(periodContext) };
+}
+
 export function buildAbcRows(sales = [], periodContext) {
   const productTotals = new Map();
   sales.filter((row) => row?.status !== 'cancelled' && matchesPeriod(row.sale_date || row.created_at, periodContext)).forEach((sale) => {
