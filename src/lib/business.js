@@ -6,18 +6,20 @@ import { ptBR } from 'date-fns/locale';
 import { calculateSaleTotals, roundMoney } from '@/lib/calculations';
 import { createPeriodContext, matchesPeriod } from '@/lib/metrics';
 
+const finiteNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+
 export const fmtMoney = (v) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(finiteNumber(v));
 
 export const fmtMoneyShort = (v) => {
-  const n = v || 0;
+  const n = finiteNumber(v);
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return 'R$ ' + (n / 1_000_000).toFixed(1).replace('.0', '') + 'M';
   if (abs >= 1_000) return 'R$ ' + (n / 1_000).toFixed(1).replace('.0', '') + 'k';
   return fmtMoney(n);
 };
 
-export const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(v || 0);
+export const fmtNum = (v) => new Intl.NumberFormat('pt-BR').format(finiteNumber(v));
 
 export const fmtDate = (d) => {
   if (!d) return '—';

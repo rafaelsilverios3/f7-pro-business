@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { parseMoneyInput, moneyOr } from '../src/lib/money.js';
 
 const productsService = fs.readFileSync('src/services/productsService.js', 'utf8');
 const productsPage = fs.readFileSync('src/pages/Produtos.jsx', 'utf8');
@@ -41,4 +42,21 @@ test('sale failures remain visible and keep the dialog open for correction', () 
   assert.match(saleDialog, /setError\(cause\?\.message/);
   assert.match(saleDialog, /role="alert"/);
   assert.match(saleDialog, /Nenhum lançamento foi criado/);
+});
+
+test('Brazilian monetary input is parsed without losing separators or invalid values', () => {
+  assert.equal(parseMoneyInput('1.234,56'), 1234.56);
+  assert.equal(parseMoneyInput('R$ 1.234,56'), 1234.56);
+  assert.equal(parseMoneyInput('1.234'), 1234);
+  assert.equal(parseMoneyInput('1.234,foo'), null);
+  assert.equal(parseMoneyInput(''), null);
+  assert.equal(moneyOr('not-a-number', 0), 0);
+});
+
+test('catalog and material forms validate localized prices before persistence', () => {
+  assert.match(productDialog, /parseMoneyInput\(value\) == null/);
+  assert.match(productDialog, /inputMode="decimal"/);
+  assert.match(productsService, /price: monetaryField\(data\.price/);
+  assert.match(productionPage, /parseMoneyInput\(material\.cost_price\) == null/);
+  assert.match(productionPage, /Salvar e adicionar/);
 });

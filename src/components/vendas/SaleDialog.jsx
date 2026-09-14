@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Trash2, Search } from 'lucide-react';
 import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
+import { moneyOr } from '@/lib/money';
 import { salesService } from '@/services/salesService';
 
 const PAYMENT_OPTIONS = ['Dinheiro', 'Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Boleto', 'Transferência'];
@@ -48,17 +49,17 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     setItems((prev) => {
       const ex = prev.find((i) => i.product_id === p.id);
       if (ex) return prev.map((i) => i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, description: p.description || '', linked_product_id: null, qty: 1, price: p.sale_price || 0, cost: p.cost_price || 0 }];
+      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, description: p.description || '', linked_product_id: null, qty: 1, price: moneyOr(p.sale_price), cost: moneyOr(p.cost_price) }];
     });
     setProductQuery('');
   };
 
   const setQty = (id, qty) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, qty: Math.max(1, Number(qty) || 1) } : i));
-  const setPrice = (id, price) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, price: Number(price) || 0 } : i));
+  const setPrice = (id, price) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, price: moneyOr(price) } : i));
   const removeItem = (id) => setItems((prev) => prev.filter((i) => i.product_id !== id));
 
   const subtotal = items.reduce((s, i) => s + i.qty * i.price, 0);
-  const total = subtotal - (Number(discount) || 0) + (Number(addition) || 0);
+  const total = subtotal - moneyOr(discount) + moneyOr(addition);
 
   const reset = () => {
     setCustomerId(''); setItems([]); setDiscount(0); setAddition(0); setSeller(''); setPaymentMethod('Dinheiro'); setInstallments(1); setNotes('');
@@ -73,8 +74,8 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
         customer_id: customerId || null,
         customer_name: customer?.name || 'Cliente',
         items,
-        discount: Number(discount) || 0,
-        addition: Number(addition) || 0,
+        discount: moneyOr(discount),
+        addition: moneyOr(addition),
         seller,
         payment_method: paymentMethod,
         installments: Number(installments) || 1,
@@ -150,7 +151,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
                     {i.item_type === 'service' && <select aria-label={`Vincular ${i.name} a produto`} value={i.linked_product_id || ''} onChange={(e) => setItems((prev) => prev.map((entry) => entry.product_id === i.product_id ? { ...entry, linked_product_id: e.target.value || null } : entry))} className="h-8 max-w-32 rounded-md border border-slate-200 bg-white px-1 text-[10px]"><option value="">Sem vínculo</option>{products.filter((product) => product.item_type !== 'service').map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select>}
                     <input type="number" value={i.qty} onChange={(e) => setQty(i.product_id, e.target.value)} className="h-8 w-14 rounded-md border border-slate-200 px-2 text-center text-sm" />
                     <span className="text-xs text-slate-400">×</span>
-                    <input type="number" step="0.01" value={i.price} onChange={(e) => setPrice(i.product_id, e.target.value)} className="h-8 w-20 rounded-md border border-slate-200 px-2 text-right text-sm" />
+                    <input type="text" inputMode="decimal" value={i.price} onChange={(e) => setPrice(i.product_id, e.target.value)} className="h-8 w-20 rounded-md border border-slate-200 px-2 text-right text-sm" />
                     <span className="w-20 text-right text-sm font-medium text-slate-700">{fmtMoney(i.qty * i.price)}</span>
                     <button type="button" onClick={() => removeItem(i.product_id)} className="rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
                   </div>
@@ -162,11 +163,11 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Desconto (R$)</Label>
-              <Input type="number" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+              <Input type="text" inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Acréscimo (R$)</Label>
-              <Input type="number" step="0.01" value={addition} onChange={(e) => setAddition(e.target.value)} />
+              <Input type="text" inputMode="decimal" value={addition} onChange={(e) => setAddition(e.target.value)} />
             </div>
           </div>
           <div className="space-y-1.5">
@@ -178,8 +179,8 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
             <div className="flex justify-between text-slate-500"><span>Produtos</span><span>{fmtMoney(items.filter((i) => i.item_type !== 'service').reduce((s, i) => s + i.qty * i.price, 0))}</span></div>
             <div className="flex justify-between text-slate-500"><span>Serviços</span><span>{fmtMoney(items.filter((i) => i.item_type === 'service').reduce((s, i) => s + i.qty * i.price, 0))}</span></div>
             <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
-            <div className="flex justify-between text-slate-500"><span>Desconto</span><span>- {fmtMoney(Number(discount) || 0)}</span></div>
-            <div className="flex justify-between text-slate-500"><span>Acréscimo</span><span>+ {fmtMoney(Number(addition) || 0)}</span></div>
+            <div className="flex justify-between text-slate-500"><span>Desconto</span><span>- {fmtMoney(moneyOr(discount))}</span></div>
+            <div className="flex justify-between text-slate-500"><span>Acréscimo</span><span>+ {fmtMoney(moneyOr(addition))}</span></div>
             <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5 text-base font-semibold text-slate-900"><span>Total</span><span>{fmtMoney(total)}</span></div>
           </div>
 

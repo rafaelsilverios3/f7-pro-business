@@ -1,12 +1,19 @@
 import { productsRepository } from '@/data/repositories/productsRepository';
 import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { productSchema } from '@/schemas';
+import { parseMoneyInput } from '@/lib/money';
 
 const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
 const numberField = (value, fallback = 0) => {
   if (value === '' || value == null) return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+const monetaryField = (value, label) => {
+  if (value === '' || value == null) return 0;
+  const parsed = parseMoneyInput(value);
+  if (parsed == null) throw new Error(`${label} inválido. Use o formato 1.234,56.`);
+  return parsed;
 };
 const isDuplicateSkuError = (error) => String(error?.code || '').toLowerCase() === '23505'
   || Number(error?.status) === 409
@@ -32,7 +39,10 @@ const productPayload = (companyId, data = {}) => {
   for (const field of textFields) if (Object.prototype.hasOwnProperty.call(data, field)) payload[field] = data[field];
   if (!payload.subcategory && Object.prototype.hasOwnProperty.call(data, 'category')) payload.subcategory = data.category || null;
   const aliases = { cost: 'cost_price', price: 'sale_price', minimum_stock: 'min_stock', commission_rate: 'commission' };
-  for (const [field, alias] of Object.entries(aliases)) if (Object.prototype.hasOwnProperty.call(data, field) || Object.prototype.hasOwnProperty.call(data, alias)) payload[field] = numberField(data[field] ?? data[alias]);
+  for (const [field, alias] of Object.entries(aliases)) if (Object.prototype.hasOwnProperty.call(data, field) || Object.prototype.hasOwnProperty.call(data, alias)) {
+    const value = data[field] ?? data[alias];
+    payload[field] = field === 'price' || field === 'cost' ? monetaryField(value, field === 'price' ? 'Preço de venda' : 'Preço de custo') : numberField(value);
+  }
   if (Object.prototype.hasOwnProperty.call(data, 'stock')) payload.stock = numberField(data.stock);
   if (Object.prototype.hasOwnProperty.call(data, 'weight')) payload.weight = numberField(data.weight, null);
   return payload;
@@ -41,7 +51,13 @@ const productPayload = (companyId, data = {}) => {
 export const productsService = {
   list: (companyId) => productsRepository.list(companyId),
   create: (companyId, data) => {
-    const normalizedData = { ...data, sku: data.sku?.trim() || undefined, barcode: data.barcode?.trim() || undefined };
+    const normalizedData = {
+      ...data,
+      price: monetaryField(data.price ?? data.sale_price, 'Preço de venda'),
+      cost: monetaryField(data.cost ?? data.cost_price, 'Preço de custo'),
+      sku: data.sku?.trim() || undefined,
+      barcode: data.barcode?.trim() || undefined,
+    };
     const parsed = productSchema.parse({ ...normalizedData, company_id: companyId, price: normalizedData.price ?? normalizedData.sale_price, cost: normalizedData.cost ?? normalizedData.cost_price, minimum_stock: normalizedData.minimum_stock ?? normalizedData.min_stock });
     const payload = isSupabase() ? { ...parsed, sku: parsed.sku?.trim() || null, barcode: parsed.barcode?.trim() || null, subcategory: parsed.subcategory || parsed.category || undefined, commission_rate: parsed.commission ?? parsed.commission_rate } : {
       ...parsed,

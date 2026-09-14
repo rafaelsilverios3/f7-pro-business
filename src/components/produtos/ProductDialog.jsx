@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PricingDialog from '@/components/pricing/PricingDialog';
 import ProductCatalogPanel from '@/components/pricing/ProductCatalogPanel';
+import { moneyOr, parseMoneyInput } from '@/lib/money';
 
 function productSaveMessage(error) {
   const code = String(error?.code || '').trim();
@@ -23,8 +24,8 @@ function normalizeProductForm(form, fixedItemType, defaultItemType) {
     ...form,
     item_type: itemType,
     duration_minutes: form.duration_minutes === '' ? null : Number(form.duration_minutes),
-    cost_price: form.cost_price === '' ? 0 : Number(form.cost_price),
-    sale_price: form.sale_price === '' ? 0 : Number(form.sale_price),
+    cost_price: moneyOr(form.cost_price),
+    sale_price: moneyOr(form.sale_price),
     stock: itemType === 'service' ? 0 : (form.stock === '' ? 0 : Number(form.stock)),
     min_stock: itemType === 'service' ? 0 : (form.min_stock === '' ? 0 : Number(form.min_stock)),
     commission: form.commission === '' ? 0 : Number(form.commission),
@@ -49,6 +50,10 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const persistLive = async (field, value) => {
     if (!initial || saving || !onSave) return;
+    if (['cost_price', 'sale_price'].includes(field) && value !== '' && parseMoneyInput(value) == null) {
+      setSaveError('Informe um valor monetário válido, por exemplo 1.234,56.');
+      return;
+    }
     setSaving(true); setSaveError('');
     try {
       const next = normalizeProductForm({ ...form, [field]: value }, fixedItemType, defaultItemType);
@@ -64,6 +69,11 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     if (!form.name.trim() || saving) return;
     setSaving(true);
     setSaveError('');
+    if ([form.cost_price, form.sale_price].some((value) => value !== '' && parseMoneyInput(value) == null)) {
+      setSaveError('Informe custo e preço de venda em formato válido, por exemplo 1.234,56.');
+      setSaving(false);
+      return;
+    }
     try {
       await onSave(normalizeProductForm(form, fixedItemType, defaultItemType));
       onClose();
@@ -112,11 +122,11 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Custo</Label>
-              <Input type="number" step="0.01" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} onBlur={(e) => persistLive('cost_price', e.target.value)} />
+              <Input type="text" inputMode="decimal" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} onBlur={(e) => persistLive('cost_price', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Venda</Label>
-              <Input type="number" step="0.01" value={form.sale_price} onChange={(e) => set('sale_price', e.target.value)} onBlur={(e) => persistLive('sale_price', e.target.value)} />
+              <Input type="text" inputMode="decimal" value={form.sale_price} onChange={(e) => set('sale_price', e.target.value)} onBlur={(e) => persistLive('sale_price', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Margem</Label>
