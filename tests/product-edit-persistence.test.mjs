@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { parseMoneyInput } from '../src/lib/money.js';
 
 const service = fs.readFileSync('src/services/productsService.js', 'utf8');
 const repository = fs.readFileSync('src/data/repositoryFactory.js', 'utf8');
@@ -68,15 +69,22 @@ test('catalog immediately reflects the server row after editing price or stock',
   assert.match(page, /item\.id === updated\.id \? updated : item/);
   assert.match(page, /const salePrice = Number\(p\.sale_price \?\? p\.price\)/);
   assert.match(page, /const stock = Number\(p\.stock\) \|\| 0/);
-  assert.match(dialog, /const saved = await onSave\(next\)/);
-  assert.match(dialog, /saved\.sale_price \?\? saved\.price/);
+  assert.match(dialog, /await onSave\(normalizeProductForm\(form, fixedItemType, defaultItemType\)\)/);
 });
 
-test('product edit preserves the exact monetary text through blur persistence', () => {
+test('product edit preserves the exact monetary text until the atomic submit', () => {
   assert.match(dialog, /const moneyInputValue =/);
-  assert.match(dialog, /field === 'sale_price' \? value/);
   assert.match(dialog, /const salePrice = moneyOr\(form\.sale_price\)/);
   assert.match(dialog, /moneyInputValue\(updated\?\.price \?\? price\)/);
+});
+
+test('monetary input keeps cents for create, update, reload and card formatting', () => {
+  for (const [input, expected] of [['45,90', 45.9], ['45.90', 45.9], ['1.234,56', 1234.56], ['1234,56', 1234.56], ['10,01', 10.01], ['99,99', 99.99], ['100,50', 100.5]]) {
+    assert.equal(parseMoneyInput(input), expected, input);
+  }
+  assert.match(service, /parseMoneyInput\(value\)/);
+  assert.match(provider, /price: payload\.price \?\? payload\.sale_price/);
+  assert.match(page, /fmtMoney\(salePrice\)/);
 });
 
 test('product creation retries duplicate SKUs with a deterministic numeric suffix', () => {

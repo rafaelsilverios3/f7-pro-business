@@ -50,28 +50,6 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
   }, [initial, open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const persistLive = async (field, value) => {
-    if (!initial || saving || !onSave) return;
-    if (['cost_price', 'sale_price'].includes(field) && value !== '' && parseMoneyInput(value) == null) {
-      setSaveError('Informe um valor monetário válido, por exemplo 1.234,56.');
-      return;
-    }
-    setSaving(true); setSaveError('');
-    try {
-      const next = normalizeProductForm({ ...form, [field]: value }, fixedItemType, defaultItemType);
-      const saved = await onSave(next);
-      if (saved) setForm((current) => ({
-        ...current,
-        ...saved,
-        // Keep the exact text that the user entered instead of replacing
-        // 45,90 with a coerced integer while the dialog is still open.
-        cost_price: field === 'cost_price' ? value : moneyInputValue(saved.cost_price ?? saved.cost ?? current.cost_price),
-        sale_price: field === 'sale_price' ? value : moneyInputValue(saved.sale_price ?? saved.price ?? current.sale_price),
-        min_stock: saved.min_stock ?? saved.minimum_stock ?? current.min_stock,
-      }));
-    } catch (error) { setSaveError(productSaveMessage(error)); }
-    finally { setSaving(false); }
-  };
   const salePrice = moneyOr(form.sale_price);
   const costPrice = moneyOr(form.cost_price);
   const margin = salePrice > 0 ? ((salePrice - costPrice) / salePrice) * 100 : 0;
@@ -134,11 +112,11 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Custo</Label>
-              <Input type="text" inputMode="decimal" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} onBlur={(e) => persistLive('cost_price', e.target.value)} />
+              <Input type="text" inputMode="decimal" value={form.cost_price} onChange={(e) => set('cost_price', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Preço de Venda</Label>
-              <Input type="text" inputMode="decimal" value={form.sale_price} onChange={(e) => set('sale_price', e.target.value)} onBlur={(e) => persistLive('sale_price', e.target.value)} />
+              <Input type="text" inputMode="decimal" value={form.sale_price} onChange={(e) => set('sale_price', e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Margem</Label>
