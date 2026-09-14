@@ -40,7 +40,11 @@ const productPayload = (companyId, data = {}) => {
   if (!payload.subcategory && Object.prototype.hasOwnProperty.call(data, 'category')) payload.subcategory = data.category || null;
   const aliases = { cost: 'cost_price', price: 'sale_price', minimum_stock: 'min_stock', commission_rate: 'commission' };
   for (const [field, alias] of Object.entries(aliases)) if (Object.prototype.hasOwnProperty.call(data, field) || Object.prototype.hasOwnProperty.call(data, alias)) {
-    const value = data[field] ?? data[alias];
+    // Form rows can contain both the database column (price/cost) and the
+    // editable catalog alias (sale_price/cost_price). Prefer the alias when
+    // it is present so an edited value cannot be overwritten by the stale raw
+    // column copied into the dialog's initial form state.
+    const value = Object.prototype.hasOwnProperty.call(data, alias) ? data[alias] : data[field];
     payload[field] = field === 'price' || field === 'cost' ? monetaryField(value, field === 'price' ? 'Preço de venda' : 'Preço de custo') : numberField(value);
   }
   if (Object.prototype.hasOwnProperty.call(data, 'stock')) payload.stock = numberField(data.stock);

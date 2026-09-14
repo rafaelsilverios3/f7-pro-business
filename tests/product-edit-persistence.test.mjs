@@ -87,6 +87,11 @@ test('monetary input keeps cents for create, update, reload and card formatting'
   assert.match(page, /fmtMoney\(salePrice\)/);
 });
 
+test('product edits prefer the changed catalog alias over a stale raw price column', () => {
+  assert.match(service, /hasOwnProperty\.call\(data, alias\) \? data\[alias\] : data\[field\]/);
+  assert.match(service, /Prefer the alias when/);
+});
+
 test('product creation retries duplicate SKUs with a deterministic numeric suffix', () => {
   assert.match(service, /products_company_id_sku_key/);
   assert.match(service, /candidate = `\$\{baseSku\}\$\{suffix \+ 2\}`/);
