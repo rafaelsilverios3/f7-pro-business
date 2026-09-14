@@ -357,3 +357,23 @@ body.light-theme .app-shell .f7-dialog-content select { background: #ffffff !imp
 body.light-theme .app-shell .f7-form-section-title { color: #a56f39 !important; border-color: #eadfd1 !important; }
 body.light-theme .app-shell .recharts-cartesian-grid line { stroke: rgba(185, 130, 76, .16) !important; }
 body.light-theme .app-shell .recharts-text { fill: #64748b !important; }
+/* Keep every text role legible inside white day-mode panels. Older theme
+   compatibility rules set these descendants to white with higher specificity. */
+body.light-theme .app-shell .border-slate-200.bg-white .text-white,
+body.light-theme .app-shell .border-slate-100.bg-white .text-white,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-900,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-800,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-700,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-900,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-800,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-700 { color: #0b1b35 !important; }
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-600,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-500,
+body.light-theme .app-shell .border-slate-200.bg-white .text-slate-400,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-600,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-500,
+body.light-theme .app-shell .border-slate-100.bg-white .text-slate-400 { color: #64748b !important; }
+body.light-theme .app-shell .border-slate-200.bg-white h2,
+body.light-theme .app-shell .border-slate-200.bg-white h3,
+body.light-theme .app-shell .border-slate-100.bg-white h2,
+body.light-theme .app-shell .border-slate-100.bg-white h3 { color: #0b1b35 !important; }
