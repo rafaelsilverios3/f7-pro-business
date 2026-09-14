@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { Bell, ChevronDown, CreditCard, LogOut, ShieldCheck, UserRound } from 'lucide-react';
+import { ChevronDown, CreditCard, LogOut, ShieldCheck, UserRound } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useCompany } from '../../lib/useCompany';
 import { base44 } from '../../api/base44Client';
@@ -11,6 +11,8 @@ import { getDataProvider } from '@/data/providerSelector';
 import { applyTheme, getStoredTheme, resolveTheme } from '@/lib/theme';
 import { platformAdminService } from '@/services/platformAdminService';
 import { loadSubscription, trialActive, trialHoursRemaining } from '@/services/subscriptionService';
+import { notificationsService } from '@/services/notificationsService';
+import NotificationBell from './NotificationBell';
 
 export default function Layout() {
   const { company, loading } = useCompany();
@@ -70,11 +72,13 @@ export default function Layout() {
   }, [company?.name]);
 
   useEffect(() => {
-    if (!company) return;
+    if (!company) return undefined;
     if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
-      // Notifications are not part of the initial Supabase schema yet.
-      setUnread(0);
-      return undefined;
+      let cancelled = false;
+      const refresh = () => notificationsService.countUnread(company.id).then((count) => { if (!cancelled) setUnread(count); }).catch(() => { if (!cancelled) setUnread(0); });
+      refresh();
+      window.addEventListener('f7:notifications-updated', refresh);
+      return () => { cancelled = true; window.removeEventListener('f7:notifications-updated', refresh); };
     }
     let cancelled = false;
     base44.entities.Notification
@@ -106,14 +110,7 @@ export default function Layout() {
         <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
           <div className="hidden min-h-11 max-w-3xl flex-1 items-center gap-2 rounded-xl border border-slate-700/70 bg-[#0e1a2b] px-4 text-sm text-slate-400 transition-colors focus-within:border-blue-400/60 md:flex"><Search className="h-4 w-4 text-slate-500" /><span className="flex-1">Buscar clientes, produtos, pedidos...</span>{trialActive(subscription) && <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-semibold text-amber-200">Teste gratuito — {trialHoursRemaining(subscription)}h restantes</span>}<kbd className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-500">Ctrl + K</kbd></div>
           <button aria-label={resolvedTheme === 'light' ? 'Ativar tema escuro F7' : 'Ativar tema claro'} onClick={() => setTheme(() => resolvedTheme === 'light' ? 'dark' : 'light')} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800">{resolvedTheme === 'light' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}</button>
-          <Link to="/notificacoes" className="relative rounded-xl border border-transparent p-2.5 text-slate-300 transition duration-200 hover:border-slate-700 hover:bg-slate-800">
-            <Bell className="h-5 w-5" />
-            {unread > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
-          </Link>
+          <NotificationBell company={company} unread={unread} onUnreadChange={(delta) => setUnread((value) => Math.max(0, value + delta))} />
           <div className="relative hidden md:block">
             <button onClick={() => setUserMenuOpen((open) => !open)} className="flex items-center gap-2.5 rounded-xl border border-transparent px-2 py-1.5 text-left transition duration-200 hover:border-slate-700 hover:bg-slate-800/70" aria-expanded={userMenuOpen}>
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 text-xs font-bold text-white">{visibleInitials}</span>
