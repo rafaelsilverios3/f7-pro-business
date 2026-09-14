@@ -33,6 +33,8 @@ select q.id, q.company_id, q.status, q.sale_id, q.customer_id, q.items, q.create
   (q.customer_id is null or exists (select 1 from public.customers c where c.id = q.customer_id and c.company_id = q.company_id)) as customer_is_tenant_safe,
   (q.sale_id is null or exists (select 1 from public.sales s where s.id = q.sale_id and s.company_id = q.company_id)) as sale_is_tenant_safe
 from public.quotes q;
+revoke all on public.quote_legacy_audit from public, anon, authenticated;
+grant select on public.quote_legacy_audit to service_role;
 
 create or replace function public.quote_items_normalize(payload jsonb, target_company uuid)
 returns jsonb
@@ -226,4 +228,3 @@ revoke all on function public.quote_items_normalize(jsonb, uuid) from public, an
 revoke all on function public.finalize_sale_from_quote(jsonb) from public, anon, authenticated;
 grant execute on function public.approve_quote(uuid) to authenticated;
 grant execute on function public.convert_quote_to_sale(uuid) to authenticated;
-
