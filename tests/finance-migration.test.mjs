@@ -7,6 +7,7 @@ const capitalMigration = fs.readFileSync('supabase/migrations/0051_capital_contr
 const provider = fs.readFileSync('src/data/providers/supabaseProvider.js', 'utf8');
 const financePage = fs.readFileSync('src/pages/Financeiro.jsx', 'utf8');
 const salesService = fs.readFileSync('src/services/salesService.js', 'utf8');
+const amountDefaultFix = fs.readFileSync('supabase/migrations/0075_fix_financial_entry_amount_default.sql', 'utf8');
 
 test('migration separates nature, titles, installments and real cash movements', () => {
   assert.match(migration, /add column if not exists nature text/);
@@ -33,6 +34,12 @@ test('frontend chooses revenue or expense before exposing categories', () => {
 test('sales call the financial wrapper instead of creating a paid title blindly', () => {
   assert.match(salesService, /finalize_sale_financial/);
   assert.doesNotMatch(salesService, /rpc\('finalize_sale'/);
+});
+
+test('financial entry trigger preserves a positive sale amount when total_amount has its zero default', () => {
+  assert.match(amountDefaultFix, /new\.total_amount = 0 and coalesce\(new\.amount, 0\) > 0/);
+  assert.match(amountDefaultFix, /new\.total_amount := new\.amount/);
+  assert.match(amountDefaultFix, /new\.amount := new\.total_amount/);
 });
 
 test('capital contribution is a confirmed non-operating cash entry', () => {

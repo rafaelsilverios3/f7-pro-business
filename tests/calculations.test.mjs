@@ -17,6 +17,10 @@ test('never returns a negative sale total', () => {
   assert.equal(calculateSaleTotals([{ qty: 1, price: 10 }], 50).total, 0);
 });
 
+test('sale with a decimal discount keeps a positive receivable total', () => {
+  assert.equal(calculateSaleTotals([{ qty: 1, price: 45.9, cost: 27.7 }], 0.9).total, 45);
+});
+
 test('splits installments and corrects the final rounding remainder', () => {
   assert.deepEqual(calculateInstallments(100, 3).map((item) => item.amount), [33.33, 33.33, 33.34]);
 });
