@@ -72,6 +72,13 @@ test('catalog immediately reflects the server row after editing price or stock',
   assert.match(dialog, /saved\.sale_price \?\? saved\.price/);
 });
 
+test('product edit preserves the exact monetary text through blur persistence', () => {
+  assert.match(dialog, /const moneyInputValue =/);
+  assert.match(dialog, /field === 'sale_price' \? value/);
+  assert.match(dialog, /const salePrice = moneyOr\(form\.sale_price\)/);
+  assert.match(dialog, /moneyInputValue\(updated\?\.price \?\? price\)/);
+});
+
 test('product creation retries duplicate SKUs with a deterministic numeric suffix', () => {
   assert.match(service, /products_company_id_sku_key/);
   assert.match(service, /candidate = `\$\{baseSku\}\$\{suffix \+ 2\}`/);

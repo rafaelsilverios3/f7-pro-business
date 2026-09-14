@@ -15,7 +15,7 @@ test('product price edits use one canonical numeric payload and preserve zero', 
   assert.match(productsService, /Number\.isFinite\(parsed\)/);
   assert.match(productsService, /price: 'sale_price'/);
   assert.match(productDialog, /normalizeProductForm/);
-  assert.match(productDialog, /setForm\(next\)/);
+  assert.match(productDialog, /const next = normalizeProductForm/);
   assert.match(productDialog, /if \(!form\.name\.trim\(\) \|\| saving\)/);
 });
 

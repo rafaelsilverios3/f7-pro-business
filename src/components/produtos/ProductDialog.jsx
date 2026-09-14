@@ -9,6 +9,8 @@ import PricingDialog from '@/components/pricing/PricingDialog';
 import ProductCatalogPanel from '@/components/pricing/ProductCatalogPanel';
 import { moneyOr, parseMoneyInput } from '@/lib/money';
 
+const moneyInputValue = (value) => { const parsed = moneyOr(value, null); return parsed == null ? '' : parsed.toFixed(2); };
+
 function productSaveMessage(error) {
   const code = String(error?.code || '').trim();
   if (code === '23505') return 'Já existe um produto com este SKU nesta empresa.';
@@ -35,7 +37,7 @@ function normalizeProductForm(form, fixedItemType, defaultItemType) {
 export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing, defaultItemType = 'product', fixedItemType = false }) {
   const emptyForm = {
     item_type: defaultItemType, duration_minutes: '', sku: '', barcode: '', name: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
-    cost_price: 0, sale_price: 0, stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
+    cost_price: '0', sale_price: '0', stock: 0, min_stock: 0, unit: 'un', commission: 0, active: true,
   };
   const [form, setForm] = useState(emptyForm);
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -43,7 +45,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
   const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
-    if (initial) setForm({ ...emptyForm, ...initial, cost_price: initial.cost_price ?? initial.cost ?? 0, sale_price: initial.sale_price ?? initial.price ?? 0, min_stock: initial.min_stock ?? initial.minimum_stock ?? 0, commission: initial.commission ?? initial.commission_rate ?? 0 });
+    if (initial) setForm({ ...emptyForm, ...initial, cost_price: moneyInputValue(initial.cost_price ?? initial.cost), sale_price: moneyInputValue(initial.sale_price ?? initial.price), min_stock: initial.min_stock ?? initial.minimum_stock ?? 0, commission: initial.commission ?? initial.commission_rate ?? 0 });
     else setForm(emptyForm);
   }, [initial, open]);
 
@@ -57,13 +59,22 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     setSaving(true); setSaveError('');
     try {
       const next = normalizeProductForm({ ...form, [field]: value }, fixedItemType, defaultItemType);
-      setForm(next);
       const saved = await onSave(next);
-      if (saved) setForm((current) => ({ ...current, ...saved, cost_price: saved.cost_price ?? saved.cost ?? current.cost_price, sale_price: saved.sale_price ?? saved.price ?? current.sale_price, min_stock: saved.min_stock ?? saved.minimum_stock ?? current.min_stock }));
+      if (saved) setForm((current) => ({
+        ...current,
+        ...saved,
+        // Keep the exact text that the user entered instead of replacing
+        // 45,90 with a coerced integer while the dialog is still open.
+        cost_price: field === 'cost_price' ? value : moneyInputValue(saved.cost_price ?? saved.cost ?? current.cost_price),
+        sale_price: field === 'sale_price' ? value : moneyInputValue(saved.sale_price ?? saved.price ?? current.sale_price),
+        min_stock: saved.min_stock ?? saved.minimum_stock ?? current.min_stock,
+      }));
     } catch (error) { setSaveError(productSaveMessage(error)); }
     finally { setSaving(false); }
   };
-  const margin = Number(form.sale_price) > 0 ? ((Number(form.sale_price) - Number(form.cost_price)) / Number(form.sale_price)) * 100 : 0;
+  const salePrice = moneyOr(form.sale_price);
+  const costPrice = moneyOr(form.cost_price);
+  const margin = salePrice > 0 ? ((salePrice - costPrice) / salePrice) * 100 : 0;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -163,7 +174,7 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
           </DialogFooter>
         </form>
       </DialogContent>
-      <PricingDialog open={pricingOpen} onClose={() => setPricingOpen(false)} product={form} canManage={Boolean(initial && canManagePricing)} onSelectPrice={(value) => set('sale_price', value)} onApply={async ({ price, summary }) => { const updated = await onApplyPricing?.({ product: initial, price, summary }); set('sale_price', updated?.price ?? price); if (updated?.cost != null) set('cost_price', updated.cost); }} />
+      <PricingDialog open={pricingOpen} onClose={() => setPricingOpen(false)} product={form} canManage={Boolean(initial && canManagePricing)} onSelectPrice={(value) => set('sale_price', moneyInputValue(value))} onApply={async ({ price, summary }) => { const updated = await onApplyPricing?.({ product: initial, price, summary }); set('sale_price', moneyInputValue(updated?.price ?? price)); if (updated?.cost != null) set('cost_price', moneyInputValue(updated.cost)); }} />
     </Dialog>
   );
 }
