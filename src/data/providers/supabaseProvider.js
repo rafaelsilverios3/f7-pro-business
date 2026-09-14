@@ -34,7 +34,7 @@ const columns = {
   Conversation: ['company_id', 'customer_id', 'lead_name', 'lead_phone', 'lead_email', 'channel', 'status', 'assigned_user_id', 'subject', 'last_message_at'],
   Message: ['company_id', 'conversation_id', 'sender_type', 'sender_user_id', 'content', 'message_type', 'created_at'],
   Opportunity: ['company_id', 'customer_id', 'conversation_id', 'title', 'description', 'value', 'stage', 'assigned_user_id', 'source', 'expected_close_date'],
-  Automation: ['company_id', 'name', 'active', 'trigger_type', 'conditions', 'actions', 'created_by'],
+  Automation: ['company_id', 'name', 'active', 'trigger_type', 'conditions', 'actions', 'created_by', 'schedule_frequency', 'schedule_weekday', 'schedule_time', 'timezone', 'next_run_at', 'last_run_at', 'last_result', 'failure_count', 'retry_count', 'claim_token', 'claim_until', 'deleted_at'],
   AutomationRun: ['company_id', 'automation_id', 'status', 'trigger_data', 'result', 'error_message', 'idempotency_key'],
   IntelligenceInsight: ['company_id', 'type', 'severity', 'title', 'description', 'entity', 'entity_id', 'data', 'status', 'resolved_at'],
     CompanySubscription: ['company_id', 'plan', 'status', 'trial_started_at', 'trial_ends_at', 'trial_used', 'current_period_start', 'current_period_end'],

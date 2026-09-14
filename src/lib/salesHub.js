@@ -63,7 +63,7 @@ function normalizeOpportunity(item, kind) {
   };
 }
 
-function buildAttention({ customers, opportunities, sales, activities = [], periodContext, now }) {
+function buildAttention({ customers, opportunities, sales, activities = [], notifications = [], periodContext, now }) {
   const items = [];
   const today = new Date(now).getTime();
   activities.filter(isPending).forEach((activity) => {
@@ -77,6 +77,22 @@ function buildAttention({ customers, opportunities, sales, activities = [], peri
     const nextActivity = deriveNextAction(activities.filter((activity) => activity.opportunity_id === item.id), now);
     if (!item.next_action && !nextActivity && item.kind === 'crm') items.push({ id: `no-action-${item.id}`, type: 'no_next_action', priority: 2, title: item.title || 'Oportunidade sem próxima ação', reason: 'Nenhuma próxima ação persistida para esta oportunidade.', opportunity: item, next_action: 'Definir próxima ação manualmente.' });
   });
+  const attentionIds = new Set(items.map((item) => item.id));
+  notifications.filter((notification) => notification?.type === 'automation' && notification.read !== true).forEach((notification) => {
+    if (notification.entity === 'crm_activity') {
+      const activity = activities.find((item) => item.id === notification.entity_id && isPending(item));
+      if (!activity || attentionIds.has(`overdue-activity-${activity.id}`) || attentionIds.has(`due-activity-${activity.id}`)) return;
+      items.push({ id: `activity-${activity.id}`, type: 'automation_activity', priority: 2, title: notification.title || 'Lembrete de follow-up', reason: notification.message || 'Há um follow-up comercial que precisa de atenção.', activity, next_action: 'Abrir Minhas tarefas e revisar o follow-up.' });
+      attentionIds.add(`activity-${activity.id}`);
+    }
+    if (notification.entity === 'opportunity') {
+      const opportunity = opportunities.find((item) => item.id === notification.entity_id && item.kind === 'crm');
+      const pending = opportunity && activities.some((activity) => activity.opportunity_id === opportunity.id && isPending(activity));
+      if (!opportunity || pending || attentionIds.has(`no-action-${opportunity.id}`)) return;
+      items.push({ id: `no-action-${opportunity.id}`, type: 'no_next_action', priority: 2, title: notification.title || opportunity.title || 'Oportunidade sem próxima ação', reason: notification.message || 'Nenhuma próxima ação persistida para esta oportunidade.', opportunity, next_action: 'Definir próxima ação manualmente.' });
+      attentionIds.add(`no-action-${opportunity.id}`);
+    }
+  });
   customers.forEach((customer) => {
     if (customer.inactive_days === null || customer.inactive_days >= 90) items.push({ id: `inactive-${customer.id}`, type: 'inactive_customer', priority: 2, title: customer.name || 'Cliente sem nome', reason: customer.inactive_days === null ? 'Nenhuma compra registrada.' : `Cliente sem compra há ${customer.inactive_days} dias.`, customer, next_action: 'Revisar uma reativação antes de contatar.' });
     const current = sales.filter((sale) => valid(sale) && sale.customer_id === customer.id && matchesPeriod(dateOf(sale), periodContext)).reduce((sum, sale) => sum + safeNumber(sale.total), 0);
@@ -89,7 +105,7 @@ function buildAttention({ customers, opportunities, sales, activities = [], peri
   return [...unique.values()];
 }
 
-export function buildSalesHubModel({ companyId, customers = [], products = [], sales = [], opportunities = [], radarOpportunities = [], conversations = [], channels = [], metrics = [], activities = [], periodContext, now = new Date() } = {}) {
+export function buildSalesHubModel({ companyId, customers = [], products = [], sales = [], opportunities = [], radarOpportunities = [], conversations = [], channels = [], metrics = [], activities = [], notifications = [], periodContext, now = new Date() } = {}) {
   const scopedCustomers = scoped(customers, companyId);
   const scopedSales = scoped(sales, companyId).filter(valid);
   const scopedActivities = scoped(activities, companyId);
@@ -116,8 +132,8 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
   return {
     company_id: companyId,
     period: periodContext,
-    overview: { open_opportunities: openOpportunities.length, priority_opportunities: combined.filter((item) => item.priority_rank >= 3 || (item.score !== null && item.score >= 70)).length, pending_attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, periodContext, now }).length, period_sales: periodSales.length, period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0), customers: customerRows.length, activities: activitySummary(scopedActivities, now) },
-    attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, periodContext, now }),
+    overview: { open_opportunities: openOpportunities.length, priority_opportunities: combined.filter((item) => item.priority_rank >= 3 || (item.score !== null && item.score >= 70)).length, pending_attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }).length, period_sales: periodSales.length, period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0), customers: customerRows.length, activities: activitySummary(scopedActivities, now), automation_notifications: notifications.filter((item) => item?.type === 'automation' && item.read !== true).length },
+    attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }),
     pipeline,
     opportunities: openOpportunities.sort((a, b) => b.priority_rank - a.priority_rank || (b.score ?? -1) - (a.score ?? -1) || dateTime(dateOf(b)) - dateTime(dateOf(a))),
     customers: customerRows,
@@ -127,6 +143,7 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
     metrics: scoped(metrics, companyId),
     conversations: scoped(conversations, companyId),
     activities: scopedActivities,
+    notifications: notifications.filter((item) => item?.type === 'automation' && item.read !== true),
     timeline,
     limitations: { followups: 'Atividades e follow-ups são persistidos em crm_activities e continuam sob confirmação humana; nenhuma mensagem externa é enviada automaticamente.', probability: 'Probabilidade só é exibida quando há score/prioridade persistidos.', campaigns: 'Campanhas permanecem no Marketing e não possuem histórico persistente neste fluxo.' },
   };

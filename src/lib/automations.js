@@ -14,6 +14,10 @@ export const TRIGGER_LABELS = {
   bill_overdue: 'Conta vencida',
   client_inactive: 'Cliente inativo',
   goal_reached: 'Meta atingida',
+  crm_activity_due_soon: 'Atividade vencendo',
+  crm_activity_due_today: 'Atividade de hoje',
+  crm_activity_overdue: 'Atividade atrasada',
+  crm_opportunity_without_next_action: 'Oportunidade sem próxima ação',
 };
 
 export const ACTION_LABELS = {
@@ -24,6 +28,13 @@ export const ACTION_LABELS = {
   change_status: 'Alterar status',
   follow_up: 'Registrar follow-up',
 };
+
+export const CRM_TRIGGER_TYPES = Object.freeze([
+  'crm_activity_due_soon',
+  'crm_activity_due_today',
+  'crm_activity_overdue',
+  'crm_opportunity_without_next_action',
+]);
 
 function matchesConditions(eventData, conditions) {
   if (!conditions || conditions.length === 0) return true;

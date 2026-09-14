@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { automationService } from '@/services/automationService';
 import { getDataProvider } from '@/data/providerSelector';
 import { fmtDate } from '@/lib/business';
-import { TRIGGER_LABELS, ACTION_LABELS } from '@/lib/automations';
+import { TRIGGER_LABELS, ACTION_LABELS, CRM_TRIGGER_TYPES } from '@/lib/automations';
 import { calculateNextRunAt, AUTOMATION_WEEKDAYS } from '@/lib/automationScheduler';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -134,6 +134,7 @@ export default function Automacoes() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{a.name}</p>
                   <p className="text-[10px] text-slate-400">{TRIGGER_LABELS[a.trigger_type] || TRIGGER_LABELS[a.trigger]}</p>
+                  {CRM_TRIGGER_TYPES.includes(a.trigger_type) && <p className="text-[10px] font-medium text-indigo-600">Follow-ups e tarefas comerciais</p>}
                 </div>
               </div>
               <label className="relative inline-flex cursor-pointer items-center">
@@ -158,7 +159,7 @@ export default function Automacoes() {
               </div>
             </div>
             <div className="mt-3 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">{a.last_run_at ? `Última: ${fmtDate(a.last_run_at)}` : 'Nunca executada'}{a.next_run_at ? ` · Próxima: ${fmtDate(a.next_run_at)}` : ''}</span>
+              <span className="text-[10px] text-slate-400">{a.last_run_at ? `Última: ${fmtDate(a.last_run_at)}` : 'Nunca executada'}{a.next_run_at ? ` · Próxima: ${fmtDate(a.next_run_at)}` : ''}{a.last_result?.eligible != null ? ` · ${a.last_result.eligible} identificado(s)` : ''}</span>
               <div className="flex items-center gap-1"><button onClick={() => runNow(a)} disabled={!a.active || !['client_inactive', 'stock_below_min'].includes(a.trigger_type)} title="Executar detector seguro agora" className="rounded-md p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-30"><Play className="h-4 w-4" /></button><button onClick={() => handleDelete(a)} className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button></div>
             </div>
           </div>
@@ -208,7 +209,12 @@ function AutomationDialog({ open, onClose, company, onDone }) {
           <div className="space-y-1.5">
             <Label className="text-xs">Gatilho (evento)</Label>
             <select value={trigger} onChange={(e) => setTrigger(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
-              {Object.entries(TRIGGER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              <optgroup label="Eventos comerciais">
+                {Object.entries(TRIGGER_LABELS).filter(([v]) => !CRM_TRIGGER_TYPES.includes(v)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </optgroup>
+              <optgroup label="Follow-ups e tarefas comerciais">
+                {CRM_TRIGGER_TYPES.map((v) => <option key={v} value={v}>{TRIGGER_LABELS[v]}</option>)}
+              </optgroup>
             </select>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
