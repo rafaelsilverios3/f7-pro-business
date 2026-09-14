@@ -377,3 +377,21 @@ body.light-theme .app-shell .border-slate-200.bg-white h2,
 body.light-theme .app-shell .border-slate-200.bg-white h3,
 body.light-theme .app-shell .border-slate-100.bg-white h2,
 body.light-theme .app-shell .border-slate-100.bg-white h3 { color: #0b1b35 !important; }
+
+/* The executive intelligence header uses indigo borders/backgrounds instead
+   of the generic slate card classes above. Keep its copy in the navy/gold
+   day-mode palette so legacy compatibility rules cannot wash it out. */
+body.light-theme .app-shell [data-executive-summary] h2,
+body.light-theme .app-shell [data-executive-summary] [class~="text-slate-900"],
+body.light-theme .app-shell [data-executive-summary] [class~="text-slate-800"] {
+  color: #0b1b35 !important;
+}
+body.light-theme .app-shell [data-executive-summary] [class~="text-slate-700"],
+body.light-theme .app-shell [data-executive-summary] [class~="text-slate-600"],
+body.light-theme .app-shell [data-executive-summary] [class~="text-slate-500"],
+body.light-theme .app-shell [data-executive-summary] [class~="text-slate-400"] {
+  color: #475569 !important;
+}
+body.light-theme .app-shell [data-executive-summary] [class~="text-indigo-600"] {
+  color: #315bb5 !important;
+}
