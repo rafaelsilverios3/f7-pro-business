@@ -240,3 +240,120 @@ body.light-theme .app-shell .text-slate-500,
 body.light-theme .app-shell .text-slate-400 { color: var(--text-secondary) !important; }
 body.light-theme .app-shell .recharts-cartesian-grid line { stroke: rgba(255, 255, 255, .15) !important; }
 body.light-theme .app-shell .recharts-text { fill: #d5dde7 !important; }
+
+/* Landing-inspired day theme: warm surfaces, navy structure and restrained
+   gold accents. The scope is limited to the application shell so the public
+   site and the existing dark theme remain unchanged. */
+body.light-theme {
+  --app-bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-elevated: #fffdf9;
+  --card-bg: #ffffff;
+  --card-border: #e9dfd2;
+  --text-primary: #0b1b35;
+  --text-secondary: #64748b;
+  --sidebar-bg: #ffffff;
+  --sidebar-active: linear-gradient(135deg, #c6935b, #a9743f);
+  --input-bg: #ffffff;
+  --app-border: #e9dfd2;
+  --app-accent: #b9824c;
+  background: #fbfaf7;
+  color: #0b1b35;
+}
+body.light-theme .app-shell,
+body.light-theme .app-shell main { background: #fbfaf7 !important; }
+body.light-theme .app-shell > aside,
+body.light-theme .app-shell aside { background: #ffffff !important; border-color: #eadfd1 !important; }
+body.light-theme .app-shell main > .sticky {
+  background: rgba(255, 255, 255, .94) !important;
+  border-color: #eadfd1 !important;
+  box-shadow: 0 1px 12px rgba(96, 68, 37, .05);
+}
+body.light-theme .app-shell [class*="bg-[#07111f"],
+body.light-theme .app-shell [class*="bg-[#07111f"],
+body.light-theme .app-shell [class*="bg-[#091426"],
+body.light-theme .app-shell [class*="bg-[#0e1a2b"],
+body.light-theme .app-shell [class*="bg-[#0d1b28"],
+body.light-theme .app-shell [class*="bg-[#0d1b2e"],
+body.light-theme .app-shell [class*="bg-[#10213a"],
+body.light-theme .app-shell [class*="bg-[#0b1626"],
+body.light-theme .app-shell [class*="bg-[#0b1728"],
+body.light-theme .app-shell [class*="bg-[#101f33"] { background: #ffffff !important; }
+body.light-theme .app-shell .bg-white { background: #ffffff !important; }
+body.light-theme .app-shell .bg-slate-50 { background: #fffdf9 !important; }
+body.light-theme .app-shell [class~="border-slate-200"],
+body.light-theme .app-shell [class~="border-slate-100"],
+body.light-theme .app-shell [class*="border-slate-700"] { border-color: #e9dfd2 !important; }
+body.light-theme .app-shell .text-white { color: #0b1b35 !important; }
+body.light-theme .app-shell .text-slate-900,
+body.light-theme .app-shell .text-slate-800,
+body.light-theme .app-shell .text-slate-700 { color: #0b1b35 !important; }
+body.light-theme .app-shell .text-slate-600,
+body.light-theme .app-shell .text-slate-500,
+body.light-theme .app-shell .text-slate-400 { color: #64748b !important; }
+body.light-theme .app-shell .text-slate-300,
+body.light-theme .app-shell .text-slate-200 { color: #334155 !important; }
+body.light-theme .app-shell .f7-kpi-card,
+body.light-theme .app-shell .f7-quick-actions,
+body.light-theme .app-shell .border-slate-200.bg-white,
+body.light-theme .app-shell .border-slate-100.bg-white {
+  background: #ffffff !important;
+  border-color: #e9dfd2 !important;
+  box-shadow: 0 12px 28px rgba(96, 68, 37, .09) !important;
+  color: #0b1b35 !important;
+}
+body.light-theme .app-shell .f7-kpi-card .text-white,
+body.light-theme .app-shell .f7-kpi-card .text-slate-100,
+body.light-theme .app-shell .f7-kpi-card .text-slate-200,
+body.light-theme .app-shell .f7-kpi-card .text-slate-300,
+body.light-theme .app-shell .f7-kpi-card .text-slate-400,
+body.light-theme .app-shell .f7-kpi-card .text-slate-500,
+body.light-theme .app-shell .f7-quick-actions .text-white,
+body.light-theme .app-shell .f7-quick-actions .text-slate-200,
+body.light-theme .app-shell .f7-quick-actions .text-slate-300,
+body.light-theme .app-shell .f7-quick-actions .text-slate-400,
+body.light-theme .app-shell .f7-quick-actions .text-slate-500 { color: #0b1b35 !important; }
+body.light-theme .app-shell .f7-kpi-card svg { color: #b9824c !important; }
+body.light-theme .app-shell .f7-quick-actions a {
+  background: #fff8ef !important;
+  border-color: #ead1b2 !important;
+  color: #8b5e2d !important;
+}
+body.light-theme .app-shell aside a:not(.bg-gradient-to-r) { color: #334155 !important; }
+body.light-theme .app-shell aside a:not(.bg-gradient-to-r):hover { background: #fff8ef !important; color: #8b5e2d !important; }
+body.light-theme .app-shell aside a.bg-gradient-to-r,
+body.light-theme .app-shell .f7-period-active {
+  background: var(--sidebar-active) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(169, 116, 63, .24) !important;
+}
+body.light-theme .app-shell aside a.bg-gradient-to-r *,
+body.light-theme .app-shell .f7-period-active * { color: #ffffff !important; }
+body.light-theme .app-shell input,
+body.light-theme .app-shell textarea,
+body.light-theme .app-shell select {
+  background: #ffffff !important;
+  color: #0b1b35 !important;
+  border-color: #d8cabb !important;
+}
+body.light-theme .app-shell input::placeholder,
+body.light-theme .app-shell textarea::placeholder { color: #94a3b8 !important; }
+body.light-theme .app-shell input:focus,
+body.light-theme .app-shell textarea:focus,
+body.light-theme .app-shell select:focus {
+  border-color: #b9824c !important;
+  box-shadow: 0 0 0 2px rgba(185, 130, 76, .18) !important;
+}
+body.light-theme .app-shell .f7-dialog-content {
+  background: #fffdf9 !important;
+  color: #0b1b35 !important;
+  border-color: #e1d2c1 !important;
+}
+body.light-theme .app-shell .f7-dialog-content label { color: #334155 !important; }
+body.light-theme .app-shell .f7-dialog-content input,
+body.light-theme .app-shell .f7-dialog-content textarea,
+body.light-theme .app-shell .f7-dialog-content select { background: #ffffff !important; color: #0b1b35 !important; border-color: #d8cabb !important; }
+body.light-theme .app-shell .f7-form-section-title { color: #a56f39 !important; border-color: #eadfd1 !important; }
+body.light-theme .app-shell .recharts-cartesian-grid line { stroke: rgba(185, 130, 76, .16) !important; }
+body.light-theme .app-shell .recharts-text { fill: #64748b !important; }
