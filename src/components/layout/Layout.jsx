@@ -129,7 +129,7 @@ export default function Layout() {
             </div>}
           </div>
         </div>
-        <Outlet context={{ company, subscription, subscriptionLoading }} />
+        <Outlet context={{ company, subscription, subscriptionLoading, profileName }} />
       </main>
       <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} company={company} role={String(user?.role || '').toLowerCase()} profileName={profileName} theme={theme} onThemeChange={setTheme} onSaved={setProfileName} />
     </div>

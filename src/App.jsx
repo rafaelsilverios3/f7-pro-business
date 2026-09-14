@@ -71,7 +71,7 @@ const CompanyGuard = () => {
   if (trialActive(subscription) && !TRIAL_ALLOWED_PATHS.includes(location.pathname)) return <FeatureLocked path={location.pathname} />;
   const requirement = FEATURE_REQUIREMENTS[location.pathname];
   if (subscription?.status === 'active' && requirement && !canUseFeature(subscription.plan, requirement[2])) return <FeatureLocked path={location.pathname} />;
-  return <Outlet context={{ company, subscription, subscriptionLoading }} />;
+  return <Outlet context={{ ...layoutContext, company, subscription, subscriptionLoading }} />;
 };
 
 function Forbidden() {

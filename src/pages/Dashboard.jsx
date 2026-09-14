@@ -65,7 +65,7 @@ function EntityLink({ type, id, label }) {
 }
 
 export default function Dashboard() {
-  const { company } = useOutletContext();
+  const { company, profileName } = useOutletContext();
   const { user } = useAuth();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
@@ -244,7 +244,8 @@ export default function Dashboard() {
   if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">Tente novamente em instantes.</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={loadDashboard}>Tentar novamente</button></div>;
   if (!m) return <div data-dashboard-loading className="mx-auto w-full max-w-[1760px] px-3 py-5 sm:px-5 sm:py-7 xl:px-8 2xl:px-10"><div className="mb-5 h-24 animate-pulse rounded-2xl bg-slate-800/60 sm:mb-7 sm:h-28" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-700/60 bg-slate-800/60 sm:h-44" />)}</div><div className="mt-5 h-56 animate-pulse rounded-2xl border border-indigo-200/20 bg-indigo-950/30" /></div>;
 
-  const displayName = user?.full_name || user?.name || user?.email || 'usuário';
+  const rawDisplayName = profileName || user?.full_name || user?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || 'seu perfil';
+  const displayName = rawDisplayName.includes('@') ? 'seu perfil' : rawDisplayName;
   const firstName = displayName.trim().split(/\s+/)[0] || 'usuário';
   const today = format(new Date(), 'dd/MM/yyyy HH:mm');
 

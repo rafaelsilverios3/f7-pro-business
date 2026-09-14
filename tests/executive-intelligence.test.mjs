@@ -42,7 +42,7 @@ test('intelligence gate follows active subscription status for every commercial 
   for (const plan of ['pro', 'business', 'premium']) assert.equal(canUseSubscriptionFeature({ plan, status: 'active' }, 'intelligence'), true);
   assert.equal(canUseSubscriptionFeature({ plan: 'pro', status: 'past_due' }, 'intelligence'), false);
   assert.equal(canUseSubscriptionFeature({ plan: 'pro', status: 'active' }, 'intelligence', { provider: 'base44' }), true);
-  assert.match(layout, /Outlet context=\{\{ company, subscription, subscriptionLoading \}\}/);
+  assert.match(layout, /Outlet context=\{\{ company, subscription, subscriptionLoading, profileName \}\}/);
   assert.match(app, /const layoutContext = useOutletContext\(\) \|\| \{\}/);
   assert.doesNotMatch(app, /loadSubscription\(/);
 });
