@@ -179,6 +179,10 @@ test('landing hero separates trial and plan discovery CTAs', () => {
   assert.doesNotMatch(cta, /Acessar plataforma/);
   assert.match(site, /<a href=\{appUrl\}[^>]*>Entrar<\/a>/);
   assert.match(site, /<Link to="\/pro-business"[^>]*>Conhecer a F7<\/Link>/);
+  const header = site.match(/function Header\(\) \{[\s\S]*?\nfunction Hero/)?.[0];
+  assert.ok(header, 'landing header must remain identifiable');
+  assert.match(header, /bg-blue-500[^>]*>Entrar<\/a>/);
+  assert.doesNotMatch(header, /Começar grátis/);
   assert.match(site, /id="planos"/);
   assert.match(scrollToTop, /scrollIntoView\(\{ behavior: "smooth" \}\)/);
 });
