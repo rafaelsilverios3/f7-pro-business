@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCompany } from '@/lib/useCompany';
 import { getDataProvider } from '@/data/providerSelector';
+import { safeReturnTo } from '@/lib/authReturnTo';
 
 const STEPS = [
   { id: 'company', label: 'Configurar empresa', icon: Building2 },
@@ -86,12 +87,12 @@ export default function Onboarding() {
   };
 
   const finish = () => {
-    navigate('/f7probusiness');
+    navigate(safeReturnTo());
   };
 
   const skipAll = () => {
     getDataProvider().entity('Company').update(company.id, { onboarding_completed: true });
-    navigate('/f7probusiness');
+    navigate(safeReturnTo());
   };
 
   const current = STEPS[step];

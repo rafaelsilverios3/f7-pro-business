@@ -25,6 +25,7 @@ Deno.serve(async (req) => {
     const sandboxAllowed = configuredEnvironment === 'test' && validEnvironment && providerReachable && webhookSecretConfigured && !environmentConflict;
     const productionReady = configuredEnvironment === 'production' && validEnvironment && providerReachable && webhookSecretConfigured;
     const paymentsEnabled = configuredEnvironment === 'test' ? sandboxAllowed : productionReady && productionPaymentsEnabled;
+    const environmentConfirmed = configuredEnvironment === 'test' ? sandboxAllowed : productionReady;
     return json({
       provider: 'mercado_pago',
       configured: Boolean(token && webhookSecretConfigured),
@@ -37,7 +38,7 @@ Deno.serve(async (req) => {
       production_payments_enabled: productionPaymentsEnabled,
       payments_enabled: paymentsEnabled,
       credential_environment: validEnvironment ? configuredEnvironment : 'unconfirmed',
-      environment_confirmed: sandboxAllowed,
+      environment_confirmed: environmentConfirmed,
       environment_conflict: environmentConflict,
       environment_evidence: [
         validEnvironment ? `server_config=${configuredEnvironment}` : 'server_config=invalid_or_missing',

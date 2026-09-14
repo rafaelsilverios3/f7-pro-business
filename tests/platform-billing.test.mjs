@@ -163,6 +163,25 @@ test('public plans and authenticated checkout routes are wired without changing 
   assert.match(site, /Assinar/);
 });
 
+test('commercial funnel preserves plan intent through account and first-company onboarding', () => {
+  assert.match(site, /register\?returnTo=/);
+  assert.match(site, /checkout\?plan/);
+  assert.match(page, /Criar empresa e continuar/);
+  assert.match(page, /onboarding\?returnTo=/);
+  assert.match(app, /'\/cadastro'/);
+  assert.match(fs.readFileSync('src/pages/Onboarding.jsx', 'utf8'), /safeReturnTo/);
+});
+
+test('public site exposes responsible intelligence, trial duration, FAQ and SEO metadata', () => {
+  assert.match(site, /Teste gratuito de 24 horas/);
+  assert.match(site, /Intelligence/);
+  assert.match(site, /Decisões comerciais importantes continuam/);
+  assert.match(site, /Perguntas frequentes/);
+  assert.match(site, /og:title/);
+  assert.match(site, /canonical/);
+  assert.match(site, /SoftwareApplication/);
+});
+
 test('subscription screen is tenant-scoped and exposes only platform billing history', () => {
   assert.match(app, /path="\/assinatura"/);
   assert.match(subscriptionPage, /company_subscriptions/);
@@ -258,6 +277,7 @@ test('billing health reports production readiness without enabling payments by d
     assert.match(billingHealth, new RegExp(`${field}:`));
   }
   assert.match(billingHealth, /productionReady/);
+  assert.match(billingHealth, /const environmentConfirmed = configuredEnvironment === 'test' \? sandboxAllowed : productionReady/);
   assert.match(billingHealth, /configuredEnvironment === 'test' \? sandboxAllowed : productionReady && productionPaymentsEnabled/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_ACCESS_TOKEN/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_WEBHOOK_SECRET/);
