@@ -178,6 +178,7 @@ test('landing hero separates trial and plan discovery CTAs', () => {
   assert.match(cta, /to="\/#planos"/);
   assert.doesNotMatch(cta, /Acessar plataforma/);
   assert.match(site, /<a href=\{appUrl\}[^>]*>Entrar<\/a>/);
+  assert.match(site, /<Link to="\/pro-business"[^>]*>Conhecer a F7<\/Link>/);
   assert.match(site, /id="planos"/);
   assert.match(scrollToTop, /scrollIntoView\(\{ behavior: "smooth" \}\)/);
 });
