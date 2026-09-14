@@ -18,18 +18,28 @@ const NAV = [
     items: [{ to: '/f7probusiness', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.view' }],
   },
   {
-    group: 'Operação',
+    group: 'Cadastros',
     items: [
-      { to: '/pdv', label: 'PDV', icon: ScanLine, permission: 'pdv.use' },
-      { to: '/precificacao', label: 'Precificação', icon: BadgeDollarSign, permission: 'pricing.view' },
       { to: '/clientes', label: 'Clientes', icon: Users, permission: 'customers.view' },
       { to: '/produtos', label: 'Catálogo', icon: Package, permission: 'products.view' },
-      { to: '/producao', label: 'Produção', icon: Factory, permission: 'production.view' },
+      { to: '/precificacao', label: 'Precificação', icon: BadgeDollarSign, permission: 'pricing.view' },
+    ],
+  },
+  {
+    group: 'Operação',
+    items: [
       { to: '/estoque', label: 'Estoque', icon: Boxes, permission: 'inventory.view' },
-      { to: '/vendas', label: 'Vendas', icon: ShoppingCart, permission: 'sales.view' },
-      { to: '/orcamentos', label: 'Orçamentos', icon: FileText, permission: 'quotes.view' },
-      { to: '/financeiro', label: 'Financeiro', icon: Wallet, permission: 'finance.view' },
       { to: '/compras', label: 'Compras', icon: Truck, permission: 'purchases.view' },
+      { to: '/orcamentos', label: 'Orçamentos', icon: FileText, permission: 'quotes.view' },
+      { to: '/vendas', label: 'Vendas', icon: ShoppingCart, permission: 'sales.view' },
+      { to: '/pdv', label: 'PDV', icon: ScanLine, permission: 'pdv.use' },
+      { to: '/producao', label: 'Produção', icon: Factory, permission: 'production.view' },
+    ],
+  },
+  {
+    group: 'Gestão',
+    items: [
+      { to: '/financeiro', label: 'Financeiro', icon: Wallet, permission: 'finance.view' },
       { to: '/metas', label: 'Metas e Comissões', icon: Target, permission: 'goals.view' },
     ],
   },
