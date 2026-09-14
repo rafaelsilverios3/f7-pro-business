@@ -11,6 +11,7 @@ const service = fs.readFileSync('src/services/billingService.js', 'utf8');
 const page = fs.readFileSync('src/pages/Checkout.jsx', 'utf8');
 const app = fs.readFileSync('src/App.jsx', 'utf8');
 const site = fs.readFileSync('src/pages/PublicSite.jsx', 'utf8');
+const scrollToTop = fs.readFileSync('src/components/ScrollToTop.jsx', 'utf8');
 const subscriptionPage = fs.readFileSync('src/pages/SubscriptionBilling.jsx', 'utf8');
 const planService = fs.readFileSync('src/services/planService.js', 'utf8');
 const featureGate = fs.readFileSync('src/services/featureGate.js', 'utf8');
@@ -161,6 +162,24 @@ test('public plans and authenticated checkout routes are wired without changing 
   assert.match(app, /returnTo=.*location\.pathname/);
   assert.match(site, /PlansSection/);
   assert.match(site, /Assinar/);
+});
+
+test('landing hero separates trial and plan discovery CTAs', () => {
+  const hero = site.match(/function Hero\(\) \{[\s\S]*?\nfunction Ecosystem/)?.[0];
+  const cta = site.match(/function Cta\(\) \{[\s\S]*?\nfunction Home/)?.[0];
+  assert.ok(hero, 'landing hero must remain identifiable');
+  assert.ok(cta, 'landing final CTA must remain identifiable');
+  assert.match(hero, /Começar grátis por 24h/);
+  assert.match(hero, /trialPath/);
+  assert.match(hero, /to="\/#planos"/);
+  assert.match(hero, /Ver planos/);
+  assert.doesNotMatch(hero, /Acessar plataforma|Conhecer o F7 PRO BUSINESS/);
+  assert.match(cta, /Começar grátis por 24h/);
+  assert.match(cta, /to="\/#planos"/);
+  assert.doesNotMatch(cta, /Acessar plataforma/);
+  assert.match(site, /<a href=\{appUrl\}[^>]*>Entrar<\/a>/);
+  assert.match(site, /id="planos"/);
+  assert.match(scrollToTop, /scrollIntoView\(\{ behavior: "smooth" \}\)/);
 });
 
 test('commercial funnel preserves plan intent through account and first-company onboarding', () => {
