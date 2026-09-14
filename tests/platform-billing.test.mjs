@@ -188,12 +188,14 @@ test('landing hero separates trial and plan discovery CTAs', () => {
   assert.match(scrollToTop, /scrollIntoView\(\{ behavior: "smooth" \}\)/);
 });
 
-test('landing hero uses the office background with a fading gradient and F7 preview', () => {
+test('landing hero uses the office notebook background and overlays the F7 CTAs', () => {
   const hero = site.match(/function Hero\(\) \{[\s\S]*?\nfunction Segments/)?.[0];
   assert.ok(hero, 'landing hero must remain identifiable');
-  assert.match(hero, /hero-office\.png/);
+  assert.match(hero, /hero-office-notebook\.png/);
   assert.match(hero, /linear-gradient\(90deg/);
-  assert.match(hero, /DashboardMockup/);
+  assert.doesNotMatch(hero, /DashboardMockup/);
+  assert.match(hero, /Começar grátis por 24h/);
+  assert.match(hero, /Ver planos/);
 });
 
 test('commercial funnel preserves plan intent through account and first-company onboarding', () => {
