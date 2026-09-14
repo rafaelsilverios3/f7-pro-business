@@ -9,7 +9,7 @@ import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
 import { purchasesService } from '@/services/purchasesService';
 
-export default function PurchaseDialog({ open, onClose, company, onDone }) {
+export default function PurchaseDialog({ open, onClose, company, onDone, suggestion = null }) {
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [supplierId, setSupplierId] = useState('');
@@ -26,7 +26,12 @@ export default function PurchaseDialog({ open, onClose, company, onDone }) {
       setSuppliers(await provider.entity('Supplier').filter({ company_id: company.id, active: true }, '-created_date', 500));
       setProducts(await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500));
     })();
-  }, [open, company]);
+    if (suggestion?.product_id && suggestion.suggested_quantity > 0) {
+      setItems([{ product_id: suggestion.product_id, name: suggestion.name, qty: suggestion.suggested_quantity, cost: suggestion.last_purchase?.cost ?? 0 }]);
+    } else setItems([]);
+    const suggestedSupplier = suggestion?.suppliers?.[0]?.id;
+    setSupplierId(suggestedSupplier || '');
+  }, [open, company, suggestion]);
 
   const supplier = suppliers.find((s) => s.id === supplierId);
 
