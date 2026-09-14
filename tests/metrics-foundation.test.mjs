@@ -141,6 +141,8 @@ test('snapshot opportunity states exclude closed and active snoozed records', ()
 
 test('executive dashboard has explicit loading, partial-error and empty-safe UI states', () => {
   const dashboard = fs.readFileSync(new URL('../src/pages/Dashboard.jsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /Olá, \{firstName\}!/);
+  assert.match(dashboard, /Aqui está o resumo do seu negócio em tempo real/);
   assert.match(dashboard, /Array\.from\(\{ length: 8 \}/);
   assert.match(dashboard, /m\.partialErrors\.length > 0/);
   assert.match(dashboard, /Indisponível/);

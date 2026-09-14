@@ -22,6 +22,7 @@ import KpiCard from '@/components/dashboard/KpiCard';
 import { format } from 'date-fns';
 import { Target, GitBranch, Activity, Clock, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 import { createRepository } from '@/data/repositoryFactory';
 import { ExecutiveChartCard } from '@/components/dashboard/ExecutiveChartCard';
 import ExecutiveInsightCard from '@/components/dashboard/ExecutiveInsightCard';
@@ -65,6 +66,7 @@ function EntityLink({ type, id, label }) {
 
 export default function Dashboard() {
   const { company } = useOutletContext();
+  const { user } = useAuth();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -242,6 +244,8 @@ export default function Dashboard() {
   if (error) return <div className="mx-auto max-w-xl px-5 py-20 text-center"><h2 className="text-lg font-semibold text-slate-800">Não foi possível carregar o dashboard.</h2><p className="mt-2 text-sm text-slate-500">Tente novamente em instantes.</p><button className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={loadDashboard}>Tentar novamente</button></div>;
   if (!m) return <div data-dashboard-loading className="mx-auto w-full max-w-[1760px] px-3 py-5 sm:px-5 sm:py-7 xl:px-8 2xl:px-10"><div className="mb-5 h-24 animate-pulse rounded-2xl bg-slate-800/60 sm:mb-7 sm:h-28" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-700/60 bg-slate-800/60 sm:h-44" />)}</div><div className="mt-5 h-56 animate-pulse rounded-2xl border border-indigo-200/20 bg-indigo-950/30" /></div>;
 
+  const displayName = user?.full_name || user?.name || user?.email || 'usuário';
+  const firstName = displayName.trim().split(/\s+/)[0] || 'usuário';
   const today = format(new Date(), 'dd/MM/yyyy HH:mm');
 
   return (
@@ -249,8 +253,8 @@ export default function Dashboard() {
       <div className="mb-7 flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">F7 PRO BUSINESS</p>
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Visão Executiva</h1>
-          <p className="mt-2 break-words text-sm text-slate-400">{company.name || 'Sua empresa'} · resumo executivo do negócio.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Olá, {firstName}! <span aria-hidden="true">👋</span></h1>
+          <p className="mt-2 break-words text-sm text-slate-400">Aqui está o resumo do seu negócio em tempo real.</p>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           <div className="min-w-0 rounded-xl border border-slate-700/70 bg-[#0d1b2e] px-3 py-2.5 text-left sm:px-4 sm:text-right">
