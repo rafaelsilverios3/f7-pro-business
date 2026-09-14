@@ -62,6 +62,16 @@ test('product dialog keeps the modal open on save errors and prevents duplicate 
   assert.match(page, /await load\(\)/);
 });
 
+test('catalog immediately reflects the server row after editing price or stock', () => {
+  assert.match(page, /const updated = editing/);
+  assert.match(page, /setItems\(\(current\) =>/);
+  assert.match(page, /item\.id === updated\.id \? updated : item/);
+  assert.match(page, /const salePrice = Number\(p\.sale_price \?\? p\.price\)/);
+  assert.match(page, /const stock = Number\(p\.stock\) \|\| 0/);
+  assert.match(dialog, /const saved = await onSave\(next\)/);
+  assert.match(dialog, /saved\.sale_price \?\? saved\.price/);
+});
+
 test('product creation retries duplicate SKUs with a deterministic numeric suffix', () => {
   assert.match(service, /products_company_id_sku_key/);
   assert.match(service, /candidate = `\$\{baseSku\}\$\{suffix \+ 2\}`/);

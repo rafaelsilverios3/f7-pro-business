@@ -41,9 +41,18 @@ export default function Produtos() {
   }, [items, query, tab, subcategory]);
 
   const handleSave = async (form) => {
-    if (editing) await productsService.update(company.id, editing.id, form);
-    else await productsService.create(company.id, form);
+    const updated = editing
+      ? await productsService.update(company.id, editing.id, form)
+      : await productsService.create(company.id, form);
+    // Reflect the server row immediately so price, margin and stock on the
+    // catalog card never depend on a stale pre-edit snapshot.
+    setItems((current) => {
+      if (!current) return current;
+      if (editing) return current.map((item) => item.id === updated.id ? updated : item);
+      return [updated, ...current];
+    });
     await load();
+    return updated;
   };
   const handleDelete = async (id) => {
     setActionError('');
@@ -123,8 +132,12 @@ export default function Produtos() {
               </thead>
               <tbody>
                 {filtered.map((p) => {
-                  const margin = p.sale_price > 0 ? ((p.sale_price - p.cost_price) / p.sale_price) * 100 : 0;
-                  const critical = (p.stock || 0) <= (p.min_stock || 0);
+                  const salePrice = Number(p.sale_price ?? p.price) || 0;
+                  const costPrice = Number(p.cost_price ?? p.cost) || 0;
+                  const stock = Number(p.stock) || 0;
+                  const minimumStock = Number(p.min_stock ?? p.minimum_stock) || 0;
+                  const margin = salePrice > 0 ? ((salePrice - costPrice) / salePrice) * 100 : 0;
+                  const critical = stock <= minimumStock;
                   return (
                     <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                       <td className="px-4 py-3">
@@ -132,12 +145,12 @@ export default function Produtos() {
                         <p className="text-xs text-slate-400">{p.sku || '—'} {p.brand && `· ${p.brand}`}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-500"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${p.item_type === 'service' ? 'bg-violet-100 text-violet-700' : p.item_type === 'material' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.item_type === 'service' ? 'SERVIÇO' : p.item_type === 'material' ? 'MATERIAL' : 'PRODUTO'}</span><span className="ml-2">{p.subcategory || '—'}</span></td>
-                      <td className="px-4 py-3 text-right text-slate-500">{fmtMoney(p.cost_price)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(p.sale_price)}</td>
+                      <td className="px-4 py-3 text-right text-slate-500">{fmtMoney(costPrice)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(salePrice)}</td>
                       <td className="px-4 py-3 text-right text-slate-600">{margin.toFixed(2)}%</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${critical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
-                          {p.item_type === 'service' ? '—' : <>{critical && <AlertTriangle className="h-3 w-3" />}{fmtNum(p.stock)}</>}
+                          {p.item_type === 'service' ? '—' : <>{critical && <AlertTriangle className="h-3 w-3" />}{fmtNum(stock)}</>}
                         </span>
                       </td>
                       <td className="px-4 py-3">

@@ -58,7 +58,8 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     try {
       const next = normalizeProductForm({ ...form, [field]: value }, fixedItemType, defaultItemType);
       setForm(next);
-      await onSave(next);
+      const saved = await onSave(next);
+      if (saved) setForm((current) => ({ ...current, ...saved, cost_price: saved.cost_price ?? saved.cost ?? current.cost_price, sale_price: saved.sale_price ?? saved.price ?? current.sale_price, min_stock: saved.min_stock ?? saved.minimum_stock ?? current.min_stock }));
     } catch (error) { setSaveError(productSaveMessage(error)); }
     finally { setSaving(false); }
   };
