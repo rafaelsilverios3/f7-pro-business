@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/AuthContext';
 import { usePermissions } from '@/lib/permissions';
+import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 const PO_STATUS_STYLE = { draft: 'bg-slate-100 text-slate-700', pending: 'bg-amber-100 text-amber-700', partial: 'bg-blue-100 text-blue-700', approved: 'bg-indigo-100 text-indigo-700', sent: 'bg-violet-100 text-violet-700', received: 'bg-emerald-100 text-emerald-700', cancelled: 'bg-rose-100 text-rose-700' };
 const PO_STATUS_LABEL = { draft: 'Rascunho', pending: 'Pendente', partial: 'Parcial', approved: 'Aprovado', sent: 'Enviado', received: 'Recebido', cancelled: 'Cancelado' };
@@ -29,7 +30,17 @@ function Pagination({ page, total, onChange, label }) {
 export default function Compras() {
   const { company } = useOutletContext();
   const { user } = useAuth();
-  const { can } = usePermissions(user);
+  const membership = useCompanyMembership(company?.id);
+  const permissionUser = membership.loading
+    ? null
+    : {
+      ...user,
+      // In Supabase, role is tenant membership data, never Auth metadata.
+      role: import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+        ? (membership.active ? membership.role : '')
+        : (membership.role || user?.role || ''),
+    };
+  const { can } = usePermissions(permissionUser);
   const navigate = useNavigate();
   const canManage = can('purchases.manage');
   const canUseSupplierSearch = can('supplier_intelligence.view');

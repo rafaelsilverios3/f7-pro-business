@@ -65,6 +65,8 @@ test('página de compras mantém ação humana, handoff e filtros sem arquitetur
   assert.match(page, /source_module: 'purchases'/);
   assert.match(page, /intelligence/);
   assert.match(page, /purchases\.manage/);
+  assert.match(page, /useCompanyMembership/);
+  assert.match(page, /company_users|membership\.active/);
   assert.doesNotMatch(page, /\['pending', 'partial', 'approved', 'sent'\]/);
   assert.match(page, /Não é criada automaticamente|Nenhuma compra é criada automaticamente/);
   assert.doesNotMatch(page, /compras-v2|procurement-v2|reposicao-v2/);
