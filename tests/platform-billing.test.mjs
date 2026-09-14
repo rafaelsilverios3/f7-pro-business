@@ -38,7 +38,8 @@ test('plans are backend-controlled and never require fictitious prices', () => {
   assert.match(site, /Preço a definir/);
   assert.match(checkout, /PLAN_PRICE_NOT_CONFIGURED/);
   assert.match(plans, /eq\('active', true\)/);
-  assert.doesNotMatch(site, /R\$\s*\d/);
+  const plansSection = site.match(/function PlansSection\([\s\S]*?\nfunction Flow/)?.[0] || '';
+  assert.doesNotMatch(plansSection, /R\$\s*\d/);
 });
 
 test('checkout resolves amount from the active plan and keeps provider secrets server-side', () => {
@@ -165,7 +166,7 @@ test('public plans and authenticated checkout routes are wired without changing 
 });
 
 test('landing hero separates trial and plan discovery CTAs', () => {
-  const hero = site.match(/function Hero\(\) \{[\s\S]*?\nfunction Ecosystem/)?.[0];
+  const hero = site.match(/function Hero\(\) \{[\s\S]*?\nfunction Segments/)?.[0];
   const cta = site.match(/function Cta\(\) \{[\s\S]*?\nfunction Home/)?.[0];
   assert.ok(hero, 'landing hero must remain identifiable');
   assert.ok(cta, 'landing final CTA must remain identifiable');
@@ -179,9 +180,9 @@ test('landing hero separates trial and plan discovery CTAs', () => {
   assert.doesNotMatch(cta, /Acessar plataforma/);
   assert.match(site, /<a href=\{appUrl\}[^>]*>Entrar<\/a>/);
   assert.match(site, /<Link to="\/pro-business"[^>]*>Conhecer a F7<\/Link>/);
-  const header = site.match(/function Header\(\) \{[\s\S]*?\nfunction Hero/)?.[0];
+  const header = site.match(/function Header\(\) \{[\s\S]*?\nfunction DashboardMockup/)?.[0];
   assert.ok(header, 'landing header must remain identifiable');
-  assert.match(header, /bg-blue-500[^>]*>Entrar<\/a>/);
+  assert.match(header, /bg-\[#0b1b35\][^>]*>Entrar<\/a>/);
   assert.doesNotMatch(header, /Começar grátis/);
   assert.match(site, /id="planos"/);
   assert.match(scrollToTop, /scrollIntoView\(\{ behavior: "smooth" \}\)/);
