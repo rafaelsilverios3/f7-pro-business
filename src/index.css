@@ -395,3 +395,19 @@ body.light-theme .app-shell [data-executive-summary] [class~="text-slate-400"] {
 body.light-theme .app-shell [data-executive-summary] [class~="text-indigo-600"] {
   color: #315bb5 !important;
 }
+
+/* The executive summary header is intentionally a blue information band in
+   both themes. This prevents the dark-theme text token from landing as white
+   on the component's legacy indigo/lavender background. */
+.app-shell [data-executive-summary] > div:first-child {
+  background: linear-gradient(135deg, #0b1b35 0%, #153d70 100%) !important;
+  border-color: #2b5b95 !important;
+}
+.app-shell [data-executive-summary] > div:first-child h2,
+.app-shell [data-executive-summary] > div:first-child [class~="text-slate-800"],
+.app-shell [data-executive-summary] > div:first-child [class~="text-slate-900"] {
+  color: #f8fafc !important;
+}
+.app-shell [data-executive-summary] > div:first-child [class~="text-indigo-600"] {
+  color: #c7dcff !important;
+}
