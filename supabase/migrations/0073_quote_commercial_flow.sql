@@ -89,7 +89,7 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare item jsonb; subtotal_value numeric(14,2) := 0;
+declare item jsonb; subtotal_value numeric(14,2) := 0; allowed_transition boolean := false;
   discount_value numeric(14,2); addition_value numeric(14,2);
 begin
   if auth.uid() is null or not public.is_company_member(new.company_id) then raise exception 'Usuário não pertence à empresa'; end if;
@@ -109,6 +109,15 @@ begin
   if new.status not in ('draft','sent','viewed','negotiating','approved','refused','expired','converted','cancelled') then raise exception 'Status de orçamento inválido'; end if;
   if tg_op = 'UPDATE' and new.status is distinct from old.status then
     if old.status in ('converted','cancelled','refused','expired') then raise exception 'Orçamento em estado terminal'; end if;
+    allowed_transition := case old.status
+      when 'draft' then new.status in ('sent','viewed','negotiating','approved','refused','cancelled')
+      when 'sent' then new.status in ('viewed','negotiating','approved','refused','expired','cancelled')
+      when 'viewed' then new.status in ('negotiating','approved','refused','expired','cancelled')
+      when 'negotiating' then new.status in ('approved','refused','expired','cancelled')
+      when 'approved' then new.status in ('converted','cancelled')
+      else false
+    end;
+    if not allowed_transition then raise exception 'Transição de orçamento inválida'; end if;
     if new.status = 'converted' and new.sale_id is null then raise exception 'Orçamento convertido precisa de venda'; end if;
     if new.status = 'approved' then new.approved_at := coalesce(new.approved_at, now()); end if;
     if new.status in ('refused','cancelled') then new.rejected_at := case when new.status = 'refused' then coalesce(new.rejected_at, now()) else new.rejected_at end; new.cancelled_at := case when new.status = 'cancelled' then coalesce(new.cancelled_at, now()) else new.cancelled_at end; end if;
