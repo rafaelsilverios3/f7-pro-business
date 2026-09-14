@@ -1,5 +1,6 @@
 import { matchesPeriod, previousPeriodContext } from '@/lib/metrics';
 import { activitySummary, deriveNextAction, isDueToday, isOverdue, isPending } from '@/lib/crmActivities';
+import { buildCustomerRelationshipIndex } from '@/lib/customerRelationship';
 
 const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const dateOf = (row) => row?.sale_date || row?.created_at || row?.created_date || null;
@@ -14,31 +15,17 @@ const labelPriority = (value) => {
   return 0;
 };
 
-function customerSummary(customer, sales, opportunities, activities, periodContext, now = new Date()) {
-  const customerSales = sales.filter((sale) => valid(sale) && sale.customer_id === customer.id);
+function customerSummary(customer, sales, opportunities, activities, periodContext, now = new Date(), relationship = {}) {
+  const customerSales = relationship.history || sales.filter((sale) => valid(sale) && sale.customer_id === customer.id);
   const periodSales = customerSales.filter((sale) => matchesPeriod(dateOf(sale), periodContext));
-  const revenue = customerSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0);
-  const lastPurchase = customerSales.map(dateOf).filter(Boolean).sort().at(-1) || null;
-  const inactiveDays = lastPurchase ? Math.max(0, Math.floor((new Date(now).getTime() - new Date(`${lastPurchase.slice(0, 10)}T12:00:00Z`).getTime()) / 86_400_000)) : null;
-  const products = new Map();
-  customerSales.forEach((sale) => (Array.isArray(sale.items) ? sale.items : []).forEach((item) => {
-    const key = item.product_id || item.id || item.name;
-    if (!key) return;
-    const current = products.get(key) || { id: item.product_id || item.id || null, name: item.name || item.product_name || 'Produto', quantity: 0 };
-    current.quantity += safeNumber(item.qty ?? item.quantity);
-    products.set(key, current);
-  }));
   const related = opportunities.filter((item) => item.customer_id === customer.id || (item.metadata?.entity_type === 'customer' && item.metadata?.entity_id === customer.id));
-  const customerActivities = activities.filter((activity) => activity.customer_id === customer.id);
+  const customerActivities = relationship.activities || activities.filter((activity) => activity.customer_id === customer.id);
   return {
     ...customer,
-    purchases: customerSales.length,
+    ...relationship,
     period_purchases: periodSales.length,
-    revenue,
-    average_ticket: customerSales.length ? revenue / customerSales.length : 0,
-    last_purchase: lastPurchase,
-    inactive_days: inactiveDays,
-    products: [...products.values()].sort((a, b) => b.quantity - a.quantity),
+    period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0),
+    previous_period_revenue: (() => { const previous = previousPeriodContext(periodContext); return previous ? customerSales.filter((sale) => matchesPeriod(dateOf(sale), previous)).reduce((sum, sale) => sum + safeNumber(sale.total), 0) : null; })(),
     opportunities: related,
     activities: customerActivities,
     next_activity: deriveNextAction(customerActivities, now),
@@ -63,7 +50,7 @@ function normalizeOpportunity(item, kind) {
   };
 }
 
-function buildAttention({ customers, opportunities, sales, activities = [], notifications = [], periodContext, now }) {
+function buildAttention({ customers, opportunities, activities = [], notifications = [], periodContext, now }) {
   const items = [];
   const today = new Date(now).getTime();
   activities.filter(isPending).forEach((activity) => {
@@ -95,9 +82,10 @@ function buildAttention({ customers, opportunities, sales, activities = [], noti
   });
   customers.forEach((customer) => {
     if (customer.inactive_days === null || customer.inactive_days >= 90) items.push({ id: `inactive-${customer.id}`, type: 'inactive_customer', priority: 2, title: customer.name || 'Cliente sem nome', reason: customer.inactive_days === null ? 'Nenhuma compra registrada.' : `Cliente sem compra há ${customer.inactive_days} dias.`, customer, next_action: 'Revisar uma reativação antes de contatar.' });
-    const current = sales.filter((sale) => valid(sale) && sale.customer_id === customer.id && matchesPeriod(dateOf(sale), periodContext)).reduce((sum, sale) => sum + safeNumber(sale.total), 0);
-    const previous = previousPeriodContext(periodContext);
-    const previousValue = previous ? sales.filter((sale) => valid(sale) && sale.customer_id === customer.id && matchesPeriod(dateOf(sale), previous)).reduce((sum, sale) => sum + safeNumber(sale.total), 0) : null;
+    if (customer.overdue_repurchase) items.push({ id: `overdue-repurchase-${customer.id}`, type: 'overdue_repurchase', priority: 3, title: customer.name || 'Recompra atrasada', reason: `Última compra há ${customer.days_since_last_purchase} dias; a mediana histórica entre compras é ${customer.purchase_pattern.median_interval_days} dias.`, customer, next_action: 'Revisar o histórico e registrar um follow-up manual, se apropriado.' });
+    if (customer.without_post_sale_followup) items.push({ id: `post-sale-followup-${customer.id}`, type: 'recent_without_followup', priority: 2, title: customer.name || 'Compra recente sem follow-up', reason: 'Há uma compra válida recente sem atividade CRM posterior identificada.', customer, next_action: 'Avaliar e registrar um follow-up manual.' });
+    const current = customer.period_revenue;
+    const previousValue = customer.previous_period_revenue;
     if (previousValue !== null && previousValue > 0 && current < previousValue * 0.9) items.push({ id: `falling-${customer.id}`, type: 'falling_customer', priority: 2, title: customer.name || 'Cliente em queda', reason: `Faturamento do período caiu ${Math.round((1 - current / previousValue) * 100)}% em relação ao período anterior.`, customer, next_action: 'Investigar o motivo da queda antes de criar comunicação.' });
   });
   const unique = new Map();
@@ -114,7 +102,8 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
     ...scoped(opportunities, companyId).map((item) => [item.id, normalizeOpportunity(item, 'crm')]),
     ...scoped(radarOpportunities, companyId).map((item) => [item.id, normalizeOpportunity(item, 'radar')]),
   ]).values()];
-  const customerRows = scopedCustomers.map((customer) => customerSummary(customer, scopedSales, combined, scopedActivities, periodContext, now)).sort((a, b) => b.revenue - a.revenue);
+  const relationshipIndex = buildCustomerRelationshipIndex({ companyId, customers: scopedCustomers, sales: scopedSales, activities: scopedActivities, opportunities: combined, now });
+  const customerRows = scopedCustomers.map((customer) => customerSummary(customer, scopedSales, combined, scopedActivities, periodContext, now, relationshipIndex.get(customer.id))).sort((a, b) => b.revenue - a.revenue);
   const periodSales = scopedSales.filter((sale) => matchesPeriod(dateOf(sale), periodContext));
   const openOpportunities = combined.filter((item) => !['descartada', 'DESCARTADA', 'RESOLVIDA', 'convertida_em_produto', 'converted'].includes(item.state));
   const pipeline = [...new Set(openOpportunities.filter((item) => item.kind === 'crm').map((item) => item.stage || 'new'))].map((stage) => {
@@ -134,8 +123,8 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
   return {
     company_id: companyId,
     period: periodContext,
-    overview: { open_opportunities: openOpportunities.length, priority_opportunities: combined.filter((item) => item.priority_rank >= 3 || (item.score !== null && item.score >= 70)).length, pending_attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }).length, period_sales: periodSales.length, period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0), customers: customerRows.length, activities: activitySummary(scopedActivities, now), automation_notifications: notifications.filter((item) => item?.type === 'automation' && item.read !== true).length, quotes: { open: scopedQuotes.filter((quote) => !['converted','cancelled','refused','expired'].includes(quote.status)).length, open_value: scopedQuotes.filter((quote) => !['converted','cancelled','refused','expired'].includes(quote.status)).reduce((sum, quote) => sum + safeNumber(quote.total), 0), approved: scopedQuotes.filter((quote) => quote.status === 'approved').length, rejected: scopedQuotes.filter((quote) => quote.status === 'refused').length, converted: scopedQuotes.filter((quote) => quote.status === 'converted' || quote.sale_id).length, waiting_response: scopedQuotes.filter((quote) => ['sent','viewed','negotiating'].includes(quote.status)).length } },
-    attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }),
+    overview: { open_opportunities: openOpportunities.length, priority_opportunities: combined.filter((item) => item.priority_rank >= 3 || (item.score !== null && item.score >= 70)).length, pending_attention: buildAttention({ customers: customerRows, opportunities: combined, activities: scopedActivities, notifications, periodContext, now }).length, period_sales: periodSales.length, period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0), customers: customerRows.length, activities: activitySummary(scopedActivities, now), automation_notifications: notifications.filter((item) => item?.type === 'automation' && item.read !== true).length, quotes: { open: scopedQuotes.filter((quote) => !['converted','cancelled','refused','expired'].includes(quote.status)).length, open_value: scopedQuotes.filter((quote) => !['converted','cancelled','refused','expired'].includes(quote.status)).reduce((sum, quote) => sum + safeNumber(quote.total), 0), approved: scopedQuotes.filter((quote) => quote.status === 'approved').length, rejected: scopedQuotes.filter((quote) => quote.status === 'refused').length, converted: scopedQuotes.filter((quote) => quote.status === 'converted' || quote.sale_id).length, waiting_response: scopedQuotes.filter((quote) => ['sent','viewed','negotiating'].includes(quote.status)).length } },
+    attention: buildAttention({ customers: customerRows, opportunities: combined, activities: scopedActivities, notifications, periodContext, now }),
     pipeline,
     opportunities: openOpportunities.sort((a, b) => b.priority_rank - a.priority_rank || (b.score ?? -1) - (a.score ?? -1) || dateTime(dateOf(b)) - dateTime(dateOf(a))),
     customers: customerRows,
@@ -153,9 +142,11 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
 }
 
 export function buildSalesHubIntelligenceContext(model) {
+  const customers = model?.customers || [];
   return {
     source_module: 'sales_hub', mode: 'internal', period: model?.period,
-    customer_summary: (model?.customers || []).slice(0, 100).map((row) => ({ id: row.id, name: row.name, purchases: row.purchases, revenue: row.revenue, average_ticket: row.average_ticket, last_purchase: row.last_purchase, inactive_days: row.inactive_days })),
+    relationship_summary: { total_customers: customers.length, recent_purchases: customers.filter((row) => row.is_recent_purchase).length, recurring_history: customers.filter((row) => row.purchase_pattern?.sufficient_history).length, overdue_repurchase: customers.filter((row) => row.overdue_repurchase).length, inactive: customers.filter((row) => row.is_inactive).length, pending_followups: customers.reduce((sum, row) => sum + Number(row.pending_followups || 0), 0), recent_without_followup: customers.filter((row) => row.without_post_sale_followup).length },
+    customer_summary: customers.slice(0, 100).map((row) => ({ id: row.id, purchases: row.purchases, revenue: row.revenue, average_ticket: row.average_ticket, last_purchase: row.last_purchase, inactive_days: row.inactive_days, recent_purchase: Boolean(row.is_recent_purchase), recurring_history: Boolean(row.purchase_pattern?.sufficient_history), median_interval_days: row.purchase_pattern?.median_interval_days ?? null, overdue_repurchase: Boolean(row.overdue_repurchase), pending_followups: Number(row.pending_followups || 0) })),
     opportunity_summary: (model?.opportunities || []).slice(0, 100).map((row) => ({ id: row.id, title: row.title, kind: row.kind, stage: row.stage, status: row.status, value: Number.isFinite(Number(row.value)) && Number(row.value) > 0 ? Number(row.value) : null, priority: row.priority, score: row.score, source: row.source_label, next_action: row.next_action })),
     quote_summary: model?.overview?.quotes,
     sales_signals: model?.overview,
