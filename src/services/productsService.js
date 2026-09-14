@@ -3,7 +3,11 @@ import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { productSchema } from '@/schemas';
 
 const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
-const numberField = (value, fallback = 0) => value === '' || value == null ? fallback : Number(value);
+const numberField = (value, fallback = 0) => {
+  if (value === '' || value == null) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 const isDuplicateSkuError = (error) => String(error?.code || '').toLowerCase() === '23505'
   || Number(error?.status) === 409
   || String(error?.message || '').includes('products_company_id_sku_key');
@@ -59,5 +63,11 @@ export const productsService = {
     }
     return updated;
   },
-  remove: (companyId, id) => productsRepository.remove(id, companyId),
+  // Catalog rows are referenced by sales, stock, purchases and production and
+  // authenticated users intentionally have no DELETE grant. Archive instead:
+  // it disappears from active operations while preserving the audit trail.
+  remove: async (companyId, id) => {
+    const archived = await productsService.update(companyId, id, { active: false });
+    return { ...archived, archived: true };
+  },
 };

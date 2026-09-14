@@ -30,7 +30,7 @@ export default function Producao() {
     setLoading(true); setError('');
     try {
       const [catalog, saved, recent] = await Promise.all([getDataProvider().entity('Product').filter({ company_id: company.id }, 'name', 500), productionService.list(company.id), productionService.recentOrders(company.id)]);
-      setProducts((catalog || []).filter((item) => (item.item_type === 'product' || item.item_type === 'material'))); setRecipes(saved || []); setOrders(recent || []);
+      setProducts((catalog || []).filter((item) => item.active !== false && (item.item_type === 'product' || item.item_type === 'material'))); setRecipes(saved || []); setOrders(recent || []);
     } catch (cause) { setError(cause?.message || 'Não foi possível carregar a produção. A migration 0054 precisa estar aplicada.'); }
     finally { setLoading(false); }
   };

@@ -68,6 +68,7 @@ export async function createSale(companyId, data) {
   }
   for (const item of items) {
     const requested = items.filter((i) => i.product_id === item.product_id).reduce((sum, i) => sum + i.qty, 0);
+    if (products.get(item.product_id).item_type === 'service') continue;
     if ((products.get(item.product_id).stock || 0) < requested) throw new Error(`Estoque insuficiente para ${item.name || 'o produto'}.`);
   }
   const discount = Number(data.discount) || 0;
@@ -101,20 +102,20 @@ export async function createSale(companyId, data) {
   for (const item of items) {
     if (!item.product_id) continue;
     const prod = products.get(item.product_id);
-    if (prod) {
+    if (prod && prod.item_type !== 'service') {
       await base44.entities.Product.update(item.product_id, {
         stock: Math.max(0, (prod.stock || 0) - item.qty),
       });
+      await base44.entities.StockMovement.create({
+        company_id: companyId,
+        product_id: item.product_id,
+        product_name: item.name,
+        type: 'out',
+        quantity: item.qty,
+        reason: 'Venda',
+        sale_id: sale.id,
+      });
     }
-    await base44.entities.StockMovement.create({
-      company_id: companyId,
-      product_id: item.product_id,
-      product_name: item.name,
-      type: 'out',
-      quantity: item.qty,
-      reason: 'Venda',
-      sale_id: sale.id,
-    });
   }
 
   // Receita: o título nasce pendente. Somente pagamentos efetivamente informados geram caixa.

@@ -17,6 +17,20 @@ function productSaveMessage(error) {
   return 'Não foi possível salvar as alterações do produto.';
 }
 
+function normalizeProductForm(form, fixedItemType, defaultItemType) {
+  const itemType = fixedItemType ? defaultItemType : (form.item_type || 'product');
+  return {
+    ...form,
+    item_type: itemType,
+    duration_minutes: form.duration_minutes === '' ? null : Number(form.duration_minutes),
+    cost_price: form.cost_price === '' ? 0 : Number(form.cost_price),
+    sale_price: form.sale_price === '' ? 0 : Number(form.sale_price),
+    stock: itemType === 'service' ? 0 : (form.stock === '' ? 0 : Number(form.stock)),
+    min_stock: itemType === 'service' ? 0 : (form.min_stock === '' ? 0 : Number(form.min_stock)),
+    commission: form.commission === '' ? 0 : Number(form.commission),
+  };
+}
+
 export default function ProductDialog({ open, onClose, onSave, initial, companyId, canManagePricing = false, canManageCatalog = false, onApplyPricing, defaultItemType = 'product', fixedItemType = false }) {
   const emptyForm = {
     item_type: defaultItemType, duration_minutes: '', sku: '', barcode: '', name: '', subcategory: '', brand: '', description: '', short_description: '', full_description: '', material: '', color: '', size: '', model: '', weight: '', dimensions: {}, tags: [], keywords: [], featured: false,
@@ -37,8 +51,9 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
     if (!initial || saving || !onSave) return;
     setSaving(true); setSaveError('');
     try {
-      const next = { ...form, [field]: value };
-      await onSave({ ...next, item_type: next.item_type || 'product', duration_minutes: next.duration_minutes === '' ? null : Number(next.duration_minutes), cost_price: next.cost_price === '' ? 0 : Number(next.cost_price), sale_price: next.sale_price === '' ? 0 : Number(next.sale_price), stock: next.item_type === 'service' ? 0 : (next.stock === '' ? 0 : Number(next.stock)), min_stock: next.item_type === 'service' ? 0 : (next.min_stock === '' ? 0 : Number(next.min_stock)), commission: next.commission === '' ? 0 : Number(next.commission) });
+      const next = normalizeProductForm({ ...form, [field]: value }, fixedItemType, defaultItemType);
+      setForm(next);
+      await onSave(next);
     } catch (error) { setSaveError(productSaveMessage(error)); }
     finally { setSaving(false); }
   };
@@ -46,11 +61,11 @@ export default function ProductDialog({ open, onClose, onSave, initial, companyI
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || saving) return;
     setSaving(true);
     setSaveError('');
     try {
-      await onSave({ ...form, item_type: fixedItemType ? defaultItemType : (form.item_type || 'product'), duration_minutes: form.duration_minutes === '' ? null : Number(form.duration_minutes), cost_price: form.cost_price === '' ? 0 : Number(form.cost_price), sale_price: form.sale_price === '' ? 0 : Number(form.sale_price), stock: form.item_type === 'service' ? 0 : (form.stock === '' ? 0 : Number(form.stock)), min_stock: form.item_type === 'service' ? 0 : (form.min_stock === '' ? 0 : Number(form.min_stock)), commission: form.commission === '' ? 0 : Number(form.commission) });
+      await onSave(normalizeProductForm(form, fixedItemType, defaultItemType));
       onClose();
     } catch (error) {
       setSaveError(productSaveMessage(error));

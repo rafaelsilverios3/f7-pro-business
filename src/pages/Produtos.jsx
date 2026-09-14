@@ -23,6 +23,7 @@ export default function Produtos() {
   const [subcategory, setSubcategory] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [actionError, setActionError] = useState('');
   const canManagePricing = can({ role }, 'pricing.manage');
   const canManageCatalog = can({ role }, 'catalog.manage');
 
@@ -36,7 +37,7 @@ export default function Produtos() {
   const filtered = useMemo(() => {
     if (!items) return [];
     const normalized = query.trim().toLowerCase();
-    return items.filter((p) => (p.item_type || 'product') === tab && (!subcategory || p.subcategory === subcategory) && (!normalized || `${p.name || ''} ${p.sku || ''} ${p.subcategory || ''}`.toLowerCase().includes(normalized)));
+    return items.filter((p) => p.active !== false && (p.item_type || 'product') === tab && (!subcategory || p.subcategory === subcategory) && (!normalized || `${p.name || ''} ${p.sku || ''} ${p.subcategory || ''}`.toLowerCase().includes(normalized)));
   }, [items, query, tab, subcategory]);
 
   const handleSave = async (form) => {
@@ -44,17 +45,26 @@ export default function Produtos() {
     else await productsService.create(company.id, form);
     await load();
   };
-  const handleDelete = async (id) => { await productsRepository.remove(id, company.id); load(); };
+  const handleDelete = async (id) => {
+    setActionError('');
+    try {
+      const result = await productsService.remove(company.id, id);
+      await load();
+      if (result?.archived) setActionError('Produto arquivado porque já possui histórico de vendas, estoque ou produção.');
+    } catch (cause) {
+      setActionError(cause?.message || 'Não foi possível excluir o produto.');
+    }
+  };
 
   const stats = useMemo(() => {
     if (!items) return { total: 0, critical: 0, stockValue: 0 };
     return {
-      total: items.filter((p) => (p.item_type || 'product') === tab).length,
-      services: items.filter((p) => p.item_type === 'service').length,
-      critical: tab === 'service' ? 0 : items.filter((p) => (p.item_type || 'product') === tab && (p.stock || 0) <= (p.min_stock || 0)).length,
-      stockValue: tab === 'service' ? 0 : items.filter((p) => p.item_type !== 'service' && (p.item_type || 'product') === tab).reduce((s, p) => s + (p.stock || 0) * (p.cost_price || 0), 0),
+      total: items.filter((p) => p.active !== false && (p.item_type || 'product') === tab).length,
+      services: items.filter((p) => p.active !== false && p.item_type === 'service').length,
+      critical: tab === 'service' ? 0 : items.filter((p) => p.active !== false && (p.item_type || 'product') === tab && (p.stock || 0) <= (p.min_stock || 0)).length,
+      stockValue: tab === 'service' ? 0 : items.filter((p) => p.active !== false && p.item_type !== 'service' && (p.item_type || 'product') === tab).reduce((s, p) => s + (p.stock || 0) * (p.cost_price || 0), 0),
     };
-  }, [items]);
+  }, [items, tab]);
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
@@ -63,8 +73,9 @@ export default function Produtos() {
         subtitle="Gerencie produtos, matérias-primas e serviços da empresa."
         action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Novo {tab === 'material' ? 'material' : tab === 'service' ? 'serviço' : 'produto'}</Button>}
       />
+      {actionError && <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{actionError}</div>}
 
-      <div className="mb-4 flex flex-wrap gap-2">{[['product','Produtos'],['material','Materiais'],['service','Serviços']].map(([key,label]) => <button key={key} type="button" onClick={() => { setTab(key); setSubcategory(''); setQuery(''); }} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${tab === key ? 'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'border-slate-200 bg-white text-slate-600'}`}>{label} <span className="ml-1 text-xs opacity-75">{items ? items.filter((p) => (p.item_type || 'product') === key).length : 0}</span></button>)}</div>
+      <div className="mb-4 flex flex-wrap gap-2">{[['product','Produtos'],['material','Materiais'],['service','Serviços']].map(([key,label]) => <button key={key} type="button" onClick={() => { setTab(key); setSubcategory(''); setQuery(''); }} className={`rounded-lg border px-4 py-2 text-sm font-semibold ${tab === key ? 'border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30' : 'border-slate-200 bg-white text-slate-600'}`}>{label} <span className="ml-1 text-xs opacity-75">{items ? items.filter((p) => p.active !== false && (p.item_type || 'product') === key).length : 0}</span></button>)}</div>
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

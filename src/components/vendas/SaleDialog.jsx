@@ -25,13 +25,15 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
   const [installments, setInstallments] = useState(1);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open || !company) return;
+    setError('');
     (async () => {
       const provider = getDataProvider();
       setCustomers(await provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500));
-      setProducts((await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500)).filter((product) => product.item_type === 'product' || product.item_type === 'service'));
+      setProducts((await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500)).filter((product) => product.active !== false && (product.item_type === 'product' || product.item_type === 'service')));
     })();
   }, [open, company]);
 
@@ -65,7 +67,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
   const submit = async (e) => {
     e.preventDefault();
     if (items.length === 0 || submitting) return;
-    setSubmitting(true);
+    setSubmitting(true); setError('');
     try {
       await salesService.finalize(company.id, {
         customer_id: customerId || null,
@@ -81,6 +83,8 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
       reset();
       onDone?.();
       onClose();
+    } catch (cause) {
+      setError(cause?.message || 'Não foi possível registrar a venda. Nenhum lançamento foi criado.');
     } finally { setSubmitting(false); }
   };
 
@@ -88,6 +92,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="flex min-h-0 max-w-2xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>Nova venda</DialogTitle></DialogHeader>
+        {error && <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
         <form onSubmit={submit} className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pr-1">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
