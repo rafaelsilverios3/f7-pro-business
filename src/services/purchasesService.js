@@ -16,7 +16,7 @@ export const purchasesService = {
       productsRepository.list(companyId, '-created_date', 1000),
       salesRepository.list(companyId, '-sale_date', 1000),
       purchasesRepository.list(companyId, '-created_date', 500),
-      import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? purchaseItemsRepository.list(companyId, '-created_date', 2000) : Promise.resolve([]),
+      import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? purchaseItemsRepository.list(companyId, 'purchase_id', 2000) : Promise.resolve([]),
       suppliersRepository.list(companyId, 'name', 500),
     ]);
     const productById = new Map(products.map((product) => [product.id, product]));

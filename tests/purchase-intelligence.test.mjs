@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { analyzePurchaseNeeds } from '../src/lib/purchaseIntelligence.js';
+const purchaseService = fs.readFileSync('src/services/purchasesService.js', 'utf8');
 
 const companyId = 'company-a';
 const product = (id, stock, minimum_stock = 0, name = id, company_id = companyId) => ({ id, company_id, name, stock, minimum_stock, item_type: 'product' });
@@ -67,4 +68,9 @@ test('página de compras mantém ação humana, handoff e filtros sem arquitetur
   assert.doesNotMatch(page, /\['pending', 'partial', 'approved', 'sent'\]/);
   assert.match(page, /Não é criada automaticamente|Nenhuma compra é criada automaticamente/);
   assert.doesNotMatch(page, /compras-v2|procurement-v2|reposicao-v2/);
+});
+
+test('consulta itens de compra usa coluna existente do schema e não presume created_at', () => {
+  assert.match(purchaseService, /purchaseItemsRepository\.list\(companyId, 'purchase_id', 2000\)/);
+  assert.doesNotMatch(purchaseService, /purchaseItemsRepository\.list\(companyId, '-created_date'/);
 });
