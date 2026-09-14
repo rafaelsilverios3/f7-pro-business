@@ -37,6 +37,13 @@ test('mixed sale and quote preserve item type and show separated subtotals', () 
   }
 });
 
+test('sale dialog preserves the exact entered price until submit normalization', () => {
+  assert.match(saleDialog, /const setPrice = .*\{ \.\.\.i, price \}/);
+  assert.match(saleDialog, /const normalizedItems = items\.map/);
+  assert.match(saleDialog, /price: moneyOr\(item\.price\)/);
+  assert.match(saleDialog, /normalizedTotal <= 0/);
+});
+
 test('PDV allows services without stock validation', () => {
   assert.match(pdv, /product\.item_type === 'service'/);
   assert.match(pdv, /service \? null/);

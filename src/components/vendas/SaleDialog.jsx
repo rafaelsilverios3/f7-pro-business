@@ -9,9 +9,11 @@ import { Trash2, Search } from 'lucide-react';
 import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
 import { moneyOr } from '@/lib/money';
+import { roundMoney } from '@/lib/calculations';
 import { salesService } from '@/services/salesService';
 
 const PAYMENT_OPTIONS = ['Dinheiro', 'Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Boleto', 'Transferência'];
+const moneyInputValue = (value) => { const parsed = moneyOr(value, null); return parsed == null ? '' : parsed.toFixed(2); };
 
 export default function SaleDialog({ open, onClose, company, onDone }) {
   const [customers, setCustomers] = useState([]);
@@ -49,17 +51,19 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     setItems((prev) => {
       const ex = prev.find((i) => i.product_id === p.id);
       if (ex) return prev.map((i) => i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, description: p.description || '', linked_product_id: null, qty: 1, price: moneyOr(p.sale_price), cost: moneyOr(p.cost_price) }];
+      return [...prev, { product_id: p.id, item_type: p.item_type || 'product', name: p.name, description: p.description || '', linked_product_id: null, qty: 1, price: moneyInputValue(p.sale_price ?? p.price), cost: moneyOr(p.cost_price ?? p.cost) }];
     });
     setProductQuery('');
   };
 
   const setQty = (id, qty) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, qty: Math.max(1, Number(qty) || 1) } : i));
-  const setPrice = (id, price) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, price: moneyOr(price) } : i));
+  // Keep the user's exact text while editing. Parse only at calculation/submit
+  // time so entering 45 never gets replaced by a previous 45.90 value.
+  const setPrice = (id, price) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, price } : i));
   const removeItem = (id) => setItems((prev) => prev.filter((i) => i.product_id !== id));
 
-  const subtotal = items.reduce((s, i) => s + i.qty * i.price, 0);
-  const total = subtotal - moneyOr(discount) + moneyOr(addition);
+  const subtotal = roundMoney(items.reduce((s, i) => s + (Number(i.qty) || 0) * moneyOr(i.price), 0));
+  const total = roundMoney(Math.max(0, subtotal - moneyOr(discount) + moneyOr(addition)));
 
   const reset = () => {
     setCustomerId(''); setItems([]); setDiscount(0); setAddition(0); setSeller(''); setPaymentMethod('Dinheiro'); setInstallments(1); setNotes('');
@@ -70,12 +74,18 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
     if (items.length === 0 || submitting) return;
     setSubmitting(true); setError('');
     try {
+      const normalizedItems = items.map((item) => ({ ...item, qty: Number(item.qty) || 0, price: moneyOr(item.price), cost: moneyOr(item.cost) }));
+      const normalizedDiscount = moneyOr(discount);
+      const normalizedAddition = moneyOr(addition);
+      const normalizedSubtotal = roundMoney(normalizedItems.reduce((sum, item) => sum + item.qty * item.price, 0));
+      const normalizedTotal = roundMoney(Math.max(0, normalizedSubtotal - normalizedDiscount + normalizedAddition));
+      if (normalizedTotal <= 0) throw new Error('O valor total da venda deve ser maior que zero.');
       await salesService.finalize(company.id, {
         customer_id: customerId || null,
         customer_name: customer?.name || 'Cliente',
-        items,
-        discount: moneyOr(discount),
-        addition: moneyOr(addition),
+        items: normalizedItems,
+        discount: normalizedDiscount,
+        addition: normalizedAddition,
         seller,
         payment_method: paymentMethod,
         installments: Number(installments) || 1,
@@ -152,7 +162,7 @@ export default function SaleDialog({ open, onClose, company, onDone }) {
                     <input type="number" value={i.qty} onChange={(e) => setQty(i.product_id, e.target.value)} className="h-8 w-14 rounded-md border border-slate-200 px-2 text-center text-sm" />
                     <span className="text-xs text-slate-400">×</span>
                     <input type="text" inputMode="decimal" value={i.price} onChange={(e) => setPrice(i.product_id, e.target.value)} className="h-8 w-20 rounded-md border border-slate-200 px-2 text-right text-sm" />
-                    <span className="w-20 text-right text-sm font-medium text-slate-700">{fmtMoney(i.qty * i.price)}</span>
+                    <span className="w-20 text-right text-sm font-medium text-slate-700">{fmtMoney((Number(i.qty) || 0) * moneyOr(i.price))}</span>
                     <button type="button" onClick={() => removeItem(i.product_id)} className="rounded-md p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
                   </div>
                 ))}
