@@ -8,6 +8,7 @@ import { Trash2, Search } from 'lucide-react';
 import { getDataProvider } from '@/data/providerSelector';
 import { fmtMoney } from '@/lib/business';
 import { quotesService } from '@/services/quotesService';
+import { quoteTotals } from '@/lib/quoteCommercial';
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Rascunho' },
@@ -22,12 +23,13 @@ const STATUS_OPTIONS = [
 export default function QuoteDialog({ open, onClose, company, onDone }) {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [members, setMembers] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [items, setItems] = useState([]);
   const [productQuery, setProductQuery] = useState('');
   const [discount, setDiscount] = useState(0);
   const [addition, setAddition] = useState(0);
-  const [seller, setSeller] = useState('');
+  const [sellerUserId, setSellerUserId] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState('draft');
@@ -39,12 +41,11 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
       const provider = getDataProvider();
       setCustomers(await provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500));
       setProducts((await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500)).filter((product) => product.item_type === 'product' || product.item_type === 'service'));
+      setMembers(provider.listMembers ? (await provider.listMembers(company.id)).filter((member) => member.active) : []);
       const d = new Date(); d.setDate(d.getDate() + 15);
       setValidUntil(d.toISOString().slice(0, 10));
     })();
   }, [open, company]);
-
-  const customer = customers.find((c) => c.id === customerId);
 
   const productResults = useMemo(() => {
     if (!productQuery) return products.slice(0, 5);
@@ -64,11 +65,12 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
   const setPrice = (id, price) => setItems((prev) => prev.map((i) => i.product_id === id ? { ...i, price: Number(price) || 0 } : i));
   const removeItem = (id) => setItems((prev) => prev.filter((i) => i.product_id !== id));
 
-  const subtotal = items.reduce((s, i) => s + i.qty * i.price, 0);
-  const total = subtotal - (Number(discount) || 0) + (Number(addition) || 0);
+  const totals = quoteTotals(items, discount, addition);
+  const subtotal = totals.subtotal;
+  const total = totals.total;
 
   const reset = () => {
-    setCustomerId(''); setItems([]); setDiscount(0); setAddition(0); setSeller(''); setNotes(''); setStatus('draft');
+    setCustomerId(''); setItems([]); setDiscount(0); setAddition(0); setSellerUserId(''); setNotes(''); setStatus('draft');
   };
 
   const submit = async (e) => {
@@ -78,11 +80,10 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
     try {
       await quotesService.create(company.id, {
         customer_id: customerId || null,
-        customer_name: customer?.name || 'Cliente',
-        items,
+        items: totals.items.map((item) => ({ ...item, price: item.unit_price, cost: Number(item.cost) || 0 })),
         discount: Number(discount) || 0,
         addition: Number(addition) || 0,
-        seller,
+        seller_user_id: sellerUserId || null,
         valid_until: validUntil,
         notes,
         status,
@@ -108,7 +109,10 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Vendedor</Label>
-              <Input value={seller} onChange={(e) => setSeller(e.target.value)} placeholder="Nome do vendedor" />
+              <select value={sellerUserId} onChange={(e) => setSellerUserId(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
+                <option value="">Selecione...</option>
+                {members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name || member.email || member.user_id}</option>)}
+              </select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

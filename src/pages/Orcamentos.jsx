@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Eye, FileCheck, Trash2 } from 'lucide-react';
+import { Plus, Eye, FileCheck } from 'lucide-react';
 import { quotesRepository } from '@/data/repositories/quotesRepository';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import { quotesService } from '@/services/quotesService';
+import { getDataProvider } from '@/data/providerSelector';
 import { runAutomations } from '@/lib/automations';
 import PageHeader from '@/components/layout/PageHeader';
 import QuoteDialog from '@/components/orcamentos/QuoteDialog';
@@ -18,12 +19,15 @@ const STATUS_STYLE = {
   approved: 'bg-emerald-100 text-emerald-700',
   refused: 'bg-rose-100 text-rose-700',
   expired: 'bg-slate-200 text-slate-500',
+  converted: 'bg-emerald-100 text-emerald-700',
+  cancelled: 'bg-slate-200 text-slate-500',
 };
 const STATUS_LABEL = {
   draft: 'Rascunho', sent: 'Enviado', viewed: 'Visualizado', negotiating: 'Em negociação',
   approved: 'Aprovado', refused: 'Recusado', expired: 'Expirado',
+  converted: 'Convertido', cancelled: 'Cancelado',
 };
-const STATUS_FLOW = ['draft', 'sent', 'viewed', 'negotiating', 'approved', 'refused', 'expired'];
+const STATUS_FLOW = ['draft', 'sent', 'viewed', 'negotiating', 'approved', 'refused', 'expired', 'cancelled', 'converted'];
 
 export default function Orcamentos() {
   const { company } = useOutletContext();
@@ -31,10 +35,20 @@ export default function Orcamentos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [customers, setCustomers] = useState([]);
+  const [members, setMembers] = useState([]);
 
   const load = async () => {
     if (!company) return;
-    setItems(await quotesRepository.list(company.id));
+    const provider = getDataProvider();
+    const [quotes, customerRows, memberRows] = await Promise.all([
+      quotesRepository.list(company.id),
+      provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500),
+      provider.listMembers ? provider.listMembers(company.id) : Promise.resolve([]),
+    ]);
+    setItems(quotes);
+    setCustomers(customerRows);
+    setMembers(memberRows);
   };
   useEffect(() => { load(); }, [company]);
 
@@ -70,11 +84,8 @@ export default function Orcamentos() {
     }
   };
 
-  const handleDelete = async (quote) => {
-    if (!confirm('Excluir este orçamento?')) return;
-    await quotesService.remove(company.id, quote.id);
-    load();
-  };
+  const customerName = (quote) => customers.find((customer) => customer.id === quote.customer_id)?.name || quote.customer_name || 'Cliente não informado';
+  const sellerName = (quote) => members.find((member) => member.user_id === quote.seller_user_id)?.name || members.find((member) => member.user_id === quote.seller_user_id)?.email || '—';
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
@@ -130,8 +141,8 @@ export default function Orcamentos() {
               <tbody>
                 {filtered.map((q) => (
                   <tr key={q.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{q.customer_name}</td>
-                    <td className="px-4 py-3 text-slate-500">{q.seller || '—'}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{customerName(q)}</td>
+                    <td className="px-4 py-3 text-slate-500">{sellerName(q)}</td>
                     <td className="px-4 py-3 text-slate-500">{fmtDate(q.valid_until)}</td>
                     <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(q.total)}</td>
                     <td className="px-4 py-3 text-center">
@@ -152,7 +163,6 @@ export default function Orcamentos() {
                         {q.sale_id && (
                           <span className="flex items-center rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-600">Vendido</span>
                         )}
-                        <button onClick={() => handleDelete(q)} className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
                       </div>
                     </td>
                   </tr>
@@ -167,10 +177,10 @@ export default function Orcamentos() {
 
       <Dialog open={!!viewing} onOpenChange={() => setViewing(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Orçamento — {viewing?.customer_name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Orçamento — {viewing && customerName(viewing)}</DialogTitle></DialogHeader>
           {viewing && (
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Vendedor</span><span>{viewing.seller || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Vendedor</span><span>{sellerName(viewing)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Validade</span><span>{fmtDate(viewing.valid_until)}</span></div>
               <div className="rounded-lg border border-slate-200">
                 <table className="w-full text-sm">

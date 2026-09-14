@@ -3,6 +3,9 @@ export const CRM_AUTOMATION_TRIGGERS = Object.freeze([
   'crm_activity_due_today',
   'crm_activity_overdue',
   'crm_opportunity_without_next_action',
+  'quote_created',
+  'quote_approved',
+  'quote_no_response',
 ]);
 
 const PENDING = 'PENDENTE';
@@ -69,6 +72,8 @@ export function activityMatchesTrigger(activity: any, triggerType: string, now =
 }
 
 export function signalWindowKey(signal: any, triggerType: string, timezone = 'UTC') {
+  if (['quote_created', 'quote_approved'].includes(triggerType)) return `quote:${signal?.quote_id || signal?.id}`;
+  if (triggerType === 'quote_no_response') return `quote:${signal?.quote_id || signal?.id}:no_response:${localDateKey(signal?.reference_at, timezone) || 'unknown'}`;
   if (triggerType === 'crm_opportunity_without_next_action') return `opportunity:${signal?.opportunity_id || signal?.id}`;
   if (triggerType === 'crm_activity_due_today') return `activity:${signal?.activity_id || signal?.id}:today:${localDateKey(signal?.due_at, timezone) || 'unknown'}`;
   if (triggerType === 'crm_activity_due_soon') return `activity:${signal?.activity_id || signal?.id}:due_soon:${new Date(signal?.due_at || 0).toISOString()}`;
@@ -82,4 +87,8 @@ export function minimalActivitySignal(activity: any) {
 
 export function minimalOpportunitySignal(opportunity: any) {
   return { opportunity_id: opportunity?.id || null, company_id: opportunity?.company_id || null, customer_id: opportunity?.customer_id || null, assigned_to: opportunity?.assigned_user_id || null, stage: opportunity?.stage || null, status: opportunity?.status || null };
+}
+
+export function minimalQuoteSignal(quote: any) {
+  return { quote_id: quote?.id || null, company_id: quote?.company_id || null, customer_id: quote?.customer_id || null, assigned_to: quote?.seller_user_id || null, status: quote?.status || null, total: quote?.total || 0, reference_at: quote?.approved_at || quote?.updated_at || quote?.created_at || null };
 }

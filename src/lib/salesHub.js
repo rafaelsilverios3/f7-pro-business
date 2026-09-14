@@ -105,9 +105,10 @@ function buildAttention({ customers, opportunities, sales, activities = [], noti
   return [...unique.values()];
 }
 
-export function buildSalesHubModel({ companyId, customers = [], products = [], sales = [], opportunities = [], radarOpportunities = [], conversations = [], channels = [], metrics = [], activities = [], notifications = [], periodContext, now = new Date() } = {}) {
+export function buildSalesHubModel({ companyId, customers = [], products = [], sales = [], opportunities = [], quotes = [], radarOpportunities = [], conversations = [], channels = [], metrics = [], activities = [], notifications = [], periodContext, now = new Date() } = {}) {
   const scopedCustomers = scoped(customers, companyId);
   const scopedSales = scoped(sales, companyId).filter(valid);
+  const scopedQuotes = scoped(quotes, companyId);
   const scopedActivities = scoped(activities, companyId);
   const combined = [...new Map([
     ...scoped(opportunities, companyId).map((item) => [item.id, normalizeOpportunity(item, 'crm')]),
@@ -124,6 +125,7 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
   const timeline = (customerId) => {
     const events = [];
     scopedSales.filter((sale) => sale.customer_id === customerId).forEach((sale) => events.push({ at: dateOf(sale), type: 'sale', label: 'Venda', description: `Venda ${sale.id} · ${safeNumber(sale.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, source: 'Vendas' }));
+    scopedQuotes.filter((quote) => quote.customer_id === customerId).forEach((quote) => events.push({ at: quote.created_at || quote.created_date, type: 'quote', label: `Orçamento ${quote.status || 'criado'}`, description: `Orçamento ${quote.id} · ${safeNumber(quote.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, source: 'Orçamentos', id: quote.id, status: quote.status }));
     combined.filter((item) => item.customer_id === customerId || (item.metadata?.entity_type === 'customer' && item.metadata?.entity_id === customerId)).forEach((item) => events.push({ at: dateOf(item), type: 'opportunity', label: 'Oportunidade', description: item.title || 'Oportunidade comercial', source: item.kind === 'radar' ? 'Opportunity Radar' : 'CRM', id: item.id }));
     conversations.filter((row) => row.customer_id === customerId).forEach((row) => events.push({ at: row.last_message_at || row.updated_at || row.created_at, type: 'conversation', label: 'Contato', description: row.subject || 'Conversa comercial', source: row.channel || 'Atendimento', id: row.id }));
     scopedActivities.filter((activity) => activity.customer_id === customerId).forEach((activity) => events.push({ at: activity.completed_at || activity.cancelled_at || activity.due_at || activity.created_at, type: 'activity', label: activity.status === 'CONCLUIDA' ? 'Atividade concluída' : activity.status === 'CANCELADA' ? 'Atividade cancelada' : 'Atividade', description: activity.title, source: 'CRM', id: activity.id, status: activity.status, assigned_to: activity.assigned_to }));
@@ -132,13 +134,14 @@ export function buildSalesHubModel({ companyId, customers = [], products = [], s
   return {
     company_id: companyId,
     period: periodContext,
-    overview: { open_opportunities: openOpportunities.length, priority_opportunities: combined.filter((item) => item.priority_rank >= 3 || (item.score !== null && item.score >= 70)).length, pending_attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }).length, period_sales: periodSales.length, period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0), customers: customerRows.length, activities: activitySummary(scopedActivities, now), automation_notifications: notifications.filter((item) => item?.type === 'automation' && item.read !== true).length },
+    overview: { open_opportunities: openOpportunities.length, priority_opportunities: combined.filter((item) => item.priority_rank >= 3 || (item.score !== null && item.score >= 70)).length, pending_attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }).length, period_sales: periodSales.length, period_revenue: periodSales.reduce((sum, sale) => sum + safeNumber(sale.total), 0), customers: customerRows.length, activities: activitySummary(scopedActivities, now), automation_notifications: notifications.filter((item) => item?.type === 'automation' && item.read !== true).length, quotes: { open: scopedQuotes.filter((quote) => !['converted','cancelled','refused','expired'].includes(quote.status)).length, open_value: scopedQuotes.filter((quote) => !['converted','cancelled','refused','expired'].includes(quote.status)).reduce((sum, quote) => sum + safeNumber(quote.total), 0), approved: scopedQuotes.filter((quote) => quote.status === 'approved').length, rejected: scopedQuotes.filter((quote) => quote.status === 'refused').length, converted: scopedQuotes.filter((quote) => quote.status === 'converted' || quote.sale_id).length, waiting_response: scopedQuotes.filter((quote) => ['sent','viewed','negotiating'].includes(quote.status)).length } },
     attention: buildAttention({ customers: customerRows, opportunities: combined, sales: scopedSales, activities: scopedActivities, notifications, periodContext, now }),
     pipeline,
     opportunities: openOpportunities.sort((a, b) => b.priority_rank - a.priority_rank || (b.score ?? -1) - (a.score ?? -1) || dateTime(dateOf(b)) - dateTime(dateOf(a))),
     customers: customerRows,
     products: scoped(products, companyId),
     sales: periodSales,
+    quotes: scopedQuotes,
     channels: scoped(channels, companyId),
     metrics: scoped(metrics, companyId),
     conversations: scoped(conversations, companyId),
@@ -154,6 +157,7 @@ export function buildSalesHubIntelligenceContext(model) {
     source_module: 'sales_hub', mode: 'internal', period: model?.period,
     customer_summary: (model?.customers || []).slice(0, 100).map((row) => ({ id: row.id, name: row.name, purchases: row.purchases, revenue: row.revenue, average_ticket: row.average_ticket, last_purchase: row.last_purchase, inactive_days: row.inactive_days })),
     opportunity_summary: (model?.opportunities || []).slice(0, 100).map((row) => ({ id: row.id, title: row.title, kind: row.kind, stage: row.stage, status: row.status, value: Number.isFinite(Number(row.value)) && Number(row.value) > 0 ? Number(row.value) : null, priority: row.priority, score: row.score, source: row.source_label, next_action: row.next_action })),
+    quote_summary: model?.overview?.quotes,
     sales_signals: model?.overview,
     radar_signals: (model?.opportunities || []).filter((row) => row.kind === 'radar').slice(0, 100).map((row) => ({ id: row.id, signal_type: row.metadata?.signal_type || row.source_type, summary: row.description, priority: row.priority, evidence: row.evidence })),
     next_actions: (model?.attention || []).slice(0, 50).map((row) => ({ type: row.type, title: row.title, reason: row.reason, next_action: row.next_action })),

@@ -1,7 +1,7 @@
 import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
 import { buildAutomationPlan } from '../_shared/automationEngine.ts';
 import { runRadarDetector } from '../_shared/radarDetector.ts';
-import { CRM_AUTOMATION_TRIGGERS, activityMatchesTrigger, isActiveOpportunity, minimalActivitySignal, minimalOpportunitySignal, safeTimezone, signalWindowKey } from '../_shared/crmAutomation.ts';
+import { CRM_AUTOMATION_TRIGGERS, activityMatchesTrigger, isActiveOpportunity, minimalActivitySignal, minimalOpportunitySignal, minimalQuoteSignal, safeTimezone, signalWindowKey } from '../_shared/crmAutomation.ts';
 
 const safe = (value: unknown, max = 160) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max);
 const CRM_TRIGGER_SET = new Set(CRM_AUTOMATION_TRIGGERS);
@@ -10,6 +10,9 @@ const CRM_LABELS: Record<string, { stage: string; title: string; message: string
   crm_activity_due_today: { stage: 'CRM_ACTIVITY_DUE_TODAY_DETECTED', title: 'Follow-up previsto para hoje', message: 'Você possui um follow-up comercial previsto para hoje.' },
   crm_activity_overdue: { stage: 'CRM_ACTIVITY_OVERDUE_DETECTED', title: 'Follow-up vencido', message: 'Você possui um follow-up comercial vencido.' },
   crm_opportunity_without_next_action: { stage: 'CRM_OPPORTUNITY_WITHOUT_NEXT_ACTION_DETECTED', title: 'Oportunidade sem próxima ação', message: 'Existe uma oportunidade ativa sem próxima ação registrada.' },
+  quote_created: { stage: 'QUOTE_CREATED_DETECTED', title: 'Novo orçamento criado', message: 'Um novo orçamento precisa de acompanhamento comercial.' },
+  quote_approved: { stage: 'QUOTE_APPROVED_DETECTED', title: 'Orçamento aprovado', message: 'Um orçamento aprovado está pronto para conversão humana.' },
+  quote_no_response: { stage: 'QUOTE_NO_RESPONSE_DETECTED', title: 'Orçamento sem retorno', message: 'Há um orçamento aguardando retorno do cliente.' },
 };
 
 async function authorized(req: Request, companyId: string, sb: any) {
@@ -51,6 +54,16 @@ async function collectCrmSignals(sb: any, companyId: string, triggerType: string
     const activeMemberIds = new Set((members.data || []).map((item: any) => item.user_id));
     return active.filter((item: any) => !pendingIds.has(item.id)).map((item: any) => minimalOpportunitySignal({ ...item, assigned_user_id: activeMemberIds.has(item.assigned_user_id) ? item.assigned_user_id : null }));
   }
+  if (['quote_created', 'quote_approved', 'quote_no_response'].includes(triggerType)) {
+    const cutoff = new Date(now.getTime() - (triggerType === 'quote_no_response' ? 2 * 86_400_000 : 15 * 60_000)).toISOString();
+    let query = sb.from('quotes').select('id,company_id,customer_id,seller_user_id,status,total,created_at,updated_at,approved_at,valid_until,sale_id').eq('company_id', companyId).limit(200);
+    if (triggerType === 'quote_created') query = query.gte('created_at', cutoff).not('status', 'in', '(cancelled,refused,expired,converted)');
+    if (triggerType === 'quote_approved') query = query.eq('status', 'approved').gte('approved_at', cutoff);
+    if (triggerType === 'quote_no_response') query = query.in('status', ['sent', 'viewed', 'negotiating']).is('sale_id', null).or(`valid_until.is.null,valid_until.gte.${now.toISOString().slice(0, 10)}`).lte('created_at', cutoff);
+    const result = await query;
+    if (result.error) throw result.error;
+    return (result.data || []).map(minimalQuoteSignal);
+  }
   return [];
 }
 
@@ -63,8 +76,8 @@ function notificationFor(triggerType: string, signal: any, params: Record<string
     title: safe(params.title || defaults.title, 160),
     message: safe(params.message || defaults.message, 500),
     read: false,
-    entity: opportunity ? 'opportunity' : 'crm_activity',
-    entity_id: signal.activity_id || signal.opportunity_id || null,
+    entity: opportunity ? 'opportunity' : triggerType.startsWith('quote_') ? 'quote' : 'crm_activity',
+    entity_id: signal.activity_id || signal.opportunity_id || signal.quote_id || null,
   };
 }
 
@@ -80,18 +93,18 @@ async function processCrmRule(sb: any, rule: any, input: { companyId: string; tr
     const plan = buildAutomationPlan(rule, { company_id: input.companyId, trigger_type: input.triggerType, event_id: input.eventId, event_data: { ...input.eventData, ...signal, window_key: windowKey } });
     const startedAt = new Date();
     const reserved = await sb.from('automation_runs').insert({ company_id: input.companyId, automation_id: rule.id, status: 'processing', trigger: 'CRM', trigger_data: { trigger: input.triggerType, event_id: input.eventId, crm_signal: signal, window_key: windowKey }, idempotency_key: idempotencyKey, started_at: startedAt.toISOString(), trace_id: input.traceId }).select('id').single();
-    if (reserved.error?.code === '23505') { totals.duplicates += 1; await emitCrmEvent(sb, input.companyId, input.traceId, 'CRM_AUTOMATION_DUPLICATE_SKIPPED', { automation_id: rule.id, trigger_type: input.triggerType, entity_id: signal.activity_id || signal.opportunity_id }); continue; }
+    if (reserved.error?.code === '23505') { totals.duplicates += 1; await emitCrmEvent(sb, input.companyId, input.traceId, 'CRM_AUTOMATION_DUPLICATE_SKIPPED', { automation_id: rule.id, trigger_type: input.triggerType, entity_id: signal.activity_id || signal.opportunity_id || signal.quote_id }); continue; }
     if (reserved.error) { totals.blocked += 1; continue; }
     let executed = 0; let blocked = 0;
     for (const action of plan.actions) {
       if (action.execution !== 'allowed') { blocked += 1; continue; }
       const notification = await sb.from('notifications').insert({ company_id: input.companyId, ...notificationFor(input.triggerType, signal, action.params as Record<string, unknown>) });
-      if (!notification.error) { executed += 1; await emitCrmEvent(sb, input.companyId, input.traceId, 'CRM_AUTOMATION_NOTIFICATION_CREATED', { automation_id: rule.id, trigger_type: input.triggerType, entity_id: signal.activity_id || signal.opportunity_id, assigned_to: signal.assigned_to || null }); }
+      if (!notification.error) { executed += 1; await emitCrmEvent(sb, input.companyId, input.traceId, 'CRM_AUTOMATION_NOTIFICATION_CREATED', { automation_id: rule.id, trigger_type: input.triggerType, entity_id: signal.activity_id || signal.opportunity_id || signal.quote_id, assigned_to: signal.assigned_to || null }); }
     }
     const status = plan.status === 'skipped' ? 'skipped' : executed > 0 ? 'completed' : blocked > 0 ? 'blocked' : 'completed';
     const finishedAt = new Date();
-    await sb.from('automation_runs').update({ status, result: { planned: plan.actions.length, executed, blocked, trigger: input.triggerType, entity_id: signal.activity_id || signal.opportunity_id }, action_count: executed, finished_at: finishedAt.toISOString(), duration_ms: Math.max(0, finishedAt.getTime() - startedAt.getTime()) }).eq('id', reserved.data.id).eq('company_id', input.companyId);
-    if (label) await emitCrmEvent(sb, input.companyId, input.traceId, label.stage, { automation_id: rule.id, entity_id: signal.activity_id || signal.opportunity_id, assigned_to: signal.assigned_to || null });
+    await sb.from('automation_runs').update({ status, result: { planned: plan.actions.length, executed, blocked, trigger: input.triggerType, entity_id: signal.activity_id || signal.opportunity_id || signal.quote_id }, action_count: executed, finished_at: finishedAt.toISOString(), duration_ms: Math.max(0, finishedAt.getTime() - startedAt.getTime()) }).eq('id', reserved.data.id).eq('company_id', input.companyId);
+    if (label) await emitCrmEvent(sb, input.companyId, input.traceId, label.stage, { automation_id: rule.id, entity_id: signal.activity_id || signal.opportunity_id || signal.quote_id, assigned_to: signal.assigned_to || null });
     totals.created += executed;
     totals.blocked += blocked;
   }
