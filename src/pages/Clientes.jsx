@@ -79,8 +79,9 @@ export default function Clientes() {
           <div className="p-12 text-center text-sm text-slate-400">Carregando...</div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-sm font-medium text-slate-700">Nenhum cliente encontrado</p>
-            <p className="mt-1 text-xs text-slate-400">Cadastre seu primeiro cliente para começar.</p>
+            <p className="text-sm font-medium text-slate-700">Você ainda não cadastrou clientes.</p>
+            <p className="mt-1 text-xs text-slate-500">Cadastre seu primeiro cliente para começar a criar orçamentos, vendas e acompanhar o relacionamento.</p>
+            <Button className="mt-4" size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Cadastrar cliente</Button>
           </div>
         ) : (
           <div className="overflow-x-auto">

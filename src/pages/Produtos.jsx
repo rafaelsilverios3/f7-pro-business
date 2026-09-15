@@ -113,8 +113,9 @@ export default function Produtos() {
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center">
             <Package className="mx-auto h-8 w-8 text-slate-300" />
-            <p className="mt-2 text-sm font-medium text-slate-700">Nenhum produto</p>
-            <p className="mt-1 text-xs text-slate-400">Cadastre seu primeiro produto.</p>
+            <p className="mt-2 text-sm font-medium text-slate-700">Cadastre o que sua empresa vende.</p>
+            <p className="mt-1 text-xs text-slate-500">Produtos conectam preço e estoque; serviços ficam sem controle de estoque.</p>
+            <Button className="mt-4" size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Cadastrar {tab === 'material' ? 'material' : tab === 'service' ? 'serviço' : 'produto'}</Button>
           </div>
         ) : (
           <div className="overflow-x-auto">

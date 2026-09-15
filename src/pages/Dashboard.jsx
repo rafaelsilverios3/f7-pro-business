@@ -10,6 +10,8 @@ import {
 import { salesRepository } from '@/data/repositories/salesRepository';
 import { productsRepository } from '@/data/repositories/productsRepository';
 import { customersRepository } from '@/data/repositories/customersRepository';
+import { quotesRepository } from '@/data/repositories/quotesRepository';
+import { purchasesRepository } from '@/data/repositories/purchasesRepository';
 import { financeRepository } from '@/data/repositories/financeRepository';
 import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { getDataProvider } from '@/data/providerSelector';
@@ -28,6 +30,8 @@ import { ExecutiveChartCard } from '@/components/dashboard/ExecutiveChartCard';
 import ExecutiveInsightCard from '@/components/dashboard/ExecutiveInsightCard';
 import ExecutiveIntelligenceSummary from '@/components/dashboard/ExecutiveIntelligenceSummary';
 import { buildExecutiveIntelligenceContext, generateExecutiveSummary } from '@/services/executiveIntelligenceService';
+import OnboardingChecklist from '@/components/dashboard/OnboardingChecklist';
+import { canUseFeature } from '@/services/planService';
 
 const radarOpportunityRepository = createRepository('ProductOpportunity');
 
@@ -65,7 +69,7 @@ function EntityLink({ type, id, label }) {
 }
 
 export default function Dashboard() {
-  const { company, profileName } = useOutletContext();
+  const { company, profileName, subscription } = useOutletContext();
   const { user } = useAuth();
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
@@ -101,6 +105,8 @@ export default function Dashboard() {
         financeRepository.list(company.id, '-due_date', 500),
         inventoryRepository.list(company.id, '-created_date', 10),
         isSupabase ? radarOpportunityRepository.list(company.id, '-created_date', 500) : Promise.resolve([]),
+        quotesRepository.list(company.id, '-created_date', 500),
+        purchasesRepository.list(company.id, '-created_date', 500),
       ]);
       if (requestId !== dashboardRequest.current) return;
       const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
@@ -116,6 +122,8 @@ export default function Dashboard() {
         opportunities: isSupabase ? radar : (legacy[1] || []),
         insights: legacy[2] || [],
         movements: value(5, []),
+        quotes: value(7, []),
+        purchases: value(8, []),
         failures,
       });
       setUpdatedAt(new Date());
@@ -282,6 +290,8 @@ export default function Dashboard() {
       </div>
 
       {m.partialErrors.length > 0 && <div role="status" className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">Alguns indicadores estão indisponíveis no momento; os demais continuam calculados com os dados autorizados.</div>}
+
+      <OnboardingChecklist company={company} role={user?.role || 'admin'} featureEnabled={(feature) => subscription?.status === 'active' && canUseFeature(subscription.plan, feature)} snapshot={{ company, customers: data.customers, products: data.products, sales: data.sales, quotes: data.quotes, purchases: data.purchases, movements: data.movements }} />
 
       {/* KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
