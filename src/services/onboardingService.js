@@ -24,6 +24,9 @@ export const ONBOARDING_STEPS = definitions;
 // same metadata without duplicating educational copy in page components.
 export const onboardingSteps = ONBOARDING_STEPS;
 export const moduleGuides = Object.freeze(Object.fromEntries(Object.values(definitions).flat().map((step) => [step.id, step])));
+// The richer module-by-module articles live in the shared training registry;
+// re-exporting the index keeps existing onboarding consumers on one source.
+export { helpContent } from '../content/training/trainingContent.js';
 
 export function getJourney(companyId) {
   if (!companyId || typeof localStorage === 'undefined') return null;
