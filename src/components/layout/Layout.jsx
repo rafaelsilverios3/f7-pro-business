@@ -10,11 +10,26 @@ import ProfileDialog from './ProfileDialog';
 import { getDataProvider } from '@/data/providerSelector';
 import { applyTheme, getStoredTheme, resolveTheme } from '@/lib/theme';
 import { platformAdminService } from '@/services/platformAdminService';
-import { loadSubscription, trialActive, trialHoursRemaining } from '@/services/subscriptionService';
+import { loadSubscription, trialActive, trialExpired, trialHoursRemaining } from '@/services/subscriptionService';
 import { notificationsService } from '@/services/notificationsService';
 import NotificationBell from './NotificationBell';
 import { searchGlobal } from '@/services/globalSearchService';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+
+function SubscriptionSummary({ subscription, loading }) {
+  if (loading) return <div aria-label="Carregando plano atual" className="hidden h-10 w-32 animate-pulse rounded-xl border border-slate-700/70 bg-slate-800/60 sm:block" />;
+  const isTrial = trialActive(subscription);
+  const expired = trialExpired(subscription);
+  const status = String(subscription?.status || '').toLowerCase();
+  const plan = String(subscription?.plan || '').trim().toUpperCase();
+  const statusLabel = { active: 'Ativo', pending: 'Pendente', expired: 'Expirado', cancelled: 'Cancelado', canceled: 'Cancelado', suspended: 'Suspenso' }[status];
+  const title = isTrial ? 'Teste grátis' : expired ? 'Teste encerrado' : plan || 'Sem plano ativo';
+  const detail = isTrial ? `${trialHoursRemaining(subscription)}h restantes` : statusLabel || (plan ? 'Plano atual' : 'Escolha um plano');
+  return <div className={`hidden min-w-0 items-center gap-2 rounded-xl border px-3 py-1.5 sm:flex ${expired ? 'border-amber-400/50 bg-amber-400/10' : 'border-slate-700/70 bg-[#0e1a2b]'}`} aria-label={`Plano atual: ${title}`}>
+    <div className="min-w-0 leading-tight"><p className={`truncate text-[10px] font-semibold uppercase tracking-wide ${expired ? 'text-amber-200' : 'text-slate-400'}`}>{title}</p><p className={`truncate text-xs font-semibold ${expired ? 'text-amber-100' : plan ? 'text-blue-200' : 'text-slate-300'}`}>{detail}</p></div>
+    <Link to="/planos" className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-semibold transition ${expired ? 'bg-amber-400 text-slate-950 hover:bg-amber-300' : 'text-blue-200 hover:bg-blue-500/15 hover:text-white'}`}>{expired ? 'Escolher plano' : 'Ver planos'}</Link>
+  </div>;
+}
 
 function GlobalSearch({ company, user, subscription }) {
   const navigate = useNavigate();
@@ -214,6 +229,7 @@ export default function Layout() {
       <main className="flex-1 overflow-x-hidden pb-10 md:pb-0">
         <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
           <GlobalSearch company={company} user={user} subscription={subscription} />
+          <SubscriptionSummary subscription={subscription} loading={subscriptionLoading} />
           <button aria-label={resolvedTheme === 'light' ? 'Ativar tema escuro F7' : 'Ativar tema claro'} onClick={() => setTheme(() => resolvedTheme === 'light' ? 'dark' : 'light')} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800">{resolvedTheme === 'light' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}</button>
           <NotificationBell company={company} unread={unread} onUnreadChange={(delta) => setUnread((value) => Math.max(0, value + delta))} />
           <div className="relative hidden md:block">
@@ -227,6 +243,7 @@ export default function Layout() {
               <p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Conta</p>
               <button onClick={() => { setUserMenuOpen(false); setProfileOpen(true); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><UserRound className="h-3.5 w-3.5" /> Minha conta</button>
               {['admin', 'gestor'].includes(String(user?.role || '').toLowerCase()) && <Link to="/assinatura" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><CreditCard className="h-3.5 w-3.5" /> Assinatura e pagamentos</Link>}
+              <Link to="/planos" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><CreditCard className="h-3.5 w-3.5" /> Ver planos</Link>
               {platformAdmin && <Link to="/administracao-f7" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-blue-200 transition hover:bg-blue-500/10"><ShieldCheck className="h-3.5 w-3.5" /> Administração F7</Link>}
               {['admin', 'gestor'].includes(String(user?.role || '').toLowerCase()) && <><p className="px-3 pb-1 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Configurações</p><Link to="/configuracoes/integracoes" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 transition hover:bg-blue-500/10 hover:text-blue-200"><ShieldCheck className="h-3.5 w-3.5" /> Integrações</Link></>}
               <div className="my-1 border-t border-slate-700/70" />
