@@ -145,11 +145,26 @@ const INTRO_VIDEO_SCRIPT = Object.freeze({
   note: [null, null, null, null],
 });
 
+const VIDEO_TITLES = Object.freeze({
+  dashboard: 'Dashboard',
+  clientes: 'Clientes',
+  catalogo: 'Catálogo — Produtos e Serviços',
+  precificacao: 'Precificação',
+  estoque: 'Estoque',
+  compras: 'Compras',
+  orcamentos: 'Orçamentos',
+  vendas: 'Vendas',
+  pdv: 'PDV',
+  producao: 'Produção e Matérias-Primas',
+  financeiro: 'Financeiro',
+  metas: 'Metas e Comissões',
+});
+
 const videoRecord = (guideItem, sequence) => ({
   id: `video-${String(sequence).padStart(2, '0')}-${guideItem.id}`,
   sequence,
   moduleId: guideItem.id,
-  title: guideItem.title,
+  title: VIDEO_TITLES[guideItem.id] || guideItem.title,
   description: guideItem.shortDescription,
   objective: guideItem.whyItMatters,
   whereToFind: guideItem.route,

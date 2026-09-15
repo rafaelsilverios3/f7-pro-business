@@ -13,6 +13,10 @@ test('official video catalog has the 13-item recording sequence without fake ass
   assert.equal(TRAINING_VIDEOS.length, 13);
   assert.deepEqual(TRAINING_VIDEOS.map((video) => video.sequence), Array.from({ length: 13 }, (_, index) => index + 1));
   assert.equal(TRAINING_VIDEOS[0].title, 'Conhecendo o F7 Business');
+  assert.deepEqual(TRAINING_VIDEOS.map((video) => video.title), [
+    'Conhecendo o F7 Business', 'Dashboard', 'Clientes', 'Catálogo — Produtos e Serviços', 'Precificação',
+    'Estoque', 'Compras', 'Orçamentos', 'Vendas', 'PDV', 'Produção e Matérias-Primas', 'Financeiro', 'Metas e Comissões',
+  ]);
   assert.deepEqual(TRAINING_VIDEOS.slice(1).map((video) => video.moduleId), TRAINING_GUIDES.map((guide) => guide.id));
   for (const video of TRAINING_VIDEOS) {
     assert.equal(video.videoUrl, null);
