@@ -13,6 +13,12 @@ const script = (opening, context, prerequisites, steps, result, connections, nex
   result,
   connections,
   next,
+  // Editorial fields are deliberately separate from the student-facing guide.
+  // They describe a future screen recording without claiming that a video exists.
+  narration: opening,
+  screenAction: steps,
+  highlight: steps.map(() => null),
+  note: steps.map(() => null),
 });
 
 const KEYWORDS = {
@@ -34,7 +40,11 @@ const guide = (data) => ({
   videoUrl: null,
   videoDuration: null,
   thumbnail: null,
+  captionUrl: null,
   publishedAt: null,
+  videoStatus: 'SCRIPT_READY',
+  videoVersion: '1.0',
+  lastReviewedAt: null,
   keywords: KEYWORDS[data.id] || [],
   audience: ['admin', 'gestor', 'financeiro', 'comercial', 'vendedor', 'estoque', 'atendimento'],
   estimatedMinutes: 4,
@@ -120,6 +130,110 @@ const aliases = new Map([
   ['/vendas', 'vendas'], ['/pdv', 'pdv'], ['/producao', 'producao'], ['/financeiro', 'financeiro'], ['/metas', 'metas'],
   ['customer', 'clientes'], ['product', 'catalogo'], ['service', 'catalogo'], ['raw_material', 'catalogo'], ['pricing', 'precificacao'], ['inventory', 'estoque'], ['purchase', 'compras'], ['quote', 'orcamentos'], ['sale', 'vendas'], ['finance', 'financeiro'], ['goals', 'metas'],
 ]);
+
+const INTRO_VIDEO_SCRIPT = Object.freeze({
+  opening: 'Olá! Neste treinamento do F7 Business, você vai conhecer o ambiente que conecta as principais áreas da sua empresa.',
+  context: 'O F7 reúne clientes, produtos, preços, estoque, compras, orçamentos, vendas, financeiro, gestão e inteligência em um só lugar.',
+  prerequisites: 'Use o tenant de demonstração aprovado para gravação e confirme que não há dados reais na tela.',
+  steps: ['Apresente o Dashboard.', 'Mostre o menu lateral e a busca global.', 'Mostre notificações, plano atual e a entrada da Academia F7.', 'Explique como os módulos se conectam sem executar uma operação.'],
+  result: 'A pessoa entende onde encontrar cada área antes de iniciar os treinamentos de módulo.',
+  connections: 'Dashboard → Clientes → Catálogo → Operação → Gestão → Inteligência',
+  next: 'Comece pelo Dashboard.',
+  narration: 'Olá! Neste treinamento do F7 Business, você vai conhecer o ambiente que conecta as principais áreas da sua empresa.',
+  screenAction: ['Apresente o Dashboard.', 'Mostre o menu lateral e a busca global.', 'Mostre notificações, plano atual e a entrada da Academia F7.', 'Explique como os módulos se conectam sem executar uma operação.'],
+  highlight: [null, null, null, null],
+  note: [null, null, null, null],
+});
+
+const videoRecord = (guideItem, sequence) => ({
+  id: `video-${String(sequence).padStart(2, '0')}-${guideItem.id}`,
+  sequence,
+  moduleId: guideItem.id,
+  title: guideItem.title,
+  description: guideItem.shortDescription,
+  learningObjectives: guideItem.mainActions,
+  script: guideItem.trainingScript,
+  route: guideItem.route,
+  audience: guideItem.audience,
+  journey: 'all',
+  requiredFeature: guideItem.requiredFeature,
+  videoUrl: null,
+  thumbnailUrl: null,
+  captionUrl: null,
+  duration: null,
+  publishedAt: null,
+  version: guideItem.videoVersion,
+  lastReviewedAt: guideItem.lastReviewedAt,
+  status: guideItem.videoStatus,
+  example: 'Use somente dados fictícios do tenant de demonstração aprovado para gravações.',
+  relatedModules: guideItem.connections,
+});
+
+/**
+ * Official recording order. This is an editorial catalog, not a list of
+ * published assets: URLs and thumbnails stay null until real files exist.
+ */
+export const TRAINING_VIDEOS = Object.freeze([
+  Object.freeze({
+    id: 'video-01-conhecendo-f7',
+    sequence: 1,
+    moduleId: 'dashboard',
+    title: 'Conhecendo o F7 Business',
+    description: 'Visão geral do ambiente, menu, busca global, plano e Academia F7.',
+    learningObjectives: ['Reconhecer o Dashboard', 'Localizar o menu e a busca global', 'Entender a conexão entre os módulos'],
+    script: INTRO_VIDEO_SCRIPT,
+    route: '/f7probusiness',
+    audience: ['admin', 'gestor'],
+    journey: 'all',
+    requiredFeature: null,
+    videoUrl: null,
+    thumbnailUrl: null,
+    captionUrl: null,
+    duration: null,
+    publishedAt: null,
+    version: '1.0',
+    lastReviewedAt: null,
+    status: 'SCRIPT_READY',
+    example: 'Use o tenant de demonstração aprovado, sem clientes ou credenciais reais.',
+    relatedModules: ['Dashboard', 'Clientes', 'Catálogo', 'Estoque', 'Compras', 'Orçamentos', 'Vendas', 'Financeiro', 'Metas e Comissões', 'F7 Intelligence'],
+  }),
+  ...TRAINING_GUIDES.map((guideItem, index) => Object.freeze(videoRecord(guideItem, index + 2))),
+]);
+
+export const trainingVideos = TRAINING_VIDEOS;
+
+export function getTrainingVideosForModule(moduleId) {
+  return TRAINING_VIDEOS.filter((video) => video.moduleId === moduleId);
+}
+
+export function getTrainingVideo(moduleId) {
+  const videos = getTrainingVideosForModule(moduleId);
+  return videos.find((video) => video.videoUrl) || videos.find((video) => video.sequence > 1) || videos[0] || null;
+}
+
+export function validateTrainingVideoCatalog(videos = TRAINING_VIDEOS) {
+  const errors = [];
+  const idsSeen = new Set();
+  const sequencesSeen = new Set();
+  const validModules = new Set([...TRAINING_GUIDES, ...FUTURE_GUIDES].map(({ id }) => id));
+  const placeholderUrl = /^(#|.*(coming[-_ ]?soon|placeholder|example\.com|youtube\.com\/watch\?v=VIDEO))/i;
+
+  for (const video of videos) {
+    if (!video?.id || idsSeen.has(video.id)) errors.push(`duplicate or missing video id: ${video?.id || 'unknown'}`);
+    idsSeen.add(video?.id);
+    if (sequencesSeen.has(video.sequence)) errors.push(`duplicate video sequence: ${video.sequence}`);
+    sequencesSeen.add(video.sequence);
+    if (!validModules.has(video.moduleId)) errors.push(`${video.id} references an unknown module`);
+    const guideItem = byId.get(video.moduleId);
+    if (video.sequence > 1 && guideItem?.route !== video.route) errors.push(`${video.id} route does not match its module`);
+    if (!video.script?.narration || !Array.isArray(video.script?.screenAction)) errors.push(`${video.id} has no recording script`);
+    if (video.videoUrl && placeholderUrl.test(video.videoUrl)) errors.push(`${video.id} has a placeholder video URL`);
+    if (video.thumbnailUrl && placeholderUrl.test(video.thumbnailUrl)) errors.push(`${video.id} has a placeholder thumbnail URL`);
+    if (video.status === 'PUBLISHED' && !video.videoUrl) errors.push(`${video.id} is published without a video URL`);
+    if (!video.videoUrl && video.status === 'PUBLISHED') errors.push(`${video.id} cannot be published without a real asset`);
+  }
+  return { valid: errors.length === 0, errors };
+}
 
 export function getTrainingGuide(idOrRoute) {
   const id = aliases.get(idOrRoute) || idOrRoute;

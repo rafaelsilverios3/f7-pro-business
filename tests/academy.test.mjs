@@ -44,7 +44,7 @@ test('permissions and plan gates filter modules without inventing training video
   assert.match(page, /navigate\('\/planos'\)/);
   for (const guide of TRAINING_GUIDES) assert.equal(guide.videoUrl, null);
   assert.ok(FUTURE_TRAINING_GUIDES.every((guide) => guide.requiredFeature));
-  assert.match(page, /currentGuide\.videoUrl &&/);
+  assert.match(page, /currentVideo\?\.videoUrl &&/);
 });
 
 test('responsive and accessible training surfaces are structural', () => {
