@@ -96,7 +96,7 @@ function GlobalSearch({ company, user, subscription }) {
     if (event.key === 'Enter' && results[selected]) { event.preventDefault(); choose(results[selected]); }
   };
   const panel = (mobile = false) => (
-    <div className={mobile ? 'fixed inset-0 z-[60] bg-[#07111f] p-4' : 'absolute left-0 right-0 top-[calc(100%+8px)] z-50'}>
+    <div onClick={(event) => event.stopPropagation()} className={mobile ? 'fixed inset-0 z-[60] bg-[#07111f] p-4' : 'absolute left-0 right-0 top-[calc(100%+8px)] z-50'}>
       {mobile && <div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-white">Busca global</span><button type="button" aria-label="Fechar busca" onClick={close} className="rounded-lg p-2 text-slate-400 hover:bg-white/10"><X className="h-4 w-4" /></button></div>}
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
