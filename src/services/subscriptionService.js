@@ -1,6 +1,6 @@
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 
-export const TRIAL_ALLOWED_PATHS = ['/f7probusiness', '/assinatura', '/configuracoes', '/configuracoes/atendimento', '/configuracoes/integracoes', '/usuarios', '/notificacoes'];
+export const TRIAL_ALLOWED_PATHS = ['/f7probusiness', '/treinamento', '/assinatura', '/configuracoes', '/configuracoes/atendimento', '/configuracoes/integracoes', '/usuarios', '/notificacoes'];
 export const FEATURE_REQUIREMENTS = {
   '/ai-sales': ['PRO', 'AI Sales Assistant', 'ai_sales'],
   '/intelligence': ['PRO', 'F7 Intelligence', 'intelligence'],

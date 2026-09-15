@@ -29,6 +29,7 @@ import Relatorios from './pages/Relatorios.jsx';
 import Marketing from './pages/Marketing.jsx';
 import Notificacoes from './pages/Notificacoes.jsx';
 import Onboarding from './pages/Onboarding.jsx';
+import Academy from './pages/Academy.jsx';
 import Usuarios from './pages/Usuarios.jsx';
 import PDV from './pages/PDV.jsx';
 import Precificacao from './pages/Precificacao.jsx';
@@ -68,7 +69,7 @@ const CompanyGuard = () => {
   if (subscriptionLoading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
   if (!company) return <Navigate to="/onboarding" replace />;
   if (trialExpired(subscription) && !['/assinatura', '/checkout'].includes(location.pathname)) return <TrialExpired />;
-  if (trialActive(subscription) && !TRIAL_ALLOWED_PATHS.includes(location.pathname)) return <FeatureLocked path={location.pathname} />;
+  if (trialActive(subscription) && !TRIAL_ALLOWED_PATHS.some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))) return <FeatureLocked path={location.pathname} />;
   const requirement = FEATURE_REQUIREMENTS[location.pathname];
   if (subscription?.status === 'active' && requirement && !canUseFeature(subscription.plan, requirement[2])) return <FeatureLocked path={location.pathname} />;
   return <Outlet context={{ ...layoutContext, company, subscription, subscriptionLoading }} />;
@@ -150,6 +151,8 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route element={<Layout />}>
           <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/treinamento" element={<RoleGuard permission="dashboard.view"><Academy /></RoleGuard>} />
+          <Route path="/treinamento/:moduleId" element={<RoleGuard permission="dashboard.view"><Academy /></RoleGuard>} />
           <Route path="/checkout" element={<Checkout />} />
         <Route path="/invite/:token" element={<Invite />} />
         <Route element={<CompanyGuard />}>

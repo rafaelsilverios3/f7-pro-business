@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, CreditCard, LogOut, ShieldCheck, UserRound, Loader2, X } from 'lucide-react';
+import { ChevronDown, CreditCard, GraduationCap, LogOut, ShieldCheck, UserRound, Loader2, X } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useCompany } from '../../lib/useCompany';
 import { base44 } from '../../api/base44Client';
@@ -234,6 +234,7 @@ export default function Layout() {
           <SubscriptionSummary subscription={subscription} loading={subscriptionLoading} />
           <div className="hidden shrink-0 md:block"><ModuleHelp route={location.pathname} compact /></div>
           <div className="shrink-0 md:hidden"><ModuleHelp route={location.pathname} compact /></div>
+          <Link to="/treinamento" aria-label="Abrir Academia F7" title="Academia F7" className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-slate-700/70 px-2.5 py-2 text-xs font-semibold text-slate-300 transition hover:border-blue-400/60 hover:bg-slate-800 hover:text-white lg:inline-flex"><GraduationCap className="h-3.5 w-3.5 text-blue-300" /> Academia F7</Link>
           <button aria-label={resolvedTheme === 'light' ? 'Ativar tema escuro F7' : 'Ativar tema claro'} onClick={() => setTheme(() => resolvedTheme === 'light' ? 'dark' : 'light')} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800">{resolvedTheme === 'light' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}</button>
           <NotificationBell company={company} unread={unread} onUnreadChange={(delta) => setUnread((value) => Math.max(0, value + delta))} />
           <div className="relative hidden md:block">

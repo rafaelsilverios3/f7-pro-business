@@ -15,8 +15,27 @@ const script = (opening, context, prerequisites, steps, result, connections, nex
   next,
 });
 
+const KEYWORDS = {
+  dashboard: ['painel', 'indicadores', 'kpi', 'gráficos', 'alertas', 'resumo'],
+  clientes: ['cliente', 'cadastro', 'pessoa', 'empresa', 'relacionamento', 'crm'],
+  catalogo: ['catálogo', 'produto', 'serviço', 'matéria-prima', 'sku', 'código'],
+  precificacao: ['preço', 'valor de venda', 'margem', 'markup', 'custo', 'centavos'],
+  estoque: ['estoque', 'saldo', 'movimentação', 'entrada', 'saída', 'reposição'],
+  compras: ['compras', 'fornecedor', 'recebimento', 'reposição', 'pedido'],
+  orcamentos: ['orçamento', 'proposta', 'cotação', 'desconto', 'validade'],
+  vendas: ['venda', 'registrar venda', 'pagamento', 'desconto', 'total'],
+  pdv: ['pdv', 'caixa', 'venda rápida', 'balcão', 'pagamento'],
+  producao: ['produção', 'ficha técnica', 'composição', 'matéria-prima', 'consumo'],
+  financeiro: ['financeiro', 'caixa', 'receita', 'despesa', 'título', 'conta'],
+  metas: ['metas', 'comissões', 'objetivo', 'vendedor', 'resultado'],
+};
+
 const guide = (data) => ({
   videoUrl: null,
+  videoDuration: null,
+  thumbnail: null,
+  publishedAt: null,
+  keywords: KEYWORDS[data.id] || [],
   audience: ['admin', 'gestor', 'financeiro', 'comercial', 'vendedor', 'estoque', 'atendimento'],
   estimatedMinutes: 4,
   ...data,
@@ -120,4 +139,35 @@ export function getNextTrainingGuide(idOrRoute, journey = 'commerce') {
   const guides = getTrainingForJourney(journey);
   const index = guides.findIndex((item) => item.id === (aliases.get(idOrRoute) || idOrRoute));
   return index >= 0 ? guides[index + 1] || null : guides[0] || null;
+}
+
+export function searchTrainingGuides(query, guides = TRAINING_GUIDES) {
+  const normalized = String(query || '').trim().toLocaleLowerCase('pt-BR');
+  if (!normalized) return guides;
+  return guides.map((item) => {
+    const haystack = [item.title, item.module, item.shortDescription, item.whyItMatters, ...(item.keywords || []), ...(item.stepByStep || []), ...(item.commonMistakes || [])].join(' ').toLocaleLowerCase('pt-BR');
+    const tokens = normalized.split(/\s+/).filter(Boolean);
+    const score = tokens.reduce((total, token) => total + (haystack.includes(token) ? ((item.keywords || []).some((keyword) => keyword.includes(token)) ? 3 : 1) : 0), 0);
+    return { item, score };
+  }).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score || String(a.item.title || a.item.module || '').localeCompare(String(b.item.title || b.item.module || ''), 'pt-BR')).map(({ item }) => item);
+}
+
+function seenKey(companyId, userId) {
+  return companyId && userId ? `f7_training_seen:${companyId}:${userId}` : null;
+}
+
+export function getSeenTrainingGuides(companyId, userId) {
+  if (typeof localStorage === 'undefined') return {};
+  const key = seenKey(companyId, userId);
+  if (!key) return {};
+  try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { return {}; }
+}
+
+export function markTrainingGuideSeen(companyId, userId, guideId) {
+  if (typeof localStorage === 'undefined' || !guideId) return;
+  const key = seenKey(companyId, userId);
+  if (!key) return;
+  const seen = getSeenTrainingGuides(companyId, userId);
+  seen[guideId] = { seenAt: new Date().toISOString() };
+  localStorage.setItem(key, JSON.stringify(seen));
 }
