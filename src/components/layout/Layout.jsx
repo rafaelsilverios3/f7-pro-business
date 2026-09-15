@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, CreditCard, LogOut, ShieldCheck, UserRound, Loader2, X } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useCompany } from '../../lib/useCompany';
@@ -15,6 +15,7 @@ import { notificationsService } from '@/services/notificationsService';
 import NotificationBell from './NotificationBell';
 import { searchGlobal } from '@/services/globalSearchService';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import ModuleHelp from '@/components/training/ModuleHelp';
 
 function SubscriptionSummary({ subscription, loading }) {
   if (loading) return <div aria-label="Carregando plano atual" className="hidden h-10 w-32 animate-pulse rounded-xl border border-slate-700/70 bg-slate-800/60 sm:block" />;
@@ -135,6 +136,7 @@ function GlobalSearch({ company, user, subscription }) {
 }
 
 export default function Layout() {
+  const location = useLocation();
   const { company, loading } = useCompany();
   const { user, logout } = useAuth();
   const [unread, setUnread] = useState(0);
@@ -230,6 +232,8 @@ export default function Layout() {
         <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
           <GlobalSearch company={company} user={user} subscription={subscription} />
           <SubscriptionSummary subscription={subscription} loading={subscriptionLoading} />
+          <div className="hidden shrink-0 md:block"><ModuleHelp route={location.pathname} compact /></div>
+          <div className="shrink-0 md:hidden"><ModuleHelp route={location.pathname} compact /></div>
           <button aria-label={resolvedTheme === 'light' ? 'Ativar tema escuro F7' : 'Ativar tema claro'} onClick={() => setTheme(() => resolvedTheme === 'light' ? 'dark' : 'light')} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition duration-200 hover:border-blue-400/50 hover:bg-slate-800">{resolvedTheme === 'light' ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}</button>
           <NotificationBell company={company} unread={unread} onUnreadChange={(delta) => setUnread((value) => Math.max(0, value + delta))} />
           <div className="relative hidden md:block">
