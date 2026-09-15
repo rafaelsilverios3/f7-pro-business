@@ -257,9 +257,11 @@ export function getOpportunityMetrics(companyId, opportunities = [], periodConte
 export function getSalesStatusMetrics(companyId, sales = [], periodContext) {
   const context = requirePeriodContext(companyId, periodContext);
   const rows = scoped(sales, companyId).filter((row) => matchesPeriod(row.sale_date || row.created_at, context));
+  const labels = { completed: 'Concluídas', complete: 'Concluídas', paid: 'Pagas', cancelled: 'Canceladas', canceled: 'Canceladas', pending: 'Pendentes', draft: 'Rascunhos', refunded: 'Estornadas', failed: 'Falhas' };
   const groups = new Map();
   rows.forEach((row) => {
-    const status = String(row.status || 'unknown');
+    const rawStatus = String(row.status || 'unknown').trim().toLocaleLowerCase('pt-BR');
+    const status = labels[rawStatus] || (rawStatus === 'unknown' ? 'Sem status' : rawStatus);
     const item = groups.get(status) || { status, count: 0, value: 0 };
     item.count += 1; item.value += Number(row.total) || 0; groups.set(status, item);
   });

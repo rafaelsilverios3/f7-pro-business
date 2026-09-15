@@ -1,7 +1,7 @@
 import React from 'react';
 
 export function ChartEmptyState({ message = 'Sem dados no período selecionado.' }) {
-  return <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 text-center text-xs text-slate-500">{message}</div>;
+  return <div className="flex min-h-20 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs text-slate-500">{message}</div>;
 }
 
 export function ExecutiveChartCard({ title, description, children, empty = false, error = false, emptyMessage, className = '' }) {

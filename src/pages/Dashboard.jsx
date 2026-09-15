@@ -298,8 +298,8 @@ export default function Dashboard() {
       <ExecutiveIntelligenceSummary summary={executiveSummary} loading={executiveSummaryLoading} locked={!intelligenceEnabled} onRefresh={() => { executiveSummaryRequest.current = ''; setExecutiveSummaryRefresh((value) => value + 1); }} />
 
       {/* Gráficos executivos */}
-      <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-2">
-        <ExecutiveChartCard title="Evolução do faturamento" description={`${PERIODS.find((item) => item.value === period)?.label || period} · vendas válidas${m.charts.revenue.comparable ? ' · linha tracejada = período anterior' : ''}`} empty={!m.charts.revenue.rows.length} error={m.chartErrors.revenue}>
+      <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-12">
+        <ExecutiveChartCard className="xl:col-span-8" title="Evolução do faturamento" description={`${PERIODS.find((item) => item.value === period)?.label || period} · vendas válidas${m.charts.revenue.comparable ? ' · linha tracejada = período anterior' : ''}`} empty={!m.charts.revenue.rows.length} error={m.chartErrors.revenue}>
           <div className="h-64 min-w-0" role="img" aria-label="Evolução do faturamento atual e período anterior">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={m.charts.revenue.rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
@@ -315,38 +315,38 @@ export default function Dashboard() {
           </div>
         </ExecutiveChartCard>
 
-        <ExecutiveChartCard title="Vendas por status" description="Distribuição real do período selecionado" empty={!m.charts.salesStatus.rows.length} error={m.chartErrors.sales}>
+        <ExecutiveChartCard className="xl:col-span-4" title="Vendas por status" description="Distribuição real do período selecionado" empty={!m.charts.salesStatus.rows.length} error={m.chartErrors.sales}>
           <div className="h-64 min-w-0" role="img" aria-label="Distribuição das vendas por status">
             <ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.salesStatus.rows} layout="vertical" margin={{ left: 8, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="status" width={90} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Vendas']} /><Bar dataKey="count" fill="#3b82f6" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer>
           </div>
         </ExecutiveChartCard>
 
-        <ExecutiveChartCard title="Vendas por forma de pagamento" description="Somente formas presentes nas vendas válidas" empty={!m.charts.payments.rows.length} emptyMessage="Forma de pagamento não informada nas vendas do período." error={m.chartErrors.sales}>
+        <ExecutiveChartCard className="xl:col-span-4" title="Vendas por forma de pagamento" description="Somente formas presentes nas vendas válidas" empty={!m.charts.payments.rows.length} emptyMessage="Forma de pagamento não informada nas vendas do período." error={m.chartErrors.sales}>
           <div className="grid h-64 min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]" role="img" aria-label="Vendas por forma de pagamento">
             <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={m.charts.payments.rows} dataKey="value" nameKey="method" innerRadius={52} outerRadius={82} paddingAngle={2} labelLine={false}>{m.charts.payments.rows.map((entry, index) => <Cell key={entry.method} fill={['#3b82f6', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e'][index % 5]} />)}</Pie><Tooltip formatter={(value) => [fmtMoney(value), 'Valor']} /></PieChart></ResponsiveContainer>
             <div className="flex flex-col justify-center gap-2 text-xs text-slate-600">{m.charts.payments.rows.map((row, index) => <div key={row.method} className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ['#3b82f6', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e'][index % 5] }} /> <span className="truncate">{row.method}</span></span><span className="shrink-0 font-medium">{row.percent.toFixed(1)}%</span></div>)}</div>
           </div>
         </ExecutiveChartCard>
 
-        <ExecutiveChartCard title="Clientes no período" description="Novos = primeira compra; recorrentes = compra anterior ao período" empty={!m.charts.customers.available} error={m.chartErrors.customers}>
+        <ExecutiveChartCard className="xl:col-span-4" title="Clientes no período" description="Novos = primeira compra; recorrentes = compra anterior ao período" empty={!m.charts.customers.available} error={m.chartErrors.customers}>
           <div className="h-64 min-w-0" role="img" aria-label="Composição de clientes novos e recorrentes"><ResponsiveContainer width="100%" height="100%"><BarChart data={[{ name: 'Clientes', novos: m.charts.customers.novo, recorrentes: m.charts.customers.recorrente }]}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value, name) => [fmtNum(value), name === 'novos' ? 'Novos' : 'Recorrentes']} /><Bar dataKey="novos" name="Novos" stackId="clientes" fill="#14b8a6" radius={[6, 6, 0, 0]} /><Bar dataKey="recorrentes" name="Recorrentes" stackId="clientes" fill="#6366f1" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
         </ExecutiveChartCard>
 
-        <ExecutiveChartCard title="Oportunidades por origem" description="Oportunidades abertas do Opportunity Radar" empty={!m.charts.opportunitiesByOrigin.rows.length} error={m.chartErrors.opportunities}>
+        <ExecutiveChartCard className="xl:col-span-4" title="Oportunidades por origem" description="Oportunidades abertas do Opportunity Radar" empty={!m.charts.opportunitiesByOrigin.rows.length} error={m.chartErrors.opportunities}>
           <div className="h-64 min-w-0" role="img" aria-label="Oportunidades abertas agrupadas por origem"><ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.opportunitiesByOrigin.rows} layout="vertical" margin={{ left: 8, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="origin" width={100} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} /><Bar dataKey="count" fill="#f59e0b" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></div>
         </ExecutiveChartCard>
 
-        <ExecutiveChartCard title="Prioridade das oportunidades" description="Somente prioridade/confiança informada na fonte" empty={!m.charts.opportunityPriority.rows.length} emptyMessage="Nenhuma prioridade consistente disponível." error={m.chartErrors.opportunities}>
+        <ExecutiveChartCard className="xl:col-span-4" title="Prioridade das oportunidades" description="Somente prioridade/confiança informada na fonte" empty={!m.charts.opportunityPriority.rows.length} emptyMessage="Nenhuma prioridade consistente disponível." error={m.chartErrors.opportunities}>
           <div className="space-y-4 py-3" role="img" aria-label="Distribuição de oportunidades por prioridade">{m.charts.opportunityPriority.rows.map((row) => <div key={row.priority}><div className="mb-1 flex items-center justify-between text-xs text-slate-600"><span>{row.priority}</span><strong>{fmtNum(row.count)}</strong></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${row.priority === 'Alta' ? 'bg-rose-500' : row.priority === 'Média' ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, row.count / Math.max(1, m.oportunidadesAbertas) * 100)}%` }} /></div></div>)}</div>
         </ExecutiveChartCard>
 
-        <ExecutiveChartCard title="Saúde do estoque" description="Posição atual · estoque é snapshot, não fluxo temporal" empty={!m.charts.stockHealth.rows.some((row) => row.count > 0)} error={m.chartErrors.stock}>
+        <ExecutiveChartCard className="xl:col-span-4" title="Saúde do estoque" description="Posição atual · estoque é snapshot, não fluxo temporal" empty={!m.charts.stockHealth.rows.some((row) => row.count > 0)} error={m.chartErrors.stock}>
           <div className="h-64 min-w-0" role="img" aria-label="Saúde atual do estoque"><ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.stockHealth}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} /><XAxis dataKey="health" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Produtos']} /><Bar dataKey="count" fill="#10b981" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
         </ExecutiveChartCard>
       </div>
 
       {/* Análises acionáveis */}
-      <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-2" data-executive-actionable>
+      <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-3" data-executive-actionable>
         <ExecutiveInsightCard title="Clientes que mais compram" description="Top 5 por faturamento no período selecionado" empty={!m.actionable.topCustomers.available} emptyMessage="Nenhuma compra identificada no período.">
           <div className="space-y-2">{m.actionable.topCustomers.rows.map((row, index) => <div key={row.customer_id} className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{row.name}</p><p className="text-[11px] text-slate-500">{fmtNum(row.purchases)} compra(s) · ticket {fmtMoney(row.average_ticket)}</p></div><div className="text-right"><p className="text-sm font-bold text-slate-800">{fmtMoney(row.revenue)}</p><EntityLink type="customer" id={row.customer_id} label="Ver cliente" /></div><OpportunityBadge opportunity={row.opportunity} /></div>)}</div>
         </ExecutiveInsightCard>

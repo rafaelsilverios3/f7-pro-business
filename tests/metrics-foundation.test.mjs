@@ -179,7 +179,7 @@ test('executive charts aggregate real periods and keep cancelled sales out of re
     if (periodKey === 'all') assert.equal(series.comparable, false);
   }
   const context = createPeriodContext({ companyId, periodKey: 'month', timezone: 'America/Cuiaba', now: new Date('2026-09-13T12:00:00Z') });
-  assert.deepEqual(getSalesStatusMetrics(companyId, sales, context).rows.map((row) => row.status).sort(), ['cancelled', 'completed', 'paid']);
+  assert.deepEqual(getSalesStatusMetrics(companyId, sales, context).rows.map((row) => row.status).sort(), ['Canceladas', 'Concluídas', 'Pagas']);
   const payments = getPaymentMethodMetrics(companyId, sales, context);
   assert.equal(payments.available, true);
   assert.equal(Math.round(payments.rows.reduce((sum, row) => sum + row.percent, 0)), 100);
