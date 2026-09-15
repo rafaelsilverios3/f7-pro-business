@@ -21,6 +21,11 @@ test('official video catalog has the 13-item recording sequence without fake ass
     assert.equal(video.duration, null);
     assert.equal(video.status, 'SCRIPT_READY');
     assert.equal(video.version, '1.0');
+    assert.ok(video.objective);
+    assert.ok(video.whereToFind);
+    assert.ok(video.content.length > 0);
+    assert.ok(video.whatHappensNext);
+    assert.ok(video.tips.length > 0);
     assert.ok(video.script.narration);
     assert.ok(Array.isArray(video.script.screenAction));
     assert.ok(Array.isArray(video.script.highlight));
