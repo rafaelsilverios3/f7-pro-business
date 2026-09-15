@@ -9,6 +9,7 @@ import { can } from '@/lib/permissions';
 import { searchSourceRows } from '@/lib/globalSearch';
 
 const opportunitiesRepository = createRepository('Opportunity');
+const crmActivitiesRepository = createRepository('CrmActivity');
 
 const SOURCES = [
   { key: 'customers', label: 'Clientes', permission: 'customers.view', route: '/clientes', repository: customersRepository, fields: ['name', 'document', 'email', 'phone'], title: (row) => row.name || 'Cliente sem nome', subtitle: (row) => row.phone || row.email || 'Cliente' },
@@ -18,6 +19,7 @@ const SOURCES = [
   { key: 'purchases', label: 'Compras', permission: 'purchases.view', route: '/compras', repository: purchasesRepository, fields: ['id', 'number', 'code', 'supplier_name', 'supplier_id', 'status'], title: (row) => row.number || row.code || `Compra ${String(row.id || '').slice(0, 8)}`, subtitle: (row) => row.supplier_name || 'Pedido de compra' },
   { key: 'suppliers', label: 'Fornecedores', permission: 'purchases.view', route: '/compras', repository: suppliersRepository, fields: ['name', 'document', 'email', 'phone'], title: (row) => row.name || 'Fornecedor sem nome', subtitle: (row) => row.phone || row.email || 'Fornecedor' },
   { key: 'opportunities', label: 'Oportunidades', permission: 'opportunity.view', route: '/opportunity-radar', repository: opportunitiesRepository, fields: ['title', 'description', 'stage', 'source'], title: (row) => row.title || 'Oportunidade sem título', subtitle: (row) => row.stage || row.source || 'Oportunidade' },
+  { key: 'activities', label: 'Atividades CRM', permission: 'crm_activities.view', route: '/sales-hub', repository: crmActivitiesRepository, fields: ['title', 'description', 'activity_type', 'status'], title: (row) => row.title || 'Atividade sem título', subtitle: (row) => row.activity_type || row.status || 'Atividade CRM' },
 ];
 
 export async function searchGlobal(companyId, query, { role = 'admin', limit = 5 } = {}) {

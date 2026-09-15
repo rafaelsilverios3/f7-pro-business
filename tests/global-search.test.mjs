@@ -22,6 +22,7 @@ test('global search is debounced, tenant scoped and stale-request safe', () => {
   const service = fs.readFileSync('src/services/globalSearchService.js', 'utf8');
   const layout = fs.readFileSync('src/components/layout/Layout.jsx', 'utf8');
   assert.match(service, /repository\.list\(companyId/);
+  assert.match(service, /CrmActivity/);
   assert.match(service, /Promise\.allSettled/);
   assert.match(layout, /setTimeout\(\(\) =>/);
   assert.match(layout, /}, 300\)/);
