@@ -22,7 +22,14 @@ test('current subscription RPC returns only the canonical minimum and checks act
 test('frontend calls the tenant-safe RPC and never selects subscription rows directly', () => {
   assert.match(service, /rpc\('get_current_subscription', \{ target_company: companyId \}\)/);
   assert.doesNotMatch(service, /from\('company_subscriptions'\)/);
+  assert.doesNotMatch(service, /rpc\('sync_company_trial'/);
   assert.match(service, /Array\.isArray\(data\) \? data\[0\]/);
+});
+
+test('subscription loading is keyed by the selected company and has no UI-side mutation', () => {
+  assert.match(service, /loadSubscription\(companyId\)/);
+  assert.match(service, /target_company: companyId/);
+  assert.doesNotMatch(service, /insert\(|update\(|upsert\(|delete\(/);
 });
 
 test('RPC contract is fail-closed for cross-tenant, inactive, anonymous and missing membership cases', () => {

@@ -7,9 +7,10 @@ export { FEATURE_REQUIREMENTS } from '@/lib/subscriptionRequirements';
 export async function loadSubscription(companyId) {
   if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return null;
   const client = getSupabaseClient();
-  await client.rpc('sync_company_trial', { target_company: companyId }).catch(() => {});
-  // The RPC validates auth.uid() + active membership before reading the
-  // canonical row and returns only the fields required by the header.
+  // Header reads must be side-effect free. The tenant-safe RPC validates
+  // auth.uid() + active membership and reads the canonical subscription row.
+  // Trial synchronization belongs to an explicit billing flow, not to every
+  // layout mount, so a failed/missing sync RPC cannot prevent this read.
   const { data, error } = await client.rpc('get_current_subscription', { target_company: companyId });
   if (error) throw error;
   return Array.isArray(data) ? data[0] || null : data || null;
