@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
   ResponsiveContainer,
 } from 'recharts';
 import {
@@ -349,15 +349,13 @@ export default function Dashboard() {
         <ExecutiveChartCard className="xl:col-span-4" title="Prioridade das oportunidades" description="Somente prioridade/confiança informada na fonte" empty={!m.charts.opportunityPriority.rows.length} emptyMessage="Nenhuma prioridade consistente disponível." error={m.chartErrors.opportunities}>
           <div className="h-64 min-w-0" role="img" aria-label="Distribuição de oportunidades por prioridade">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={m.charts.opportunityPriority.rows} layout="vertical" margin={{ left: 8, right: 12 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="priority" width={64} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <LineChart data={m.charts.opportunityPriority.rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="priority" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} />
-                <Bar dataKey="count" name="Oportunidades" radius={[0, 6, 6, 0]}>
-                  {m.charts.opportunityPriority.rows.map((row) => <Cell key={row.priority} fill={row.priority === 'Alta' ? '#f43f5e' : row.priority === 'Média' ? '#f59e0b' : '#3b82f6'} />)}
-                </Bar>
-              </BarChart>
+                <Line type="monotone" dataKey="count" name="Oportunidades" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 0 }} activeDot={{ r: 6 }} isAnimationActive={false} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </ExecutiveChartCard>
