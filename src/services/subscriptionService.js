@@ -8,12 +8,11 @@ export async function loadSubscription(companyId) {
   if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return null;
   const client = getSupabaseClient();
   await client.rpc('sync_company_trial', { target_company: companyId }).catch(() => {});
-  // Keep the header read compatible with the subscription columns already
-  // exposed by the canonical platform-admin subscription view. Metadata such
-  // as trial_used and updated_at is not needed to resolve the displayed state.
-  const { data, error } = await client.from('company_subscriptions').select('plan,status,trial_ends_at,current_period_start,current_period_end').eq('company_id', companyId).maybeSingle();
+  // The RPC validates auth.uid() + active membership before reading the
+  // canonical row and returns only the fields required by the header.
+  const { data, error } = await client.rpc('get_current_subscription', { target_company: companyId });
   if (error) throw error;
-  return data || null;
+  return Array.isArray(data) ? data[0] || null : data || null;
 }
 
 export const trialActive = (subscription, now = Date.now()) => subscription?.status === 'trial' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() > now;

@@ -14,7 +14,7 @@ test('subscription header reuses the tenant subscription and exposes plans witho
   assert.match(layout, /<Link to="\/planos"/);
   assert.doesNotMatch(layout, /SubscriptionSummary[\s\S]*checkout/);
   assert.match(layout, /<SubscriptionSummary subscription=\{subscription\} loading=\{subscriptionLoading\}/);
-  assert.match(subscriptions, /\.eq\('company_id', companyId\)/);
+  assert.match(subscriptions, /rpc\('get_current_subscription'/);
 });
 
 test('subscription header keeps neutral states instead of inventing a plan', () => {

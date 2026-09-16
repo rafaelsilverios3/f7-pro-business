@@ -67,7 +67,7 @@ test('company switch clears stale subscription and scopes the next read by compa
   const service = fs.readFileSync('src/services/subscriptionService.js', 'utf8');
   assert.match(layout, /setSubscription\(null\);\s*setSubscriptionError\(null\);\s*setSubscriptionLoading\(true\)/);
   assert.match(layout, /\}, \[company\?\.id, subscriptionRequestKey\]\)/);
-  assert.match(service, /\.eq\('company_id', companyId\)/);
+  assert.match(service, /rpc\('get_current_subscription'/);
 });
 
 test('protected routes fail closed without the legacy active-only bypass', () => {
