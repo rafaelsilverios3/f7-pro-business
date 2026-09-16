@@ -11,21 +11,23 @@ import { getDataProvider } from '@/data/providerSelector';
 import { applyTheme, getStoredTheme, resolveTheme } from '@/lib/theme';
 import { platformAdminService } from '@/services/platformAdminService';
 import { loadSubscription, trialActive, trialExpired, trialHoursRemaining } from '@/services/subscriptionService';
+import { resolveSubscriptionHeaderState } from '@/lib/subscriptionHeaderState';
 import { notificationsService } from '@/services/notificationsService';
 import NotificationBell from './NotificationBell';
 import { searchGlobal } from '@/services/globalSearchService';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import ModuleHelp from '@/components/training/ModuleHelp';
 
-function SubscriptionSummary({ subscription, loading }) {
+// Estados neutros do header: Sem plano ativo, Teste grátis e Teste encerrado.
+function SubscriptionSummary({ subscription, loading, error, onRetry }) {
   if (loading) return <div aria-label="Carregando plano atual" className="hidden h-10 w-32 animate-pulse rounded-xl border border-slate-700/70 bg-slate-800/60 sm:block" />;
+  if (error) return <div aria-label="Erro ao carregar plano atual" className="hidden min-w-0 items-center gap-2 rounded-xl border border-rose-400/40 bg-rose-400/10 px-3 py-1.5 sm:flex"><div className="min-w-0 leading-tight"><p className="truncate text-[10px] font-semibold uppercase tracking-wide text-rose-200">Plano indisponível</p><p className="truncate text-xs font-semibold text-rose-100">Tente novamente</p></div><button type="button" onClick={onRetry} className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-semibold text-rose-100 transition hover:bg-rose-500/20">Tentar novamente</button></div>;
   const isTrial = trialActive(subscription);
   const expired = trialExpired(subscription);
-  const status = String(subscription?.status || '').toLowerCase();
+  const resolved = resolveSubscriptionHeaderState(subscription);
   const plan = String(subscription?.plan || '').trim().toUpperCase();
-  const statusLabel = { active: 'Ativo', pending: 'Pendente', expired: 'Expirado', cancelled: 'Cancelado', canceled: 'Cancelado', suspended: 'Suspenso' }[status];
-  const title = isTrial ? 'Teste grátis' : expired ? 'Teste encerrado' : plan || 'Sem plano ativo';
-  const detail = isTrial ? `${trialHoursRemaining(subscription)}h restantes` : statusLabel || (plan ? 'Plano atual' : 'Escolha um plano');
+  const title = resolved.title;
+  const detail = isTrial ? `${trialHoursRemaining(subscription)}h restantes` : expired ? 'Escolher plano' : resolved.detail;
   return <div className={`hidden min-w-0 items-center gap-2 rounded-xl border px-3 py-1.5 sm:flex ${expired ? 'border-amber-400/50 bg-amber-400/10' : 'border-slate-700/70 bg-[#0e1a2b]'}`} aria-label={`Plano atual: ${title}`}>
     <div className="min-w-0 leading-tight"><p className={`truncate text-[10px] font-semibold uppercase tracking-wide ${expired ? 'text-amber-200' : 'text-slate-400'}`}>{title}</p><p className={`truncate text-xs font-semibold ${expired ? 'text-amber-100' : plan ? 'text-blue-200' : 'text-slate-300'}`}>{detail}</p></div>
     <Link to="/planos" className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-semibold transition ${expired ? 'bg-amber-400 text-slate-950 hover:bg-amber-300' : 'text-blue-200 hover:bg-blue-500/15 hover:text-white'}`}>{expired ? 'Escolher plano' : 'Ver planos'}</Link>
@@ -148,6 +150,8 @@ export default function Layout() {
   const [resolvedTheme, setResolvedTheme] = useState(() => resolveTheme(getStoredTheme()));
   const [platformAdmin, setPlatformAdmin] = useState(false);
   const [subscription, setSubscription] = useState(null);
+  const [subscriptionError, setSubscriptionError] = useState(null);
+  const [subscriptionRequestKey, setSubscriptionRequestKey] = useState(0);
   const [subscriptionLoading, setSubscriptionLoading] = useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase');
 
   const roleLabels = {
@@ -170,16 +174,19 @@ export default function Layout() {
     let cancelled = false;
     if (!company?.id || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') {
       setSubscription(null);
+      setSubscriptionError(null);
       setSubscriptionLoading(false);
       return undefined;
     }
+    setSubscription(null);
+    setSubscriptionError(null);
     setSubscriptionLoading(true);
     loadSubscription(company.id)
       .then((result) => { if (!cancelled) setSubscription(result); })
-      .catch(() => { if (!cancelled) setSubscription(null); })
+      .catch((error) => { if (!cancelled) { setSubscription(null); setSubscriptionError(error); } })
       .finally(() => { if (!cancelled) setSubscriptionLoading(false); });
     return () => { cancelled = true; };
-  }, [company?.id]);
+  }, [company?.id, subscriptionRequestKey]);
 
   const visibleName = profileName || (displayName.includes('@') ? 'Seu perfil' : displayName);
   const visibleInitials = visibleName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
@@ -231,7 +238,7 @@ export default function Layout() {
       <main className="flex-1 overflow-x-hidden pb-10 md:pb-0">
         <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
           <GlobalSearch company={company} user={user} subscription={subscription} />
-          <SubscriptionSummary subscription={subscription} loading={subscriptionLoading} />
+          <SubscriptionSummary subscription={subscription} loading={subscriptionLoading} error={subscriptionError} onRetry={() => setSubscriptionRequestKey((value) => value + 1)} />
           <div className="hidden shrink-0 md:block"><ModuleHelp route={location.pathname} compact /></div>
           <div className="shrink-0 md:hidden"><ModuleHelp route={location.pathname} compact /></div>
           <Link to="/treinamento" aria-label="Abrir Academia F7" title="Academia F7" className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-slate-700/70 px-2.5 py-2 text-xs font-semibold text-slate-300 transition hover:border-blue-400/60 hover:bg-slate-800 hover:text-white lg:inline-flex"><GraduationCap className="h-3.5 w-3.5 text-blue-300" /> Academia F7</Link>

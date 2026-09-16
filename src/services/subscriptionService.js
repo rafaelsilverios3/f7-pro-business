@@ -17,7 +17,8 @@ export async function loadSubscription(companyId) {
   if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return null;
   const client = getSupabaseClient();
   await client.rpc('sync_company_trial', { target_company: companyId }).catch(() => {});
-  const { data } = await client.from('company_subscriptions').select('id,company_id,plan,status,trial_started_at,trial_ends_at,trial_used,current_period_start,current_period_end,updated_at').eq('company_id', companyId).maybeSingle();
+  const { data, error } = await client.from('company_subscriptions').select('id,company_id,plan,status,trial_started_at,trial_ends_at,trial_used,current_period_start,current_period_end,updated_at').eq('company_id', companyId).maybeSingle();
+  if (error) throw error;
   return data || null;
 }
 
