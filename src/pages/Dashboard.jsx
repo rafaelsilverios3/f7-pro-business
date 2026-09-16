@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell,
   ResponsiveContainer,
 } from 'recharts';
 import {
@@ -308,60 +308,55 @@ export default function Dashboard() {
       <ExecutiveIntelligenceSummary summary={executiveSummary} loading={executiveSummaryLoading} locked={!intelligenceEnabled} onRefresh={() => { executiveSummaryRequest.current = ''; setExecutiveSummaryRefresh((value) => value + 1); }} />
 
       {/* Gráficos executivos */}
-      <div className="mt-6 grid min-w-0 gap-4 xl:grid-cols-12">
+      <div className="mt-6 grid min-w-0 items-start gap-4 xl:grid-cols-12">
         <ExecutiveChartCard className="xl:col-span-8" title="Evolução do faturamento" description={`${PERIODS.find((item) => item.value === period)?.label || period} · vendas válidas${m.charts.revenue.comparable ? ' · linha tracejada = período anterior' : ''}`} empty={!m.charts.revenue.rows.length} error={m.chartErrors.revenue}>
           <div className="h-64 min-w-0" role="img" aria-label="Evolução do faturamento atual e período anterior">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={m.charts.revenue.rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <defs><linearGradient id="gFat" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity={0.3} /><stop offset="100%" stopColor="#6366f1" stopOpacity={0} /></linearGradient></defs>
+              <LineChart data={m.charts.revenue.rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} minTickGap={16} />
                 <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={fmtMoneyShort} />
                 <Tooltip content={<RevenueTooltip />} />
-                <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke="#6366f1" strokeWidth={2.5} fill="url(#gFat)" isAnimationActive={false} />
-                {m.charts.revenue.comparable && <Area type="monotone" dataKey="faturamento_anterior" name="Período anterior" stroke="#94a3b8" strokeDasharray="5 5" fill="none" isAnimationActive={false} connectNulls />}
-              </AreaChart>
+                <Line type="monotone" dataKey="faturamento" name="Faturamento" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 3, fill: '#6366f1', strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+                {m.charts.revenue.comparable && <Line type="monotone" dataKey="faturamento_anterior" name="Período anterior" stroke="#94a3b8" strokeDasharray="5 5" dot={false} isAnimationActive={false} connectNulls />}
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Vendas por status" description="Distribuição real do período selecionado" empty={!m.charts.salesStatus.rows.length} error={m.chartErrors.sales}>
-          <div className="h-64 min-w-0" role="img" aria-label="Distribuição das vendas por status">
-            <ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.salesStatus.rows} layout="vertical" margin={{ left: 8, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="status" width={90} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Vendas']} /><Bar dataKey="count" fill="#3b82f6" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer>
+          <div className="grid h-52 min-w-0 grid-cols-[minmax(0,1fr)_120px] gap-2" role="img" aria-label="Distribuição das vendas por status">
+            <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={m.charts.salesStatus.rows} dataKey="count" nameKey="status" innerRadius={42} outerRadius={70} paddingAngle={2} labelLine={false}>{m.charts.salesStatus.rows.map((entry, index) => <Cell key={entry.status} fill={['#3b82f6', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e'][index % 5]} />)}</Pie><Tooltip formatter={(value) => [fmtNum(value), 'Vendas']} /></PieChart></ResponsiveContainer>
+            <div className="flex flex-col justify-center gap-2 text-xs text-slate-600">{m.charts.salesStatus.rows.map((row, index) => <div key={row.status} className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ['#3b82f6', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e'][index % 5] }} /><span className="truncate">{row.status}</span></span><span className="shrink-0 font-medium">{fmtNum(row.count)}</span></div>)}</div>
           </div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Vendas por forma de pagamento" description="Somente formas presentes nas vendas válidas" empty={!m.charts.payments.rows.length} emptyMessage="Forma de pagamento não informada nas vendas do período." error={m.chartErrors.sales}>
-          <div className="grid h-64 min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]" role="img" aria-label="Vendas por forma de pagamento">
+          <div className="grid h-52 min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]" role="img" aria-label="Vendas por forma de pagamento">
             <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={m.charts.payments.rows} dataKey="value" nameKey="method" innerRadius={52} outerRadius={82} paddingAngle={2} labelLine={false}>{m.charts.payments.rows.map((entry, index) => <Cell key={entry.method} fill={['#3b82f6', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e'][index % 5]} />)}</Pie><Tooltip formatter={(value) => [fmtMoney(value), 'Valor']} /></PieChart></ResponsiveContainer>
             <div className="flex flex-col justify-center gap-2 text-xs text-slate-600">{m.charts.payments.rows.map((row, index) => <div key={row.method} className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ['#3b82f6', '#14b8a6', '#f59e0b', '#8b5cf6', '#f43f5e'][index % 5] }} /> <span className="truncate">{row.method}</span></span><span className="shrink-0 font-medium">{row.percent.toFixed(1)}%</span></div>)}</div>
           </div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Clientes no período" description="Novos = primeira compra; recorrentes = compra anterior ao período" empty={!m.charts.customers.available} error={m.chartErrors.customers}>
-          <div className="h-64 min-w-0" role="img" aria-label="Composição de clientes novos e recorrentes"><ResponsiveContainer width="100%" height="100%"><BarChart data={[{ name: 'Clientes', novos: m.charts.customers.novo, recorrentes: m.charts.customers.recorrente }]}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value, name) => [fmtNum(value), name === 'novos' ? 'Novos' : 'Recorrentes']} /><Bar dataKey="novos" name="Novos" stackId="clientes" fill="#14b8a6" radius={[6, 6, 0, 0]} /><Bar dataKey="recorrentes" name="Recorrentes" stackId="clientes" fill="#6366f1" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
+          <div className="h-52 min-w-0" role="img" aria-label="Composição de clientes novos e recorrentes"><ResponsiveContainer width="100%" height="100%"><BarChart data={[{ name: 'Clientes', novos: m.charts.customers.novo, recorrentes: m.charts.customers.recorrente }]}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value, name) => [fmtNum(value), name === 'novos' ? 'Novos' : 'Recorrentes']} /><Bar dataKey="novos" name="Novos" stackId="clientes" fill="#14b8a6" radius={[6, 6, 0, 0]} /><Bar dataKey="recorrentes" name="Recorrentes" stackId="clientes" fill="#6366f1" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Oportunidades por origem" description="Oportunidades abertas do Opportunity Radar" empty={!m.charts.opportunitiesByOrigin.rows.length} error={m.chartErrors.opportunities}>
-          <div className="h-64 min-w-0" role="img" aria-label="Oportunidades abertas agrupadas por origem"><ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.opportunitiesByOrigin.rows} layout="vertical" margin={{ left: 8, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="origin" width={100} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} /><Bar dataKey="count" fill="#f59e0b" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></div>
+          <div className="h-52 min-w-0" role="img" aria-label="Oportunidades abertas agrupadas por origem"><ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.opportunitiesByOrigin.rows} layout="vertical" margin={{ left: 8, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><YAxis type="category" dataKey="origin" width={100} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} /><Bar dataKey="count" fill="#f59e0b" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Prioridade das oportunidades" description="Somente prioridade/confiança informada na fonte" empty={!m.charts.opportunityPriority.rows.length} emptyMessage="Nenhuma prioridade consistente disponível." error={m.chartErrors.opportunities}>
-          <div className="h-64 min-w-0" role="img" aria-label="Distribuição de oportunidades por prioridade">
+          <div className="grid h-52 min-w-0 grid-cols-[minmax(0,1fr)_120px] gap-2" role="img" aria-label="Distribuição de oportunidades por prioridade">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={m.charts.opportunityPriority.rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="priority" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} />
-                <Line type="monotone" dataKey="count" name="Oportunidades" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 0 }} activeDot={{ r: 6 }} isAnimationActive={false} />
-              </LineChart>
+              <PieChart><Pie data={m.charts.opportunityPriority.rows} dataKey="count" nameKey="priority" innerRadius={42} outerRadius={70} paddingAngle={2} labelLine={false}>{m.charts.opportunityPriority.rows.map((entry, index) => <Cell key={entry.priority} fill={['#f43f5e', '#f59e0b', '#3b82f6'][index % 3]} />)}</Pie><Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} /></PieChart>
             </ResponsiveContainer>
+            <div className="flex flex-col justify-center gap-2 text-xs text-slate-600">{m.charts.opportunityPriority.rows.map((row, index) => <div key={row.priority} className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: ['#f43f5e', '#f59e0b', '#3b82f6'][index % 3] }} /><span className="truncate">{row.priority}</span></span><span className="shrink-0 font-medium">{fmtNum(row.count)}</span></div>)}</div>
           </div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Saúde do estoque" description="Posição atual · estoque é snapshot, não fluxo temporal" empty={!m.charts.stockHealth.rows.some((row) => row.count > 0)} error={m.chartErrors.stock}>
-          <div className="h-64 min-w-0" role="img" aria-label="Saúde atual do estoque"><ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.stockHealth}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} /><XAxis dataKey="health" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Produtos']} /><Bar dataKey="count" fill="#10b981" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
+          <div className="h-52 min-w-0" role="img" aria-label="Saúde atual do estoque"><ResponsiveContainer width="100%" height="100%"><BarChart data={m.charts.stockHealth}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} /><XAxis dataKey="health" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip formatter={(value) => [fmtNum(value), 'Produtos']} /><Bar dataKey="count" fill="#10b981" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>
         </ExecutiveChartCard>
       </div>
 

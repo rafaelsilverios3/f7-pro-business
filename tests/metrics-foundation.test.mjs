@@ -154,6 +154,14 @@ test('executive dashboard has explicit loading, partial-error and empty-safe UI 
   assert.match(dashboard, /requestId !== dashboardRequest\.current/);
 });
 
+test('dashboard revenue evolution stays a temporal line chart', () => {
+  const dashboard = fs.readFileSync(new URL('../src/pages/Dashboard.jsx', import.meta.url), 'utf8');
+  assert.match(dashboard, /<LineChart data=\{m\.charts\.revenue\.rows\}/);
+  assert.match(dashboard, /<Line type="monotone" dataKey="faturamento"/);
+  assert.match(dashboard, /dataKey="faturamento_anterior"[^>]*strokeDasharray="5 5"/);
+  assert.doesNotMatch(dashboard, /<AreaChart data=\{m\.charts\.revenue\.rows\}/);
+});
+
 test('dashboard period controls and actionable rows stay usable on narrow viewports', () => {
   const dashboard = fs.readFileSync(new URL('../src/pages/Dashboard.jsx', import.meta.url), 'utf8');
   assert.match(dashboard, /aria-label="Período do dashboard"/);
