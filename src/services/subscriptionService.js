@@ -20,7 +20,7 @@ export async function loadSubscription(companyId) {
   // Keep the header read compatible with the subscription columns already
   // exposed by the canonical platform-admin subscription view. Metadata such
   // as trial_used and updated_at is not needed to resolve the displayed state.
-  const { data, error } = await client.from('company_subscriptions').select('id,company_id,plan,status,trial_ends_at,current_period_start,current_period_end').eq('company_id', companyId).maybeSingle();
+  const { data, error } = await client.from('company_subscriptions').select('plan,status,trial_ends_at,current_period_start,current_period_end').eq('company_id', companyId).maybeSingle();
   if (error) throw error;
   return data || null;
 }
