@@ -347,7 +347,19 @@ export default function Dashboard() {
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Prioridade das oportunidades" description="Somente prioridade/confiança informada na fonte" empty={!m.charts.opportunityPriority.rows.length} emptyMessage="Nenhuma prioridade consistente disponível." error={m.chartErrors.opportunities}>
-          <div className="space-y-4 py-3" role="img" aria-label="Distribuição de oportunidades por prioridade">{m.charts.opportunityPriority.rows.map((row) => <div key={row.priority}><div className="mb-1 flex items-center justify-between text-xs text-slate-600"><span>{row.priority}</span><strong>{fmtNum(row.count)}</strong></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${row.priority === 'Alta' ? 'bg-rose-500' : row.priority === 'Média' ? 'bg-amber-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, row.count / Math.max(1, m.oportunidadesAbertas) * 100)}%` }} /></div></div>)}</div>
+          <div className="h-64 min-w-0" role="img" aria-label="Distribuição de oportunidades por prioridade">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={m.charts.opportunityPriority.rows} layout="vertical" margin={{ left: 8, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="priority" width={64} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(value) => [fmtNum(value), 'Oportunidades']} />
+                <Bar dataKey="count" name="Oportunidades" radius={[0, 6, 6, 0]}>
+                  {m.charts.opportunityPriority.rows.map((row) => <Cell key={row.priority} fill={row.priority === 'Alta' ? '#f43f5e' : row.priority === 'Média' ? '#f59e0b' : '#3b82f6'} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </ExecutiveChartCard>
 
         <ExecutiveChartCard className="xl:col-span-4" title="Saúde do estoque" description="Posição atual · estoque é snapshot, não fluxo temporal" empty={!m.charts.stockHealth.rows.some((row) => row.count > 0)} error={m.chartErrors.stock}>
