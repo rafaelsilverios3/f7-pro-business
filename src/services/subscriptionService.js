@@ -17,7 +17,9 @@ export async function loadSubscription(companyId) {
   if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return null;
   const client = getSupabaseClient();
   await client.rpc('sync_company_trial', { target_company: companyId }).catch(() => {});
-  const { data, error } = await client.from('company_subscriptions').select('id,company_id,plan,status,trial_started_at,trial_ends_at,trial_used,current_period_start,current_period_end,updated_at').eq('company_id', companyId).maybeSingle();
+  // Keep the header read compatible with the foundational subscription schema;
+  // trial_started_at/trial_used are not needed to resolve the displayed state.
+  const { data, error } = await client.from('company_subscriptions').select('id,company_id,plan,status,trial_ends_at,current_period_start,current_period_end,updated_at').eq('company_id', companyId).maybeSingle();
   if (error) throw error;
   return data || null;
 }
