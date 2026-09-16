@@ -263,7 +263,7 @@ export default function Layout() {
             </div>}
           </div>
         </div>
-        <Outlet context={{ company, subscription, subscriptionLoading, profileName }} />
+        <Outlet context={{ company, subscription, subscriptionLoading, subscriptionError, retrySubscription: () => setSubscriptionRequestKey((value) => value + 1), profileName }} />
       </main>
       <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} company={company} role={String(user?.role || '').toLowerCase()} profileName={profileName} theme={theme} onThemeChange={setTheme} onSaved={setProfileName} />
     </div>

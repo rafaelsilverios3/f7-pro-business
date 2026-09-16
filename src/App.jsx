@@ -59,20 +59,23 @@ import { can } from '@/lib/permissions';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { trialActive, trialExpired, TRIAL_ALLOWED_PATHS, FEATURE_REQUIREMENTS } from '@/services/subscriptionService';
 import { canUseFeature } from '@/services/planService';
+import { resolveSubscriptionGate } from '@/lib/subscriptionGate';
 
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
   const layoutContext = useOutletContext() || {};
   const location = useLocation();
-  const { subscription = null, subscriptionLoading = false } = layoutContext;
+  const { subscription = null, subscriptionLoading = false, subscriptionError = null } = layoutContext;
   if (loading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
   if (subscriptionLoading) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
   if (!company) return <Navigate to="/onboarding" replace />;
   if (trialExpired(subscription) && !['/assinatura', '/checkout'].includes(location.pathname)) return <TrialExpired />;
   if (trialActive(subscription) && !TRIAL_ALLOWED_PATHS.some((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))) return <FeatureLocked path={location.pathname} />;
   const requirement = FEATURE_REQUIREMENTS[location.pathname];
-  if (subscription?.status === 'active' && requirement && !canUseFeature(subscription.plan, requirement[2])) return <FeatureLocked path={location.pathname} />;
-  return <Outlet context={{ ...layoutContext, company, subscription, subscriptionLoading }} />;
+  const gate = resolveSubscriptionGate({ subscription, loading: subscriptionLoading, error: subscriptionError, requirement, canUse: canUseFeature });
+  if (gate.state === 'error') return <FeatureLocked path={location.pathname} state="error" onRetry={layoutContext.retrySubscription} />;
+  if (gate.state === 'blocked') return <FeatureLocked path={location.pathname} state={gate.reason} />;
+  return <Outlet context={{ ...layoutContext, company, subscription, subscriptionLoading, subscriptionError }} />;
 };
 
 function Forbidden() {

@@ -36,13 +36,13 @@ test('dashboard summary is asynchronous, period-aware and entitlement-aware', ()
   assert.match(component, /Aprofundar análise/);
 });
 
-test('intelligence gate follows active subscription status for every commercial plan', () => {
+test('intelligence gate follows the canonical active-plan matrix', () => {
   assert.equal(canUseSubscriptionFeature({ plan: 'free', status: 'trial' }, 'intelligence'), false);
-  assert.equal(canUseSubscriptionFeature({ plan: 'free', status: 'active' }, 'intelligence'), false);
+  assert.equal(canUseSubscriptionFeature({ plan: 'free', status: 'active' }, 'intelligence'), true);
   for (const plan of ['pro', 'business', 'premium']) assert.equal(canUseSubscriptionFeature({ plan, status: 'active' }, 'intelligence'), true);
   assert.equal(canUseSubscriptionFeature({ plan: 'pro', status: 'past_due' }, 'intelligence'), false);
   assert.equal(canUseSubscriptionFeature({ plan: 'pro', status: 'active' }, 'intelligence', { provider: 'base44' }), true);
-  assert.match(layout, /Outlet context=\{\{ company, subscription, subscriptionLoading, profileName \}\}/);
+  assert.match(layout, /Outlet context=\{\{ company, subscription, subscriptionLoading, subscriptionError/);
   assert.match(app, /const layoutContext = useOutletContext\(\) \|\| \{\}/);
   assert.doesNotMatch(app, /loadSubscription\(/);
 });

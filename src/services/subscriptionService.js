@@ -1,17 +1,8 @@
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { FEATURE_REQUIREMENTS } from '@/lib/subscriptionRequirements';
 
 export const TRIAL_ALLOWED_PATHS = ['/f7probusiness', '/treinamento', '/assinatura', '/configuracoes', '/configuracoes/atendimento', '/configuracoes/integracoes', '/usuarios', '/notificacoes'];
-export const FEATURE_REQUIREMENTS = {
-  '/ai-sales': ['PRO', 'AI Sales Assistant', 'ai_sales'],
-  '/intelligence': ['PRO', 'F7 Intelligence', 'intelligence'],
-  '/opportunity-radar': ['BUSINESS', 'Opportunity Radar', 'opportunity_radar'],
-  '/automacoes': ['BUSINESS', 'Automações', 'automations'],
-  '/supplier-intelligence': ['PREMIUM', 'Supplier Intelligence', 'supplier_intelligence'],
-  '/atendimento': ['BUSINESS', 'Smart Atendimento', 'atendimento'],
-  '/market-intelligence': ['BUSINESS', 'Market Intelligence', 'advanced_reports'],
-  '/sales-hub': ['BUSINESS', 'F7 Sales Hub', 'advanced_reports'],
-  '/relatorios': ['BUSINESS', 'Relatórios avançados', 'advanced_reports'],
-};
+export { FEATURE_REQUIREMENTS } from '@/lib/subscriptionRequirements';
 
 export async function loadSubscription(companyId) {
   if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return null;
