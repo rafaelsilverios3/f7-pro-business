@@ -77,7 +77,7 @@ export async function importCommercialCampaign({ company, file }) {
   if (!company?.id || !company?.name) throw new Error('Empresa não selecionada.');
   const workbook = await parseCampaignWorkbook(file);
   const result = await supabaseProvider.rpc('import_commercial_campaign_atomic', { p_target_company: company.id, ...buildAtomicCampaignPayload(workbook) });
-  return { alreadyImported: result?.status === 'already_imported', campaignId: result?.campaign_id, importId: result?.import_id, counts: result?.counts || {} };
+  return { status: result?.status, alreadyImported: result?.status === 'already_imported', campaignId: result?.campaign_id, importId: result?.import_id, counts: result?.counts || {} };
 }
 
 export async function loadTenantCatalog(companyId) {
@@ -116,6 +116,10 @@ export const campaignEntities = Object.freeze({
 
 export async function listCampaigns(companyId) {
   return supabaseProvider.entity(campaignEntities.campaigns).filter({ company_id: companyId }, '-created_at', 100);
+}
+
+export async function listSuccessfulCampaignImports(companyId) {
+  return supabaseProvider.entity(campaignEntities.imports).filter({ company_id: companyId, status: 'imported' }, '-created_at', 100);
 }
 
 export async function recordCampaignReview({ companyId, targetId, decision, reviewReason }) {

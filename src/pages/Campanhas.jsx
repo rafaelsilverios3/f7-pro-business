@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, ShieldCheck, UploadCloud } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { useOutletContext } from 'react-router-dom';
-import { buildFullCampaignPreview, importCommercialCampaign, listCampaigns, parseCampaignWorkbook } from '@/services/commercialCampaignService';
+import { buildFullCampaignPreview, importCommercialCampaign, listCampaigns, listSuccessfulCampaignImports, parseCampaignWorkbook } from '@/services/commercialCampaignService';
 import { supabaseProvider } from '@/data/providers/supabaseProvider';
 
 const QUEUE_FILTERS = ['Todos', 'P1', 'P2', 'P3', 'Não contatados', 'Retorno hoje', 'Atrasados', 'Em negociação', 'Cotação', 'Recuperados', 'Perdidos'];
@@ -19,18 +19,24 @@ export default function Campanhas() {
   const [reviewedProducts, setReviewedProducts] = useState({});
   const [persisted, setPersisted] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [importState, setImportState] = useState('preview');
 
   const loadPersisted = async () => {
     if (!company?.id) return;
     try {
+      const imports = await listSuccessfulCampaignImports(company.id);
+      const imported = imports[0];
+      if (!imported?.campaign_id) { setPersisted(null); return; }
       const campaigns = await listCampaigns(company.id);
-      const campaign = campaigns[0];
+      const campaign = campaigns.find((item) => item.id === imported.campaign_id);
       if (!campaign) { setPersisted(null); return; }
       const [facts, targets] = await Promise.all([
         supabaseProvider.entity('CommercialCampaignFact').filter({ company_id: company.id, campaign_id: campaign.id }, 'source_row', 1000),
         supabaseProvider.entity('CommercialCampaignTarget').filter({ company_id: company.id, campaign_id: campaign.id }, 'source_row', 1000),
       ]);
-      setPersisted({ campaign, facts, targets });
+      const entities = await supabaseProvider.entity('commercial_campaign_import_entities').filter({ company_id: company.id, import_id: imported.id }, 'source_key', 5000);
+      setPersisted({ campaign, importRecord: imported, facts, targets, entities });
+      setImportState('success');
     } catch (cause) { setError(cause?.message || 'Não foi possível carregar a campanha persistida.'); }
   };
 
@@ -38,7 +44,7 @@ export default function Campanhas() {
 
   const loadPreview = async (file) => {
     if (!file || !company?.id) return;
-    setLoading(true); setError(''); setFileName(file.name); setReviewedCustomers({}); setReviewedProducts({});
+    setLoading(true); setError(''); setImportState('preview'); setFileName(file.name); setReviewedCustomers({}); setReviewedProducts({});
     try {
       const workbook = await parseCampaignWorkbook(file);
       const result = await buildFullCampaignPreview({ companyId: company.id, workbook });
@@ -66,17 +72,29 @@ export default function Campanhas() {
     const input = document.querySelector('input[type="file"]');
     const file = input?.files?.[0];
     if (!file) return;
-    setImporting(true); setError('');
-    try { await importCommercialCampaign({ company, file }); await loadPersisted(); }
-    catch (cause) { setError(cause?.message || 'A importação não foi concluída.'); }
+    setImporting(true); setImportState('importing'); setError('');
+    try {
+      const result = await importCommercialCampaign({ company, file });
+      await loadPersisted();
+      if (!result?.importId || result.status === 'already_imported' || result.status === 'imported') setImportState('success');
+      if (!result?.importId) throw new Error('A importação não retornou um batch confirmado.');
+    } catch (cause) { setImportState('error'); setError(cause?.message || 'A importação não foi concluída.'); }
     finally { setImporting(false); }
   };
+
+  const statusBanner = importState === 'success' && persisted
+    ? { tone: 'success', title: 'Campanha importada com sucesso.', detail: 'O batch foi confirmado; a origem permanece preservada e cálculos, fila e recuperação usam os valores canônicos do F7.' }
+    : importState === 'importing'
+      ? { tone: 'loading', title: 'Importando campanha...', detail: 'A operação é atômica. Nenhum dado é considerado confirmado até o batch ser persistido.' }
+      : importState === 'error'
+        ? { tone: 'error', title: 'Importação não concluída.', detail: 'Nenhuma confirmação de import batch foi registrada. Verifique o erro técnico abaixo antes de tentar novamente.' }
+        : { tone: 'preview', title: 'Prévia · sem gravação.', detail: 'Os valores da planilha permanecem como origem; o F7 recalcula diferenças, percentuais e potencial. Nenhum registro é gravado nesta etapa.' };
 
   return <div className="mx-auto w-full max-w-[1760px] min-w-0 px-3 py-5 sm:px-5 sm:py-7 xl:px-8">
     <PageHeader title="Campanhas comerciais" subtitle="Matching de origem, fila de recuperação e prévia para revisão humana." />
     {persisted && <PersistedQueue data={persisted} filter={filter} setFilter={setFilter} />}
-    <div className={`mt-4 rounded-2xl border p-4 text-sm ${persisted ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-      <div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${persisted ? 'text-emerald-700' : 'text-amber-700'}`} /><div>{persisted ? <><strong>Campanha importada.</strong> A origem permanece preservada; cálculos, fila e recuperação usam os valores canônicos do F7.</> : <><strong>Prévia não confirmada.</strong> Os valores da planilha permanecem como origem; o F7 recalcula diferenças, percentuais e potencial. Nenhum cliente, fato ou alvo desta planilha é gravado até uma autorização de importação real.</>}</div></div>
+    <div className={`mt-4 rounded-2xl border p-4 text-sm ${statusBanner.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : statusBanner.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-900' : statusBanner.tone === 'loading' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+      <div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${statusBanner.tone === 'success' ? 'text-emerald-700' : statusBanner.tone === 'error' ? 'text-rose-700' : 'text-amber-700'}`} /><div><strong>{statusBanner.title}</strong> {statusBanner.detail}</div></div>
     </div>
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-slate-900">Importar planilha para prévia</h2><p className="mt-1 text-xs text-slate-500">A aba esperada é “Plano de Acao”. O catálogo atual do tenant é consultado somente para matching.</p></div><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><UploadCloud className="h-4 w-4" />Selecionar XLSX<input type="file" accept=".xlsx,.xls" className="sr-only" onChange={(event) => loadPreview(event.target.files?.[0])} /></label></div>
@@ -120,8 +138,11 @@ export default function Campanhas() {
 function PersistedQueue({ data, filter, setFilter }) {
   const factsById = Object.fromEntries((data.facts || []).map((fact) => [fact.id, fact]));
   const potential = (fact) => Math.max(0, Number(fact?.canonical_base_value || 0) - Number(fact?.canonical_compare_value || 0));
+  const customerCount = new Set((data.entities || []).filter((row) => row.entity_type === 'customer').map((row) => row.entity_id)).size;
+  const productCount = new Set((data.entities || []).filter((row) => row.entity_type === 'product').map((row) => row.entity_id)).size;
+  const priorityCounts = (data.targets || []).reduce((acc, target) => { if (target.imported_priority) acc[target.imported_priority] = (acc[target.imported_priority] || 0) + 1; return acc; }, {});
   const grouped = (data.targets || []).filter((target) => filter === 'Todos' || (['P1', 'P2', 'P3'].includes(filter) ? target.imported_priority === filter : filter === 'Não contatados' ? target.status === 'NOT_CONTACTED' : true)).sort((a, b) => ({ P1: 1, P2: 2, P3: 3 }[a.imported_priority] || 9) - ({ P1: 1, P2: 2, P3: 3 }[b.imported_priority] || 9) || potential(factsById[b.fact_id]) - potential(factsById[a.fact_id])).reduce((map, target) => { const fact = factsById[target.fact_id] || {}; const key = target.customer_id || fact.source_customer_name || target.id; const item = map.get(key) || { name: fact.source_customer_name || 'Cliente', priority: target.imported_priority, items: [] }; item.items.push({ target, fact }); map.set(key, item); return map; }, new Map());
-  return <section className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">Campanha ativa</p><h2 className="mt-1 text-xl font-semibold text-slate-900">{data.campaign.name}</h2><p className="mt-1 text-xs text-slate-600">Fila real agrupada por cliente · {data.targets.length} targets · nenhum contato automático.</p></div><span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">{data.campaign.status}</span></div><div className="mt-4 flex gap-2 overflow-x-auto pb-1">{QUEUE_FILTERS.map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${filter === item ? 'bg-indigo-700 text-white' : 'border border-indigo-200 bg-white text-indigo-700'}`}>{item}</button>)}</div><div className="mt-4 space-y-3">{[...grouped.values()].slice(0, 100).map((group) => <article key={group.name} className="rounded-xl border border-indigo-100 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold text-slate-900">{group.name}</h3><p className="text-xs text-slate-500">{group.items.length} produto(s) · prioridade {group.priority || '—'} · NÃO TRABALHADA</p></div><span className="font-semibold text-slate-800">{money(group.items.reduce((sum, item) => sum + potential(item.fact), 0))}</span></div><div className="mt-3 divide-y divide-slate-100">{group.items.map(({ target, fact }) => <div key={target.id} className="grid gap-2 py-2 text-xs sm:grid-cols-[1.5fr_.7fr_.7fr_.7fr] sm:items-center"><span className="font-medium text-slate-700">{fact.source_product_code || '—'} · {fact.source_product_name || 'Produto'}</span><span className="text-slate-500">FY25 {money(fact.canonical_base_value)}</span><span className="text-slate-500">FY26 {money(fact.canonical_compare_value)}</span><span className="font-semibold text-indigo-700">Potencial {money(potential(fact))}</span></div>)}</div></article>)}{!grouped.size && <p className="p-6 text-center text-sm text-slate-500">Nenhum target neste filtro.</p>}</div></section>;
+  return <section className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">Campanha ativa</p><h2 className="mt-1 text-xl font-semibold text-slate-900">{data.campaign.name}</h2><p className="mt-1 text-xs text-slate-600">Batch confirmado · nenhum contato automático.</p></div><span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">{data.campaign.status}</span></div><div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4"><span>Clientes relacionados: <strong>{customerCount}</strong></span><span>Produtos relacionados: <strong>{productCount}</strong></span><span>Fatos históricos: <strong>{data.facts.length}</strong></span><span>Oportunidades: <strong>{data.targets.length}</strong></span><span>P1: <strong>{priorityCounts.P1 || 0}</strong></span><span>P2: <strong>{priorityCounts.P2 || 0}</strong></span><span>P3: <strong>{priorityCounts.P3 || 0}</strong></span><span>Potencial: <strong>{money(data.facts.reduce((sum, fact) => sum + potential(fact), 0))}</strong></span></div><div className="mt-4 flex gap-2 overflow-x-auto pb-1">{QUEUE_FILTERS.map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${filter === item ? 'bg-indigo-700 text-white' : 'border border-indigo-200 bg-white text-indigo-700'}`}>{item}</button>)}</div><div className="mt-4 space-y-3">{[...grouped.values()].slice(0, 100).map((group) => <article key={group.name} className="rounded-xl border border-indigo-100 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold text-slate-900">{group.name}</h3><p className="text-xs text-slate-500">{group.items.length} produto(s) · prioridade {group.priority || '—'} · NÃO TRABALHADA</p></div><span className="font-semibold text-slate-800">{money(group.items.reduce((sum, item) => sum + potential(item.fact), 0))}</span></div><div className="mt-3 divide-y divide-slate-100">{group.items.map(({ target, fact }) => <div key={target.id} className="grid gap-2 py-2 text-xs sm:grid-cols-[1.5fr_.7fr_.7fr_.7fr] sm:items-center"><span className="font-medium text-slate-700">{fact.source_product_code || '—'} · {fact.source_product_name || 'Produto'}</span><span className="text-slate-500">FY25 {money(fact.canonical_base_value)}</span><span className="text-slate-500">FY26 {money(fact.canonical_compare_value)}</span><span className="font-semibold text-indigo-700">Potencial {money(potential(fact))}</span></div>)}</div></article>)}{!grouped.size && <p className="p-6 text-center text-sm text-slate-500">Nenhum target neste filtro.</p>}</div></section>;
 }
 
 function UniverseMetric({ label, value, detail }) {

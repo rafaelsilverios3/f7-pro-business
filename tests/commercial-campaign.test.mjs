@@ -7,6 +7,7 @@ const migration = fs.readFileSync(new URL('../supabase/migrations/0077_commercia
 const sourcePotentialMigration = fs.readFileSync(new URL('../supabase/migrations/0078_commercial_campaign_source_potential.sql', import.meta.url), 'utf8');
 const atomicMigration = fs.readFileSync(new URL('../supabase/migrations/0079_commercial_campaign_atomic_import.sql', import.meta.url), 'utf8');
 const atomicHardeningMigration = fs.readFileSync(new URL('../supabase/migrations/0080_fix_campaign_atomic_uuid_selection.sql', import.meta.url), 'utf8');
+const setBasedMigration = fs.readFileSync(new URL('../supabase/migrations/0081_campaign_set_based_import.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -39,6 +40,23 @@ test('importação atômica falha fechada sem membership e corrige colisões de 
   assert.match(atomicHardeningMigration, /actor_role is null or actor_role not in/);
   assert.match(atomicHardeningMigration, /array_agg\(id order by id\)/);
   assert.match(atomicHardeningMigration, /stored_fact_id uuid/);
+});
+
+test('importação 19.6D usa matching set-based e índices funcionais sem alterar a atomicidade', () => {
+  assert.match(setBasedMigration, /create index if not exists customers_company_normalized_name_idx/);
+  assert.match(setBasedMigration, /create index if not exists products_company_normalized_sku_idx/);
+  assert.match(setBasedMigration, /create temporary table campaign_customer_map/);
+  assert.match(setBasedMigration, /create temporary table campaign_product_map/);
+  assert.match(setBasedMigration, /insert into public\.commercial_campaign_facts[\s\S]*select/);
+  assert.match(setBasedMigration, /insert into public\.commercial_campaign_targets[\s\S]*select/);
+  assert.match(setBasedMigration, /get diagnostics facts_created = row_count/);
+  assert.match(setBasedMigration, /get diagnostics targets_created = row_count/);
+  assert.match(setBasedMigration, /auth\.uid\(\) is null or actor_role not in/);
+  assert.match(setBasedMigration, /company_id = p_target_company/);
+  assert.match(setBasedMigration, /exception when others/);
+  assert.doesNotMatch(setBasedMigration, /insert into public\.(sales|quotes|crm_activities|stock_movements|financial_entries)/);
+  assert.doesNotMatch(setBasedMigration, /for row in select \* from jsonb_array_elements\(p_history_rows\)/);
+  assert.doesNotMatch(setBasedMigration, /for row in select \* from jsonb_array_elements\(p_action_rows\)/);
 });
 
 test('produto importado sem custo usa zero canônico com origem explicitamente desconhecida', () => {
@@ -130,4 +148,29 @@ test('importação persistida mantém prioridade de origem, fila não trabalhada
   assert.match(page, /AUTORIZO IMPORTAÇÃO REAL NO F7 TESTE BETA/);
   assert.match(provider, /async bulkCreate\(payloads\)/);
   assert.match(provider, /cost_source/);
+});
+
+test('frontend só confirma sucesso com import batch persistido', () => {
+  const page = fs.readFileSync(new URL('../src/pages/Campanhas.jsx', import.meta.url), 'utf8');
+  const service = fs.readFileSync(new URL('../src/services/commercialCampaignService.js', import.meta.url), 'utf8');
+  assert.match(service, /listSuccessfulCampaignImports/);
+  assert.match(page, /result\.status === 'imported'/);
+  assert.match(page, /Campanha importada com sucesso/);
+  assert.match(page, /Prévia · sem gravação/);
+  assert.match(page, /Importando campanha/);
+  assert.match(page, /Importação não concluída/);
+  assert.match(page, /imported\?\.campaign_id/);
+  assert.doesNotMatch(page, /const campaign = campaigns\[0\]/);
+});
+
+test('payload de volume 19.6D é preparado sem matching repetitivo', () => {
+  const customerRows = Array.from({ length: 291 }, (_, index) => ({ name: `Cliente ${index + 1}` }));
+  const productRows = Array.from({ length: 32 }, (_, index) => ({ name: `Produto ${index + 1}`, sku: `SKU-${index + 1}` }));
+  const historyRows = Array.from({ length: 731 }, (_, index) => ({ customer: `Cliente ${(index % 291) + 1}`, code: `SKU-${(index % 32) + 1}`, product: `Produto ${(index % 32) + 1}`, baseValue: 100, compareValue: 75 }));
+  const actionRows = Array.from({ length: 329 }, (_, index) => ({ customer: `Cliente ${(index % 291) + 1}`, code: `SKU-${(index % 32) + 1}`, product: `Produto ${(index % 32) + 1}`, baseValue: 100, compareValue: 75, priority: index < 244 ? 'P1' : index < 265 ? 'P2' : 'P3' }));
+  const payload = buildAtomicCampaignPayload({ sourceFileName: 'volume.xlsx', sourceFileHash: 'volume-hash', managementSummary: {}, customerRows, productRows, historyRows, actionRows });
+  assert.equal(payload.p_customer_rows.length, 291);
+  assert.equal(payload.p_product_rows.length, 32);
+  assert.equal(payload.p_history_rows.length, 731);
+  assert.equal(payload.p_action_rows.length, 329);
 });
