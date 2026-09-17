@@ -154,3 +154,16 @@ export function campaignTargetFromFact(fact, sourcePriority) {
     status: 'NOT_CONTACTED',
   };
 }
+
+export function buildAtomicCampaignPayload(workbook) {
+  return {
+    p_file_name: workbook.sourceFileName,
+    p_file_hash: workbook.sourceFileHash,
+    p_campaign_name: 'Campanha Lubrificantes FY2025 x FY2026',
+    p_customer_rows: workbook.customerRows.map((row) => ({ name: row.name })),
+    p_product_rows: workbook.productRows.map((row) => ({ name: row.name || null, sku: row.sku || null, cost: row.cost ?? null, price: row.price ?? null, stock: row.stock ?? null, minimum_stock: row.minimum_stock ?? null, unit: row.unit || 'un' })),
+    p_history_rows: workbook.historyRows,
+    p_action_rows: workbook.actionRows,
+    p_management_summary: workbook.managementSummary || {},
+  };
+}

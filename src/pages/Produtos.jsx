@@ -137,7 +137,8 @@ export default function Produtos() {
                   const costPrice = Number(p.cost_price ?? p.cost) || 0;
                   const stock = Number(p.stock) || 0;
                   const minimumStock = Number(p.min_stock ?? p.minimum_stock) || 0;
-                  const margin = salePrice > 0 ? ((salePrice - costPrice) / salePrice) * 100 : 0;
+                  const costUnknown = p.cost_source === 'campaign_import_unknown';
+                  const margin = !costUnknown && salePrice > 0 ? ((salePrice - costPrice) / salePrice) * 100 : null;
                   const critical = stock <= minimumStock;
                   return (
                     <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50/50">
@@ -146,9 +147,9 @@ export default function Produtos() {
                         <p className="text-xs text-slate-400">{p.sku || '—'} {p.brand && `· ${p.brand}`}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-500"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${p.item_type === 'service' ? 'bg-violet-100 text-violet-700' : p.item_type === 'material' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.item_type === 'service' ? 'SERVIÇO' : p.item_type === 'material' ? 'MATERIAL' : 'PRODUTO'}</span><span className="ml-2">{p.subcategory || '—'}</span></td>
-                      <td className="px-4 py-3 text-right text-slate-500">{fmtMoney(costPrice)}</td>
+                      <td className="px-4 py-3 text-right text-slate-500">{costUnknown ? <span title="O custo não veio da origem da campanha">Não informado</span> : fmtMoney(costPrice)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(salePrice)}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{margin.toFixed(2)}%</td>
+                      <td className="px-4 py-3 text-right text-slate-600">{margin == null ? <span title="Margem indisponível enquanto o custo não for informado">—</span> : `${margin.toFixed(2)}%`}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${critical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
                           {p.item_type === 'service' ? '—' : <>{critical && <AlertTriangle className="h-3 w-3" />}{fmtNum(stock)}</>}

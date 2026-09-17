@@ -11,7 +11,7 @@ const normalizeSort = (sort, fallback = 'created_at') => {
 };
 const normalize = (name, row) => {
   if (!row) return row;
-  if (name === 'Product') return { ...row, sale_price: row.price, cost_price: row.cost, min_stock: row.minimum_stock, created_date: row.created_at, updated_date: row.updated_at, unit: row.unit || 'un' };
+  if (name === 'Product') return { ...row, sale_price: row.price, cost_price: row.cost, min_stock: row.minimum_stock, created_date: row.created_at, updated_date: row.updated_at, unit: row.unit || 'un', cost_source: row.cost_source || 'manual' };
   if (name === 'Goal') return { ...row, scope: row.type === 'seller' ? 'seller' : 'company', target_amount: row.target_value, target_key: row.user_id || 'all', period_value: row.start_date, created_date: row.created_at, updated_date: row.updated_at };
   if (name === 'Conversation') return { ...row, customer_name: row.lead_name, customer_phone: row.lead_phone, customer_email: row.lead_email, assignee: row.assigned_user_id, ai_enabled: row.status === 'ai_assisting', messages: row.messages || [], created_date: row.created_at, updated_date: row.updated_at };
   if (name === 'Message') return { ...row, sender: row.sender_type === 'user' ? 'agent' : row.sender_type, text: row.content, timestamp: row.created_at, created_date: row.created_at };
@@ -23,7 +23,7 @@ const normalize = (name, row) => {
 };
 const columns = {
   Customer: ['company_id', 'name', 'document', 'email', 'phone', 'total_purchased', 'sale_count', 'avg_ticket'],
-  Product: ['company_id', 'name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'weight', 'dimensions', 'tags', 'keywords', 'featured', 'unit', 'commission_rate', 'cost', 'price', 'stock', 'minimum_stock', 'active'],
+  Product: ['company_id', 'name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'weight', 'dimensions', 'tags', 'keywords', 'featured', 'unit', 'commission_rate', 'cost', 'price', 'stock', 'minimum_stock', 'active', 'cost_source'],
   Supplier: ['company_id', 'name', 'document', 'email', 'phone'],
   PurchaseOrder: ['company_id', 'supplier_id', 'status', 'total', 'expected_date'],
   PurchaseItem: ['company_id', 'purchase_id', 'product_id', 'quantity', 'cost'],

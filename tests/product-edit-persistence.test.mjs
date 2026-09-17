@@ -12,6 +12,7 @@ const productSchemaSql = [
   fs.readFileSync('supabase/migrations/0001_initial_schema.sql', 'utf8'),
   fs.readFileSync('supabase/migrations/0021_product_catalog.sql', 'utf8'),
   fs.readFileSync('supabase/migrations/0053_product_service_items.sql', 'utf8'),
+  fs.readFileSync('supabase/migrations/0079_commercial_campaign_atomic_import.sql', 'utf8'),
 ].join('\n');
 
 test('product updates use an explicit canonical payload and preserve zero values', () => {
@@ -38,7 +39,7 @@ test('product update allowlist matches real products columns and excludes catego
   const match = provider.match(/Product: \[([^\]]+)\]/);
   assert.ok(match, 'Product provider allowlist must exist');
   const allowedColumns = [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, column]) => column);
-  const expectedColumns = ['company_id', 'name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'weight', 'dimensions', 'tags', 'keywords', 'featured', 'unit', 'commission_rate', 'cost', 'price', 'stock', 'minimum_stock', 'active'];
+  const expectedColumns = ['company_id', 'name', 'item_type', 'duration_minutes', 'sku', 'barcode', 'subcategory', 'brand', 'description', 'short_description', 'full_description', 'material', 'color', 'size', 'model', 'weight', 'dimensions', 'tags', 'keywords', 'featured', 'unit', 'commission_rate', 'cost', 'price', 'stock', 'minimum_stock', 'active', 'cost_source'];
   assert.deepEqual(allowedColumns, expectedColumns);
   assert.equal(allowedColumns.includes('category'), false);
   for (const column of expectedColumns) assert.match(productSchemaSql, new RegExp(`\\b${column}\\b`));

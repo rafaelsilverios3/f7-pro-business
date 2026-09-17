@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { buildCampaignPreview, calculateCanonicalValues, matchCustomer, matchProduct, reconcileCampaignValues, summarizeCampaignUniverses } from '../src/lib/commercialCampaign.js';
+import { buildAtomicCampaignPayload, buildCampaignPreview, calculateCanonicalValues, matchCustomer, matchProduct, reconcileCampaignValues, summarizeCampaignUniverses } from '../src/lib/commercialCampaign.js';
 
 const migration = fs.readFileSync(new URL('../supabase/migrations/0077_commercial_campaigns.sql', import.meta.url), 'utf8');
 const sourcePotentialMigration = fs.readFileSync(new URL('../supabase/migrations/0078_commercial_campaign_source_potential.sql', import.meta.url), 'utf8');
+const atomicMigration = fs.readFileSync(new URL('../supabase/migrations/0079_commercial_campaign_atomic_import.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -16,6 +17,32 @@ test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant
   assert.match(migration, /confirmed recovery requires linked sale/);
   assert.match(migration, /unique \(company_id, import_id, idempotency_key\)/);
   assert.match(sourcePotentialMigration, /add column if not exists source_potential/);
+});
+
+test('importação atômica valida tenant, idempotência e rollback transacional', () => {
+  assert.match(atomicMigration, /create or replace function public\.import_commercial_campaign_atomic/);
+  assert.match(atomicMigration, /current_company_role\(p_target_company\)/);
+  assert.match(atomicMigration, /file_hash = p_file_hash/);
+  assert.match(atomicMigration, /security definer/);
+  assert.match(atomicMigration, /exception when others/);
+  assert.match(atomicMigration, /commercial_campaign_import_entities/);
+  assert.match(atomicMigration, /grant execute on function public\.import_commercial_campaign_atomic/);
+  assert.match(atomicMigration, /exception when others/);
+  assert.match(atomicMigration, /create temporary table campaign_fact_keys/);
+  assert.match(atomicMigration, /campaign_import_unknown/);
+  assert.doesNotMatch(atomicMigration, /insert into public\.(sales|quotes|crm_activities|stock_movements|financial_entries)/);
+});
+
+test('produto importado sem custo usa zero canônico com origem explicitamente desconhecida', () => {
+  const payload = buildAtomicCampaignPayload({
+    sourceFileName: 'origem.xlsx', sourceFileHash: 'hash', managementSummary: {},
+    customerRows: [{ name: 'Cliente A' }],
+    productRows: [{ name: 'Produto sem custo', sku: 'SKU-1' }],
+    historyRows: [], actionRows: [],
+  });
+  assert.equal(payload.p_product_rows[0].cost, null);
+  assert.match(atomicMigration, /campaign_import_unknown/);
+  assert.match(atomicMigration, /coalesce\(public\.commercial_campaign_parse_numeric\(row->>'cost'\), 0\)/);
 });
 
 test('F7 recalcula diferença, percentual e potencial sem sobrescrever origem', () => {
@@ -80,11 +107,11 @@ test('prévia separa clientes, produtos, histórico, plano de ação e divergên
 
 test('serviço consulta catálogo por company_id antes do matching', () => {
   const service = fs.readFileSync(new URL('../src/services/commercialCampaignService.js', import.meta.url), 'utf8');
-  assert.match(service, /entity\('Customer'\)\.filter\(\{ company_id: companyId \}/);
-  assert.match(service, /entity\('Product'\)\.filter\(\{ company_id: companyId \}/);
-  assert.match(service, /alreadyImported/);
-  assert.match(service, /bulkCreateInChunks/);
-  assert.match(service, /historyRows/);
+  const campaignLib = fs.readFileSync(new URL('../src/lib/commercialCampaign.js', import.meta.url), 'utf8');
+  assert.match(service, /buildAtomicCampaignPayload/);
+  assert.match(service, /rpc\('import_commercial_campaign_atomic'/);
+  assert.match(campaignLib, /p_history_rows/);
+  assert.match(campaignLib, /p_action_rows/);
 });
 
 test('importação persistida mantém prioridade de origem, fila não trabalhada e sem CRM automático', () => {
@@ -94,4 +121,5 @@ test('importação persistida mantém prioridade de origem, fila não trabalhada
   assert.match(page, /NOT_CONTACTED/);
   assert.match(page, /AUTORIZO IMPORTAÇÃO REAL NO F7 TESTE BETA/);
   assert.match(provider, /async bulkCreate\(payloads\)/);
+  assert.match(provider, /cost_source/);
 });
