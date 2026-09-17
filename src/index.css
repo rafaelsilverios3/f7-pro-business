@@ -411,3 +411,27 @@ body.light-theme .app-shell [data-executive-summary] [class~="text-indigo-600"] 
 .app-shell [data-executive-summary] > div:first-child [class~="text-indigo-600"] {
   color: #c7dcff !important;
 }
+
+/* Campaign workspace: keep the operational queue in the same deep-blue
+   hierarchy as the rest of the F7 shell. The previous indigo/amber utility
+   surfaces were too light for the inherited white text tokens. */
+.app-shell .campaigns-page .campaign-active {
+  background: linear-gradient(135deg, #0d2340 0%, #0b172b 100%) !important;
+  border-color: #2d5e91 !important;
+  color: #e5efff !important;
+  box-shadow: 0 14px 34px rgba(1, 12, 29, .35) !important;
+}
+.app-shell .campaigns-page .campaign-active h2,
+.app-shell .campaigns-page .campaign-active strong { color: #f8fbff !important; }
+.app-shell .campaigns-page .campaign-active .text-slate-200 { color: #dbeafe !important; }
+.app-shell .campaigns-page .campaign-active .text-slate-300 { color: #b9cbe1 !important; }
+.app-shell .campaigns-page .campaign-active .text-slate-400 { color: #8fa8c4 !important; }
+.app-shell .campaigns-page .campaign-active .text-indigo-300 { color: #8fc5ff !important; }
+.app-shell .campaigns-page .campaign-active .text-blue-300 { color: #9dcbff !important; }
+.app-shell .campaigns-page .campaign-source-divergence {
+  background: linear-gradient(135deg, #34270f 0%, #211b10 100%) !important;
+  border-color: #8f6a25 !important;
+  color: #fff1c2 !important;
+}
+.app-shell .campaigns-page .campaign-source-divergence .text-slate-600 { color: #e4c77f !important; }
+.app-shell .campaigns-page .campaign-source-divergence .text-slate-900 { color: #fff3c7 !important; }
