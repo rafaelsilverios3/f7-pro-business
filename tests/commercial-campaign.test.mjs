@@ -206,6 +206,14 @@ test('frontend só confirma sucesso com import batch persistido', () => {
   assert.doesNotMatch(page, /const campaign = campaigns\[0\]/);
 });
 
+test('frontend não promove batch sem fatos e targets a sucesso operacional', () => {
+  const page = fs.readFileSync(new URL('../src/pages/Campanhas.jsx', import.meta.url), 'utf8');
+  assert.match(page, /const partial = Number\(imported\.rows_total \|\| 0\) > 0/);
+  assert.match(page, /setImportState\(partial \? 'partial' : 'success'\)/);
+  assert.match(page, /Importação parcial detectada/);
+  assert.match(page, /persisted && !persisted\.partial/);
+});
+
 test('payload de volume 19.6D é preparado sem matching repetitivo', () => {
   const customerRows = Array.from({ length: 291 }, (_, index) => ({ name: `Cliente ${index + 1}` }));
   const productRows = Array.from({ length: 32 }, (_, index) => ({ name: `Produto ${index + 1}`, sku: `SKU-${index + 1}` }));

@@ -35,8 +35,10 @@ export default function Campanhas() {
         supabaseProvider.entity('CommercialCampaignTarget').filter({ company_id: company.id, campaign_id: campaign.id }, 'source_row', 1000),
       ]);
       const entities = await supabaseProvider.entity('commercial_campaign_import_entities').filter({ company_id: company.id, import_id: imported.id }, 'source_key', 5000);
-      setPersisted({ campaign, importRecord: imported, facts, targets, entities });
-      setImportState('success');
+      const partial = Number(imported.rows_total || 0) > 0 && (facts.length === 0 || targets.length === 0);
+      setPersisted({ campaign, importRecord: imported, facts, targets, entities, partial });
+      setImportState(partial ? 'partial' : 'success');
+      if (partial) setError(`O batch ${imported.id} foi registrado, mas os registros derivados estão incompletos (fatos: ${facts.length}; targets: ${targets.length}). Nenhum dado é considerado pronto para operação.`);
     } catch (cause) { setError(cause?.message || 'Não foi possível carregar a campanha persistida.'); }
   };
 
@@ -82,7 +84,9 @@ export default function Campanhas() {
     finally { setImporting(false); }
   };
 
-  const statusBanner = importState === 'success' && persisted
+  const statusBanner = importState === 'partial'
+    ? { tone: 'error', title: 'Importação parcial detectada.', detail: 'O batch existe, mas fatos históricos e/ou targets não foram persistidos. A fila permanece bloqueada até revisão técnica; não tente importar novamente.' }
+    : importState === 'success' && persisted
     ? { tone: 'success', title: 'Campanha importada com sucesso.', detail: 'O batch foi confirmado; a origem permanece preservada e cálculos, fila e recuperação usam os valores canônicos do F7.' }
     : importState === 'importing'
       ? { tone: 'loading', title: 'Importando campanha...', detail: 'A operação é atômica. Nenhum dado é considerado confirmado até o batch ser persistido.' }
@@ -92,7 +96,7 @@ export default function Campanhas() {
 
   return <div className="campaigns-page mx-auto w-full max-w-[1760px] min-w-0 px-3 py-5 sm:px-5 sm:py-7 xl:px-8">
     <PageHeader title="Campanhas comerciais" subtitle="Matching de origem, fila de recuperação e prévia para revisão humana." />
-    {persisted && <PersistedQueue data={persisted} filter={filter} setFilter={setFilter} />}
+    {persisted && !persisted.partial && <PersistedQueue data={persisted} filter={filter} setFilter={setFilter} />}
     <div className={`mt-4 rounded-2xl border p-4 text-sm ${statusBanner.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : statusBanner.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-900' : statusBanner.tone === 'loading' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
       <div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${statusBanner.tone === 'success' ? 'text-emerald-700' : statusBanner.tone === 'error' ? 'text-rose-700' : 'text-amber-700'}`} /><div><strong>{statusBanner.title}</strong> {statusBanner.detail}</div></div>
     </div>
