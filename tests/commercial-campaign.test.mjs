@@ -55,4 +55,16 @@ test('serviço consulta catálogo por company_id antes do matching', () => {
   const service = fs.readFileSync(new URL('../src/services/commercialCampaignService.js', import.meta.url), 'utf8');
   assert.match(service, /entity\('Customer'\)\.filter\(\{ company_id: companyId \}/);
   assert.match(service, /entity\('Product'\)\.filter\(\{ company_id: companyId \}/);
+  assert.match(service, /alreadyImported/);
+  assert.match(service, /bulkCreateInChunks/);
+  assert.match(service, /historyRows/);
+});
+
+test('importação persistida mantém prioridade de origem, fila não trabalhada e sem CRM automático', () => {
+  const page = fs.readFileSync(new URL('../src/pages/Campanhas.jsx', import.meta.url), 'utf8');
+  const provider = fs.readFileSync(new URL('../src/data/providers/supabaseProvider.js', import.meta.url), 'utf8');
+  assert.match(page, /PersistedQueue/);
+  assert.match(page, /NOT_CONTACTED/);
+  assert.match(page, /AUTORIZO IMPORTAÇÃO REAL NO F7 TESTE BETA/);
+  assert.match(provider, /async bulkCreate\(payloads\)/);
 });
