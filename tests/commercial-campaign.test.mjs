@@ -8,6 +8,7 @@ const sourcePotentialMigration = fs.readFileSync(new URL('../supabase/migrations
 const atomicMigration = fs.readFileSync(new URL('../supabase/migrations/0079_commercial_campaign_atomic_import.sql', import.meta.url), 'utf8');
 const atomicHardeningMigration = fs.readFileSync(new URL('../supabase/migrations/0080_fix_campaign_atomic_uuid_selection.sql', import.meta.url), 'utf8');
 const setBasedMigration = fs.readFileSync(new URL('../supabase/migrations/0081_campaign_set_based_import.sql', import.meta.url), 'utf8');
+const uuidMatchingMigration = fs.readFileSync(new URL('../supabase/migrations/0082_campaign_import_uuid_matching_fix.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -57,6 +58,48 @@ test('importação 19.6D usa matching set-based e índices funcionais sem altera
   assert.doesNotMatch(setBasedMigration, /insert into public\.(sales|quotes|crm_activities|stock_movements|financial_entries)/);
   assert.doesNotMatch(setBasedMigration, /for row in select \* from jsonb_array_elements\(p_history_rows\)/);
   assert.doesNotMatch(setBasedMigration, /for row in select \* from jsonb_array_elements\(p_action_rows\)/);
+});
+
+test('19.6F não escolhe UUID arbitrariamente e bloqueia duplicidades', () => {
+  assert.match(uuidMatchingMigration, /create or replace function public\.import_commercial_campaign_atomic/);
+  assert.match(uuidMatchingMigration, /case when count\(c\.id\) = 1 then \(array_agg\(c\.id\)\)\[1\] else null end/);
+  assert.match(uuidMatchingMigration, /count\(\*\) filter \(where match_count > 1\)/);
+  assert.match(uuidMatchingMigration, /where match_count = 1 and customer_id is not null/);
+  assert.match(uuidMatchingMigration, /where match_count = 1 and product_id is not null/);
+  assert.match(uuidMatchingMigration, /matches\.match_count = 1/);
+  assert.match(uuidMatchingMigration, /matches\.match_type = 'sku'/);
+  assert.doesNotMatch(uuidMatchingMigration, /set customer_id = c\.id/);
+  assert.doesNotMatch(uuidMatchingMigration, /set product_id = p\.id/);
+  assert.match(uuidMatchingMigration, /match_count = 1 and cm\.customer_id is not null/);
+  assert.match(uuidMatchingMigration, /match_count = 1 and pm\.product_id is not null/);
+  assert.doesNotMatch(uuidMatchingMigration, /min\s*\(\s*c\.id\s*\)/i);
+  assert.doesNotMatch(uuidMatchingMigration, /max\s*\(\s*c\.id\s*\)/i);
+  assert.doesNotMatch(uuidMatchingMigration, /min\s*\(\s*p\.id\s*\)/i);
+  assert.match(uuidMatchingMigration, /actor_role is null or actor_role not in/);
+  assert.match(uuidMatchingMigration, /security definer/);
+  assert.match(uuidMatchingMigration, /set search_path = public/);
+  assert.match(uuidMatchingMigration, /grant execute on function public\.import_commercial_campaign_atomic/);
+});
+
+test('19.6F preserva as regras 0/1/múltiplas correspondências para clientes e produtos', () => {
+  const customers = [
+    { id: 'c1', name: 'Cliente Único' },
+    { id: 'c2', name: 'Duplicado' },
+    { id: 'c3', name: 'duplicado' },
+  ];
+  assert.equal(matchCustomer('Cliente novo', customers).status, 'new');
+  assert.equal(matchCustomer('Cliente Único', customers).matches.length, 1);
+  assert.equal(matchCustomer('DUPLICADO', customers).status, 'ambiguous');
+
+  const products = [
+    { id: 'p1', sku: 'SKU-1', name: 'Produto único' },
+    { id: 'p2', sku: 'SKU-DUP', name: 'Produto A' },
+    { id: 'p3', sku: 'sku-dup', name: 'Produto B' },
+  ];
+  assert.equal(matchProduct({ code: 'SKU-NOVO', name: 'Novo' }, products).status, 'new');
+  assert.equal(matchProduct({ code: 'SKU-1', name: 'qualquer' }, products).status, 'exact');
+  assert.equal(matchProduct({ code: 'SKU-DUP', name: 'qualquer' }, products).status, 'ambiguous');
+  assert.equal(matchProduct({ code: '', name: 'Produto A' }, products).status, 'probable');
 });
 
 test('produto importado sem custo usa zero canônico com origem explicitamente desconhecida', () => {
