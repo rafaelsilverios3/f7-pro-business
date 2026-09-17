@@ -29,10 +29,14 @@ begin
   fixed_definition := replace(fixed_definition, 'select fact_id into fact_id from campaign_fact_keys', 'select stored_fact_id into fact_id from campaign_fact_keys');
   fixed_definition := replace(fixed_definition, 'if auth.uid() is null or actor_role not in (''admin'', ''gestor'', ''comercial'') then', 'if auth.uid() is null or actor_role is null or actor_role not in (''admin'', ''gestor'', ''comercial'') then');
 
-  if fixed_definition = current_definition then
-    raise exception 'A RPC não contém o padrão UUID legado esperado';
+  if fixed_definition = current_definition
+     and current_definition not like '%stored_fact_id uuid%'
+     and current_definition not like '%actor_role is null or actor_role not in%' then
+    raise exception 'A RPC não contém um padrão legado ou já corrigido esperado';
   end if;
 
-  execute fixed_definition;
+  if fixed_definition <> current_definition then
+    execute fixed_definition;
+  end if;
 end;
 $$;
