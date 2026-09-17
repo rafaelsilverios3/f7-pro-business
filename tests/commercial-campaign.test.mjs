@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { buildCampaignPreview, calculateCanonicalValues, matchCustomer, matchProduct, reconcileCampaignValues } from '../src/lib/commercialCampaign.js';
 
 const migration = fs.readFileSync(new URL('../supabase/migrations/0077_commercial_campaigns.sql', import.meta.url), 'utf8');
+const sourcePotentialMigration = fs.readFileSync(new URL('../supabase/migrations/0078_commercial_campaign_source_potential.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -14,6 +15,7 @@ test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant
   assert.match(migration, /validate_commercial_campaign_tenant/);
   assert.match(migration, /confirmed recovery requires linked sale/);
   assert.match(migration, /unique \(company_id, import_id, idempotency_key\)/);
+  assert.match(sourcePotentialMigration, /add column if not exists source_potential/);
 });
 
 test('F7 recalcula diferença, percentual e potencial sem sobrescrever origem', () => {

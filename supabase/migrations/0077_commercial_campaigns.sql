@@ -55,6 +55,7 @@ create table if not exists public.commercial_campaign_facts (
   source_base_value numeric,
   source_compare_value numeric,
   source_difference numeric,
+  source_potential numeric,
   source_variation_pct numeric,
   canonical_base_value numeric,
   canonical_compare_value numeric,
@@ -187,4 +188,3 @@ create policy commercial_campaign_outcomes_manage on public.commercial_campaign_
 
 grant select, insert, update, delete on public.commercial_campaigns, public.commercial_campaign_imports, public.commercial_campaign_facts, public.commercial_campaign_targets, public.commercial_campaign_outcomes to authenticated;
 grant all on public.commercial_campaigns, public.commercial_campaign_imports, public.commercial_campaign_facts, public.commercial_campaign_targets, public.commercial_campaign_outcomes to service_role;
-
