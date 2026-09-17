@@ -61,7 +61,10 @@ export async function parseCampaignWorkbook(file) {
   })).filter((row) => row.customer || row.code || row.product);
   const customerRows = read('Clientes').map((row) => ({ name: String(row.Cliente || '').trim() })).filter((row) => row.name);
   const productRows = read('Itens').map((row) => ({ name: String(row['Descrição'] || '').trim(), sku: row['Código'] == null ? null : String(row['Código']).trim() })).filter((row) => row.name || row.sku);
-  return { actionRows, historyRows, customerRows, productRows, sourceFileName: file.name, sourceFileHash: await hashFile(file) };
+  const managementGrid = workbook.Sheets['Gestao Campanha'] ? XLSX.utils.sheet_to_json(workbook.Sheets['Gestao Campanha'], { header: 1, defval: null }) : [];
+  const management = Object.fromEntries(managementGrid.map((row) => [normalizeCampaignText(row?.[0]), row?.[1]]));
+  const managementSummary = { opportunities: Number(management['OPORTUNIDADES MAPEADAS'] || 0) || null, potential: Number(management['VALOR TOTAL DE OPORTUNIDADE'] || 0) || null, p1: Number(management['PRIORIDADE P1'] || 0) || null, p2: Number(management['PRIORIDADE P2'] || 0) || null, p3: Number(management['PRIORIDADE P3'] || 0) || null };
+  return { actionRows, historyRows, customerRows, productRows, managementSummary, sourceFileName: file.name, sourceFileHash: await hashFile(file) };
 }
 
 async function hashFile(file) {
@@ -102,7 +105,8 @@ export async function importCommercialCampaign({ company, file }) {
   const catalog = await loadTenantCatalog(company.id);
   const customers = nameMap(catalog.customers);
   const products = skuMap(catalog.products);
-  const imported = await supabaseProvider.entity('CommercialCampaignImport').create({ company_id: company.id, campaign_id: campaign.id, file_name: workbook.sourceFileName, file_hash: workbook.sourceFileHash, status: 'imported', source_metadata: { workbook: workbook.sourceFileName, sheets: { clientes: workbook.customerRows.length, itens: workbook.productRows.length, cliente_x_item: workbook.historyRows.length, plano_de_acao: workbook.actionRows.length } }, rows_total: workbook.historyRows.length + workbook.actionRows.length, rows_valid: workbook.historyRows.length + workbook.actionRows.length, rows_review: 0, rows_rejected: 0 });
+  const canonicalPotential = workbook.actionRows.reduce((sum, row) => sum + (reconcileCampaignValues(row).potential || 0), 0);
+  const imported = await supabaseProvider.entity('CommercialCampaignImport').create({ company_id: company.id, campaign_id: campaign.id, file_name: workbook.sourceFileName, file_hash: workbook.sourceFileHash, status: 'imported', source_metadata: { workbook: workbook.sourceFileName, sheets: { clientes: workbook.customerRows.length, itens: workbook.productRows.length, cliente_x_item: workbook.historyRows.length, plano_de_acao: workbook.actionRows.length }, management_summary: workbook.managementSummary, divergence: { opportunities: (workbook.managementSummary.opportunities || 0) - workbook.actionRows.length, potential: (workbook.managementSummary.potential || 0) - canonicalPotential }, canonical_action_potential: canonicalPotential }, rows_total: workbook.historyRows.length + workbook.actionRows.length, rows_valid: workbook.historyRows.length + workbook.actionRows.length, rows_review: 0, rows_rejected: 0 });
   const facts = await bulkCreateInChunks('CommercialCampaignFact', workbook.historyRows.map((row) => {
     const customer = customers.get(normalizeCampaignText(row.customer));
     const product = products.get(normalizeCampaignText(row.code));
