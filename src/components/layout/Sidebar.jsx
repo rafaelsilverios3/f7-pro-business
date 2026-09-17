@@ -41,6 +41,7 @@ const NAV = [
     items: [
       { to: '/financeiro', label: 'Financeiro', icon: Wallet, permission: 'finance.view' },
       { to: '/metas', label: 'Metas e Comissões', icon: Target, permission: 'goals.view' },
+      { to: '/campanhas', label: 'Campanhas', icon: Megaphone, permission: 'campaigns.view' },
     ],
   },
   {

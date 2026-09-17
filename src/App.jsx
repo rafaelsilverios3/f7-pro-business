@@ -27,6 +27,7 @@ import Automacoes from './pages/Automacoes.jsx';
 import Intelligence from './pages/Intelligence.jsx';
 import Relatorios from './pages/Relatorios.jsx';
 import Marketing from './pages/Marketing.jsx';
+import Campanhas from './pages/Campanhas.jsx';
 import Notificacoes from './pages/Notificacoes.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Academy from './pages/Academy.jsx';
@@ -189,6 +190,7 @@ const AuthenticatedApp = () => {
           <Route path="/ai-observability" element={<RoleGuard permission="ai_observability.view"><AIObservability /></RoleGuard>} />
           <Route path="/relatorios" element={<RoleGuard permission="reports.view"><Relatorios /></RoleGuard>} />
           <Route path="/marketing" element={<RoleGuard permission="reports.view"><Marketing /></RoleGuard>} />
+          <Route path="/campanhas" element={<RoleGuard permission="campaigns.view"><Campanhas /></RoleGuard>} />
           <Route path="/notificacoes" element={<RoleGuard permission="notifications.view"><Notificacoes /></RoleGuard>} />
         </Route>
       </Route>

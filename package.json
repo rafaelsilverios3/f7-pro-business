@@ -2,7 +2,10 @@
   "name": "base44-app",
   "private": true,
   "version": "0.0.0",
-  "engines": { "node": ">=22 <23", "npm": ">=10" },
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -80,6 +83,7 @@
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.171.0",
     "vaul": "^1.1.2",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {
