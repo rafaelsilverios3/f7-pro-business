@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { buildCampaignPreview, calculateCanonicalValues, matchCustomer, matchProduct, reconcileCampaignValues } from '../src/lib/commercialCampaign.js';
+import { buildCampaignPreview, calculateCanonicalValues, matchCustomer, matchProduct, reconcileCampaignValues, summarizeCampaignUniverses } from '../src/lib/commercialCampaign.js';
 
 const migration = fs.readFileSync(new URL('../supabase/migrations/0077_commercial_campaigns.sql', import.meta.url), 'utf8');
 const sourcePotentialMigration = fs.readFileSync(new URL('../supabase/migrations/0078_commercial_campaign_source_potential.sql', import.meta.url), 'utf8');
@@ -49,6 +49,33 @@ test('prévia classifica fatos e mantém importação em memória', () => {
   assert.equal(preview.counts.divergences, 1);
   assert.equal(preview.facts[0].reconciliation.potential, 50);
   assert.equal(preview.persisted, false);
+});
+
+test('prévia separa clientes, produtos, histórico, plano de ação e divergência da fonte', () => {
+  const preview = summarizeCampaignUniverses({
+    customerRows: [{ name: 'Cliente A' }, { name: 'Cliente B' }],
+    productRows: [{ sku: 'SKU-1', name: 'Produto A' }, { sku: 'SKU-2', name: 'Produto B' }],
+    customers: [{ id: 'c1', name: 'Cliente A' }],
+    products: [{ id: 'p1', sku: 'SKU-1', name: 'Produto A' }],
+    historyRows: [
+      { customer: 'Cliente A', code: 'SKU-1', product: 'Produto A', baseValue: 100, compareValue: 50 },
+      { customer: 'Cliente B', code: 'SKU-2', product: 'Produto B', baseValue: 100, compareValue: 20 },
+    ],
+    actionRows: [
+      { customer: 'Cliente A', code: 'SKU-1', product: 'Produto A', priority: 'P1', baseValue: 100, compareValue: 50 },
+      { customer: 'Cliente B', code: 'SKU-2', product: 'Produto B', priority: 'P2', baseValue: 80, compareValue: 20 },
+      { customer: 'Cliente B', code: 'SKU-2', product: 'Produto B', priority: 'P3', baseValue: 60, compareValue: 10 },
+    ],
+    managementSummary: { opportunities: 5, potential: 300 },
+  });
+  assert.equal(preview.customers.total, 2);
+  assert.deepEqual(preview.customers.counts, { exact: 0, probable: 1, ambiguous: 0, new: 1, invalid: 0 });
+  assert.equal(preview.products.total, 2);
+  assert.deepEqual(preview.products.counts, { exact: 1, probable: 0, ambiguous: 0, new: 1, invalid: 0 });
+  assert.deepEqual({ total: preview.history.total, ready: preview.history.ready, blocked: preview.history.blocked }, { total: 2, ready: 0, blocked: 2 });
+  assert.deepEqual(preview.action.counts, { P1: 1, P2: 1, P3: 1 });
+  assert.equal(preview.action.potential, 160);
+  assert.deepEqual(preview.divergence, { opportunities: 2, potential: 140 });
 });
 
 test('serviço consulta catálogo por company_id antes do matching', () => {

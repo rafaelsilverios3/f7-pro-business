@@ -1,5 +1,5 @@
 import { supabaseProvider } from '@/data/providers/supabaseProvider';
-import { buildCampaignPreview, campaignTargetFromFact, normalizeCampaignText, reconcileCampaignValues } from '@/lib/commercialCampaign';
+import { buildCampaignPreview, campaignTargetFromFact, normalizeCampaignText, reconcileCampaignValues, summarizeCampaignUniverses } from '@/lib/commercialCampaign';
 
 const workbookHeaders = {
   priority: ['prioridade', 'priority'],
@@ -134,6 +134,14 @@ export async function loadTenantCatalog(companyId) {
 export async function buildTenantCampaignPreview({ companyId, rows }) {
   const catalog = await loadTenantCatalog(companyId);
   return buildCampaignPreview({ rows, ...catalog });
+}
+
+export async function buildFullCampaignPreview({ companyId, workbook }) {
+  const catalog = await loadTenantCatalog(companyId);
+  return {
+    ...summarizeCampaignUniverses({ ...workbook, ...catalog }),
+    persisted: false,
+  };
 }
 
 export function buildPreviewTargetRows(preview) {

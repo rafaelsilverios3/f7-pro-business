@@ -104,6 +104,45 @@ export function buildCampaignPreview({ rows = [], customers = [], products = [] 
   return { facts, counts, total: facts.length, persisted: false };
 }
 
+const emptyMatchCounts = () => ({ exact: 0, probable: 0, ambiguous: 0, new: 0, invalid: 0 });
+
+function uniqueBy(rows, key) {
+  const seen = new Set();
+  return (rows || []).filter((row) => {
+    const value = normalizeCampaignText(key(row));
+    if (!value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+export function summarizeCampaignUniverses({ customerRows = [], productRows = [], historyRows = [], actionRows = [], managementSummary = {}, customers = [], products = [] }) {
+  const customerMatches = uniqueBy(customerRows, (row) => row.name).map((row) => ({ ...row, match: matchCustomer(row.name, customers) }));
+  const productMatches = uniqueBy(productRows, (row) => row.sku || row.name).map((row) => ({ ...row, match: matchProduct({ code: row.sku, name: row.name }, products) }));
+  const customerCounts = emptyMatchCounts();
+  const productCounts = emptyMatchCounts();
+  customerMatches.forEach((row) => { customerCounts[row.match.status] = (customerCounts[row.match.status] || 0) + 1; });
+  productMatches.forEach((row) => { productCounts[row.match.status] = (productCounts[row.match.status] || 0) + 1; });
+  const history = (historyRows || []).map((row) => {
+    const customer = matchCustomer(row.customer, customers);
+    const product = matchProduct({ code: row.code, name: row.product }, products);
+    const reconciliation = reconcileCampaignValues(row);
+    return { ...row, customerMatch: customer, productMatch: product, reconciliation, ready: customer.status === 'exact' && product.status === 'exact' };
+  });
+  const action = buildCampaignPreview({ rows: actionRows, customers, products });
+  const canonicalPotential = action.facts.reduce((sum, fact) => sum + (fact.reconciliation.potential || 0), 0);
+  const managementPotential = Number(managementSummary.potential) || 0;
+  const managementOpportunities = Number(managementSummary.opportunities) || 0;
+  return {
+    customers: { total: customerMatches.length, counts: customerCounts, rows: customerMatches },
+    products: { total: productMatches.length, counts: productCounts, rows: productMatches },
+    history: { total: history.length, ready: history.filter((row) => row.ready).length, blocked: history.filter((row) => !row.ready).length, divergences: history.filter((row) => row.reconciliation.divergence).length, rows: history },
+    action: { total: action.total, counts: action.facts.reduce((result, fact) => { const priority = String(fact.source.priority || '').match(/P[123]/)?.[0]; if (priority) result[priority] += 1; return result; }, { P1: 0, P2: 0, P3: 0 }), potential: canonicalPotential, preview: action },
+    management: { opportunities: managementOpportunities, potential: managementPotential, p1: Number(managementSummary.p1) || 0, p2: Number(managementSummary.p2) || 0, p3: Number(managementSummary.p3) || 0 },
+    divergence: { opportunities: managementOpportunities - action.total, potential: managementPotential - canonicalPotential },
+  };
+}
+
 export function campaignTargetFromFact(fact, sourcePriority) {
   const importedPriority = String(sourcePriority || '').match(/P[123]/)?.[0] || null;
   return {
