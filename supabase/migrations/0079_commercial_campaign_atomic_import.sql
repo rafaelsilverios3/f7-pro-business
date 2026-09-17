@@ -77,7 +77,7 @@ declare
   campaign_row public.commercial_campaigns;
   import_row public.commercial_campaign_imports;
   row jsonb;
-  source_key text;
+  v_source_key text;
   customer_name text;
   product_name text;
   product_sku text;
@@ -193,7 +193,7 @@ begin
   -- Customers are reused by normalized name; duplicates remain blocked.
   for row in select * from jsonb_array_elements(p_customer_rows) loop
     customer_name := trim(row->>'name');
-    select min(id), count(*) into customer_id, customer_matches from public.customers
+    select (array_agg(id order by id))[1], count(*) into customer_id, customer_matches from public.customers
       where company_id = p_target_company and public.commercial_campaign_normalize(name) = public.commercial_campaign_normalize(customer_name);
     if customer_matches = 0 then
       insert into public.customers(company_id, name) values (p_target_company, customer_name) returning id into customer_id;
@@ -201,9 +201,9 @@ begin
     else
       customers_related := customers_related + 1;
     end if;
-    source_key := public.commercial_campaign_normalize(customer_name);
+    v_source_key := public.commercial_campaign_normalize(customer_name);
     insert into public.commercial_campaign_import_entities(company_id, import_id, entity_type, entity_id, source_key)
-      values (p_target_company, import_row.id, 'customer', customer_id, source_key)
+      values (p_target_company, import_row.id, 'customer', customer_id, v_source_key)
       on conflict (company_id, import_id, entity_type, source_key) do nothing;
   end loop;
 
@@ -213,10 +213,10 @@ begin
     product_name := nullif(trim(row->>'name'), '');
     product_sku := nullif(trim(row->>'sku'), '');
     if product_sku is not null then
-      select min(id), count(*) into product_id, product_matches from public.products
+      select (array_agg(id order by id))[1], count(*) into product_id, product_matches from public.products
         where company_id = p_target_company and public.commercial_campaign_normalize(sku) = public.commercial_campaign_normalize(product_sku);
     else
-      select min(id), count(*) into product_id, product_matches from public.products
+      select (array_agg(id order by id))[1], count(*) into product_id, product_matches from public.products
         where company_id = p_target_company and public.commercial_campaign_normalize(name) = public.commercial_campaign_normalize(product_name);
     end if;
     if product_matches = 0 then
@@ -231,9 +231,9 @@ begin
     else
       products_related := products_related + 1;
     end if;
-    source_key := coalesce(public.commercial_campaign_normalize(product_sku), public.commercial_campaign_normalize(product_name));
+    v_source_key := coalesce(public.commercial_campaign_normalize(product_sku), public.commercial_campaign_normalize(product_name));
     insert into public.commercial_campaign_import_entities(company_id, import_id, entity_type, entity_id, source_key)
-      values (p_target_company, import_row.id, 'product', product_id, source_key)
+      values (p_target_company, import_row.id, 'product', product_id, v_source_key)
       on conflict (company_id, import_id, entity_type, source_key) do nothing;
   end loop;
   update public.commercial_campaign_imports set source_metadata = source_metadata || jsonb_build_object('cost_unknown_products', cost_unknown_products) where id = import_row.id;
@@ -243,11 +243,11 @@ begin
     customer_name := trim(row->>'customer');
     product_sku := nullif(trim(row->>'code'), '');
     product_name := nullif(trim(row->>'product'), '');
-    select min(id), count(*) into customer_id, customer_matches from public.customers where company_id = p_target_company and public.commercial_campaign_normalize(name) = public.commercial_campaign_normalize(customer_name);
+    select (array_agg(id order by id))[1], count(*) into customer_id, customer_matches from public.customers where company_id = p_target_company and public.commercial_campaign_normalize(name) = public.commercial_campaign_normalize(customer_name);
     if product_sku is not null then
-      select min(id), count(*) into product_id, product_matches from public.products where company_id = p_target_company and public.commercial_campaign_normalize(sku) = public.commercial_campaign_normalize(product_sku);
+      select (array_agg(id order by id))[1], count(*) into product_id, product_matches from public.products where company_id = p_target_company and public.commercial_campaign_normalize(sku) = public.commercial_campaign_normalize(product_sku);
     else
-      select min(id), count(*) into product_id, product_matches from public.products where company_id = p_target_company and public.commercial_campaign_normalize(name) = public.commercial_campaign_normalize(product_name);
+      select (array_agg(id order by id))[1], count(*) into product_id, product_matches from public.products where company_id = p_target_company and public.commercial_campaign_normalize(name) = public.commercial_campaign_normalize(product_name);
     end if;
     if customer_matches = 1 and product_matches = 1 then
       base_value := public.commercial_campaign_parse_numeric(row->>'baseValue'); compare_value := public.commercial_campaign_parse_numeric(row->>'compareValue');

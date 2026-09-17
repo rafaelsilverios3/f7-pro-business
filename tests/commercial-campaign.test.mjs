@@ -6,6 +6,7 @@ import { buildAtomicCampaignPayload, buildCampaignPreview, calculateCanonicalVal
 const migration = fs.readFileSync(new URL('../supabase/migrations/0077_commercial_campaigns.sql', import.meta.url), 'utf8');
 const sourcePotentialMigration = fs.readFileSync(new URL('../supabase/migrations/0078_commercial_campaign_source_potential.sql', import.meta.url), 'utf8');
 const atomicMigration = fs.readFileSync(new URL('../supabase/migrations/0079_commercial_campaign_atomic_import.sql', import.meta.url), 'utf8');
+const atomicHardeningMigration = fs.readFileSync(new URL('../supabase/migrations/0080_fix_campaign_atomic_uuid_selection.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -31,6 +32,13 @@ test('importação atômica valida tenant, idempotência e rollback transacional
   assert.match(atomicMigration, /create temporary table campaign_fact_keys/);
   assert.match(atomicMigration, /campaign_import_unknown/);
   assert.doesNotMatch(atomicMigration, /insert into public\.(sales|quotes|crm_activities|stock_movements|financial_entries)/);
+});
+
+test('importação atômica falha fechada sem membership e corrige colisões de UUID', () => {
+  assert.match(atomicMigration, /actor_role not in \('admin', 'gestor', 'comercial'\)/);
+  assert.match(atomicHardeningMigration, /actor_role is null or actor_role not in/);
+  assert.match(atomicHardeningMigration, /array_agg\(id order by id\)/);
+  assert.match(atomicHardeningMigration, /stored_fact_id uuid/);
 });
 
 test('produto importado sem custo usa zero canônico com origem explicitamente desconhecida', () => {
