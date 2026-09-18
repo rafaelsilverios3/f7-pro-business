@@ -46,3 +46,18 @@ test('plan-gated educational tasks are not presented as mandatory when unavailab
   const visible = visibleOnboardingSteps('commerce', { canAccess: () => true, featureEnabled: () => false });
   assert.equal(visible.some((step) => step.id === 'intelligence'), false);
 });
+
+test('Etapa 20 follows the audited first-use order for each operational journey', () => {
+  const expected = {
+    commerce: ['company', 'customer', 'product', 'pricing', 'inventory', 'quote', 'sale', 'crm', 'dashboard_reports', 'intelligence'],
+    services: ['company', 'customer', 'service', 'pricing', 'quote', 'sale', 'crm', 'dashboard_reports', 'intelligence'],
+    production: ['company', 'customer', 'raw_material', 'product', 'pricing', 'inventory', 'quote', 'sale', 'crm', 'dashboard_reports', 'intelligence'],
+  };
+  for (const [journey, ids] of Object.entries(expected)) {
+    assert.deepEqual(ONBOARDING_STEPS[journey].map((step) => step.id), ids);
+    assert.equal(ONBOARDING_STEPS[journey][0].route, '/configuracoes');
+  }
+  const progress = buildOnboardingProgress(ONBOARDING_STEPS.commerce.slice(0, 2), { company });
+  assert.equal(progress.completed.company, true);
+  assert.equal(progress.completed.customer, false);
+});

@@ -16,10 +16,11 @@ import {
 
 const GROUPS = [
   { id: 'start', label: 'Comece aqui', ids: ['dashboard'] },
-  { id: 'cadastros', label: 'Cadastros', ids: ['clientes', 'catalogo', 'precificacao'] },
+  { id: 'cadastros', label: 'Cadastros', ids: ['clientes', 'catalogo', 'materia-prima', 'precificacao'] },
   { id: 'operacao', label: 'Operação', ids: ['estoque', 'compras', 'orcamentos', 'vendas', 'pdv', 'producao'] },
-  { id: 'gestao', label: 'Gestão', ids: ['financeiro', 'metas'] },
-  { id: 'inteligencia', label: 'Inteligência', ids: FUTURE_TRAINING_GUIDES.map((item) => item.id) },
+  { id: 'gestao', label: 'Gestão', ids: ['financeiro', 'metas', 'campanhas'] },
+  { id: 'inteligencia', label: 'Inteligência', ids: ['sales-hub', 'crm', 'marketing', 'opportunity-radar', 'automacoes', 'intelligence', 'supplier-intelligence', 'relatorios'] },
+  { id: 'sistema', label: 'Sistema', ids: ['configuracoes'] },
 ];
 
 const PERMISSIONS = {

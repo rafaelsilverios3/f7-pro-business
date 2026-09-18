@@ -39,6 +39,15 @@ test('educational state remains separate from plan and permission gates', () => 
   assert.match(TRAINING_GUIDES.find((guide) => guide.id === 'financeiro').whyItMatters, /não representa receita SaaS/i);
 });
 
+test('Academia covers the Stage 20 modules and resolves their real routes', () => {
+  for (const id of ['materia-prima', 'campanhas', 'configuracoes']) {
+    const guide = FUTURE_TRAINING_GUIDES.find((item) => item.id === id);
+    assert.ok(guide, `missing future guide ${id}`);
+    assert.equal(getTrainingGuide(id).id, id);
+    assert.ok(guide.route.startsWith('/'));
+  }
+});
+
 test('help drawer is accessible, mobile-safe and does not mutate onboarding evidence', () => {
   const source = fs.readFileSync(new URL('../src/components/training/ModuleHelp.jsx', import.meta.url), 'utf8');
   assert.match(source, /role="dialog"/);
@@ -47,4 +56,3 @@ test('help drawer is accessible, mobile-safe and does not mutate onboarding evid
   assert.match(source, /event\.key === 'Escape'/);
   assert.doesNotMatch(source, /markEducativeStepSeen|setJourney|buildOnboardingProgress/);
 });
-

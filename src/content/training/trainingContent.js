@@ -109,14 +109,17 @@ export const TRAINING_GUIDES = Object.freeze([
 ]);
 
 const FUTURE_GUIDES = Object.freeze([
+  { id: 'materia-prima', module: 'Matéria-prima', route: '/produtos', requiredFeature: 'products.view' },
   { id: 'sales-hub', module: 'Sales Hub', route: '/sales-hub', requiredFeature: 'sales_channels.view' },
   { id: 'crm', module: 'CRM', route: '/atendimento', requiredFeature: 'conversation.view' },
+  { id: 'campanhas', module: 'Campanhas', route: '/campanhas', requiredFeature: 'campaigns.view' },
   { id: 'marketing', module: 'Marketing', route: '/marketing', requiredFeature: 'reports.view' },
   { id: 'opportunity-radar', module: 'Opportunity Radar', route: '/opportunity-radar', requiredFeature: 'opportunity_radar.view' },
   { id: 'automacoes', module: 'Automações', route: '/automacoes', requiredFeature: 'automation.view' },
   { id: 'intelligence', module: 'F7 Intelligence', route: '/intelligence', requiredFeature: 'intelligence.view' },
   { id: 'supplier-intelligence', module: 'Supplier Intelligence', route: '/supplier-intelligence', requiredFeature: 'supplier_intelligence.view' },
   { id: 'relatorios', module: 'Relatórios', route: '/relatorios', requiredFeature: 'reports.view' },
+  { id: 'configuracoes', module: 'Configurações', route: '/configuracoes', requiredFeature: 'settings.view' },
 ]);
 
 export const FUTURE_TRAINING_GUIDES = FUTURE_GUIDES;
@@ -128,6 +131,8 @@ const aliases = new Map([
   ['/f7probusiness', 'dashboard'], ['/dashboard', 'dashboard'], ['/clientes', 'clientes'], ['/produtos', 'catalogo'],
   ['/precificacao', 'precificacao'], ['/estoque', 'estoque'], ['/compras', 'compras'], ['/orcamentos', 'orcamentos'],
   ['/vendas', 'vendas'], ['/pdv', 'pdv'], ['/producao', 'producao'], ['/financeiro', 'financeiro'], ['/metas', 'metas'],
+  ['/campanhas', 'campanhas'], ['/marketing', 'marketing'], ['/relatorios', 'relatorios'], ['/configuracoes', 'configuracoes'],
+  ['/materia-prima', 'materia-prima'],
   ['customer', 'clientes'], ['product', 'catalogo'], ['service', 'catalogo'], ['raw_material', 'catalogo'], ['pricing', 'precificacao'], ['inventory', 'estoque'], ['purchase', 'compras'], ['quote', 'orcamentos'], ['sale', 'vendas'], ['finance', 'financeiro'], ['goals', 'metas'],
 ]);
 

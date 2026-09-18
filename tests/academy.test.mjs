@@ -54,6 +54,14 @@ test('responsive and accessible training surfaces are structural', () => {
   assert.match(fs.readFileSync(new URL('../src/components/training/ModuleHelp.jsx', import.meta.url), 'utf8'), /role="dialog"/);
 });
 
+test('Stage 20 adds the lightweight future F7 guide without an avatar or side effects', () => {
+  const guide = fs.readFileSync(new URL('../src/components/training/F7GuidePrompt.jsx', import.meta.url), 'utf8');
+  assert.match(guide, /aria-label="Guia F7"/);
+  assert.match(guide, /to = '\/onboarding'/);
+  assert.doesNotMatch(guide, /three|canvas|insert\(|update\(|delete\(/i);
+  assert.match(fs.readFileSync(new URL('../src/pages/Onboarding.jsx', import.meta.url), 'utf8'), /F7GuidePrompt/);
+});
+
 test('local progress helpers fail safely without a browser storage', () => {
   assert.deepEqual(getSeenTrainingGuides('company', 'user'), {});
   assert.doesNotThrow(() => markTrainingGuideSeen('company', 'user', 'dashboard'));
