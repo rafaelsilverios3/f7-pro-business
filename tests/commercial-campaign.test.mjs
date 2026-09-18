@@ -9,6 +9,7 @@ const atomicMigration = fs.readFileSync(new URL('../supabase/migrations/0079_com
 const atomicHardeningMigration = fs.readFileSync(new URL('../supabase/migrations/0080_fix_campaign_atomic_uuid_selection.sql', import.meta.url), 'utf8');
 const setBasedMigration = fs.readFileSync(new URL('../supabase/migrations/0081_campaign_set_based_import.sql', import.meta.url), 'utf8');
 const uuidMatchingMigration = fs.readFileSync(new URL('../supabase/migrations/0082_campaign_import_uuid_matching_fix.sql', import.meta.url), 'utf8');
+const productCatalogRefreshMigration = fs.readFileSync(new URL('../supabase/migrations/0083_campaign_import_refresh_product_catalog.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -100,6 +101,16 @@ test('19.6F preserva as regras 0/1/múltiplas correspondências para clientes e 
   assert.equal(matchProduct({ code: 'SKU-1', name: 'qualquer' }, products).status, 'exact');
   assert.equal(matchProduct({ code: 'SKU-DUP', name: 'qualquer' }, products).status, 'ambiguous');
   assert.equal(matchProduct({ code: '', name: 'Produto A' }, products).status, 'probable');
+});
+
+test('19.6G atualiza o catálogo temporário após criar produtos novos', () => {
+  assert.match(productCatalogRefreshMigration, /create or replace function|pg_get_functiondef/);
+  assert.match(productCatalogRefreshMigration, /insert into campaign_product_catalog\(id, sku_key, name_key\)/);
+  assert.match(productCatalogRefreshMigration, /not exists \(select 1 from campaign_product_catalog c where c\.id = p\.id\)/);
+  assert.match(productCatalogRefreshMigration, /p\.company_id = p_target_company/);
+  assert.match(productCatalogRefreshMigration, /match_count = 1/);
+  assert.doesNotMatch(productCatalogRefreshMigration, /min\s*\(\s*[cp]\.id\s*\)/i);
+  assert.doesNotMatch(productCatalogRefreshMigration, /max\s*\(\s*[cp]\.id\s*\)/i);
 });
 
 test('produto importado sem custo usa zero canônico com origem explicitamente desconhecida', () => {
