@@ -93,18 +93,30 @@ export default function Campanhas() {
       : importState === 'error'
         ? { tone: 'error', title: 'Importação não concluída.', detail: 'Nenhuma confirmação de import batch foi registrada. Verifique o erro técnico abaixo antes de tentar novamente.' }
         : { tone: 'preview', title: 'Prévia · sem gravação.', detail: 'Os valores da planilha permanecem como origem; o F7 recalcula diferenças, percentuais e potencial. Nenhum registro é gravado nesta etapa.' };
+  const bannerTone = {
+    success: 'border-emerald-400/30 bg-emerald-950/40 text-emerald-100',
+    error: 'border-rose-400/30 bg-rose-950/40 text-rose-100',
+    loading: 'border-blue-400/30 bg-blue-950/40 text-blue-100',
+    preview: 'border-amber-400/30 bg-amber-950/40 text-amber-100',
+  }[statusBanner.tone];
+  const iconTone = {
+    success: 'text-emerald-300',
+    error: 'text-rose-300',
+    loading: 'text-blue-300',
+    preview: 'text-amber-300',
+  }[statusBanner.tone];
 
   return <div className="campaigns-page mx-auto w-full max-w-[1760px] min-w-0 px-3 py-5 sm:px-5 sm:py-7 xl:px-8">
     <PageHeader title="Campanhas comerciais" subtitle="Matching de origem, fila de recuperação e prévia para revisão humana." />
     {persisted && !persisted.partial && <PersistedQueue data={persisted} filter={filter} setFilter={setFilter} />}
-    <div className={`mt-4 rounded-2xl border p-4 text-sm ${statusBanner.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : statusBanner.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-900' : statusBanner.tone === 'loading' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-      <div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${statusBanner.tone === 'success' ? 'text-emerald-700' : statusBanner.tone === 'error' ? 'text-rose-700' : 'text-amber-700'}`} /><div><strong>{statusBanner.title}</strong> {statusBanner.detail}</div></div>
+    <div className={`campaign-status-banner mt-4 rounded-2xl border p-4 text-sm ${bannerTone}`}>
+      <div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${iconTone}`} /><div><strong>{statusBanner.title}</strong> {statusBanner.detail}</div></div>
     </div>
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-slate-900">Importar planilha para prévia</h2><p className="mt-1 text-xs text-slate-500">A aba esperada é “Plano de Acao”. O catálogo atual do tenant é consultado somente para matching.</p></div><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><UploadCloud className="h-4 w-4" />Selecionar XLSX<input type="file" accept=".xlsx,.xls" className="sr-only" onChange={(event) => loadPreview(event.target.files?.[0])} /></label></div>
       {fileName && <p className="mt-3 flex items-center gap-2 text-xs text-slate-500"><FileSpreadsheet className="h-4 w-4" />{fileName}</p>}
       {loading && <div className="mt-5 flex items-center gap-2 text-sm text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />Consultando clientes e produtos do tenant para gerar a prévia...</div>}
-      {error && <div className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
+      {error && <div className="mt-4 rounded-lg border border-rose-400/30 bg-rose-950/40 p-3 text-sm text-rose-200">{error}</div>}
     </section>
     {preview && <>
       <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

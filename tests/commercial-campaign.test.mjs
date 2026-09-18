@@ -212,6 +212,8 @@ test('frontend não promove batch sem fatos e targets a sucesso operacional', ()
   assert.match(page, /setImportState\(partial \? 'partial' : 'success'\)/);
   assert.match(page, /Importação parcial detectada/);
   assert.match(page, /persisted && !persisted\.partial/);
+  assert.match(page, /campaign-status-banner/);
+  assert.match(page, /bg-rose-950\/40/);
 });
 
 test('payload de volume 19.6D é preparado sem matching repetitivo', () => {
