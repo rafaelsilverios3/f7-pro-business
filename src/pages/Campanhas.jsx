@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, ShieldCheck, UploadCloud } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { useOutletContext } from 'react-router-dom';
-import { buildFullCampaignPreview, importCommercialCampaign, listCampaigns, listSuccessfulCampaignImports, parseCampaignWorkbook } from '@/services/commercialCampaignService';
+import { buildFullCampaignPreview, importCommercialCampaign, listCampaigns, listSuccessfulCampaignImports, parseCampaignWorkbook, resumeCommercialCampaignImport } from '@/services/commercialCampaignService';
 import { supabaseProvider } from '@/data/providers/supabaseProvider';
 
 const QUEUE_FILTERS = ['Todos', 'P1', 'P2', 'P3', 'Não contatados', 'Retorno hoje', 'Atrasados', 'Em negociação', 'Cotação', 'Recuperados', 'Perdidos'];
@@ -19,6 +19,7 @@ export default function Campanhas() {
   const [reviewedProducts, setReviewedProducts] = useState({});
   const [persisted, setPersisted] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [importState, setImportState] = useState('preview');
 
   const loadPersisted = async () => {
@@ -78,10 +79,27 @@ export default function Campanhas() {
     try {
       const result = await importCommercialCampaign({ company, file });
       await loadPersisted();
-      if (!result?.importId || result.status === 'already_imported' || result.status === 'imported') setImportState('success');
       if (!result?.importId) throw new Error('A importação não retornou um batch confirmado.');
+      if (result.status === 'already_imported') setImportState('partial');
+      if (result.status === 'imported' && Number(result.counts?.facts_blocked || 0) === 0 && Number(result.counts?.targets_blocked || 0) === 0) setImportState('success');
     } catch (cause) { setImportState('error'); setError(cause?.message || 'A importação não foi concluída.'); }
     finally { setImporting(false); }
+  };
+
+  const resumeImport = async () => {
+    if (!company?.id || !persisted?.partial) return;
+    const input = document.querySelector('input[type="file"]');
+    const file = input?.files?.[0];
+    if (!file) { setError('Selecione novamente o mesmo XLSX usado no batch parcial antes de concluir.'); return; }
+    const phrase = window.prompt('Para concluir o batch parcial, digite: CONCLUIR IMPORTAÇÃO PENDENTE');
+    if (phrase !== 'CONCLUIR IMPORTAÇÃO PENDENTE') return;
+    setResuming(true); setImportState('importing'); setError('');
+    try {
+      const result = await resumeCommercialCampaignImport({ company, file, importRecord: persisted.importRecord });
+      if (!result?.importId) throw new Error('A continuação não retornou um batch confirmado.');
+      await loadPersisted();
+    } catch (cause) { setImportState('error'); setError(cause?.message || 'Não foi possível concluir a campanha pendente.'); }
+    finally { setResuming(false); }
   };
 
   const statusBanner = importState === 'partial'
@@ -112,6 +130,10 @@ export default function Campanhas() {
     <div className={`campaign-status-banner mt-4 rounded-2xl border p-4 text-sm ${bannerTone}`}>
       <div className="flex items-start gap-3"><ShieldCheck className={`mt-0.5 h-5 w-5 shrink-0 ${iconTone}`} /><div><strong>{statusBanner.title}</strong> {statusBanner.detail}</div></div>
     </div>
+    {persisted?.partial && <section className="mt-5 rounded-2xl border border-rose-400/30 bg-rose-950/20 p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-rose-100">Concluir campanha pendente</h2><p className="mt-1 text-xs text-rose-200/80">Clientes e produtos já estão preservados. Esta ação cria somente os fatos históricos e as oportunidades ainda ausentes, usando o mesmo arquivo e o mesmo batch.</p></div><button type="button" onClick={resumeImport} disabled={resuming || importing} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{resuming ? 'Concluindo...' : 'Concluir importação pendente'}</button></div>
+      <p className="mt-3 text-xs text-rose-200/70">Nenhuma venda, orçamento, atividade CRM, estoque ou financeiro será criado.</p>
+    </section>}
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-slate-900">Importar planilha para prévia</h2><p className="mt-1 text-xs text-slate-500">A aba esperada é “Plano de Acao”. O catálogo atual do tenant é consultado somente para matching.</p></div><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"><UploadCloud className="h-4 w-4" />Selecionar XLSX<input type="file" accept=".xlsx,.xls" className="sr-only" onChange={(event) => loadPreview(event.target.files?.[0])} /></label></div>
       {fileName && <p className="mt-3 flex items-center gap-2 text-xs text-slate-500"><FileSpreadsheet className="h-4 w-4" />{fileName}</p>}

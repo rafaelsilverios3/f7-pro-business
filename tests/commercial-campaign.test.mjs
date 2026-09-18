@@ -10,6 +10,7 @@ const atomicHardeningMigration = fs.readFileSync(new URL('../supabase/migrations
 const setBasedMigration = fs.readFileSync(new URL('../supabase/migrations/0081_campaign_set_based_import.sql', import.meta.url), 'utf8');
 const uuidMatchingMigration = fs.readFileSync(new URL('../supabase/migrations/0082_campaign_import_uuid_matching_fix.sql', import.meta.url), 'utf8');
 const productCatalogRefreshMigration = fs.readFileSync(new URL('../supabase/migrations/0083_campaign_import_refresh_product_catalog.sql', import.meta.url), 'utf8');
+const resumePartialMigration = fs.readFileSync(new URL('../supabase/migrations/0084_resume_partial_campaign_import.sql', import.meta.url), 'utf8');
 
 test('migration aditiva cria núcleo transversal com RLS e isolamento por tenant', () => {
   for (const table of ['commercial_campaigns', 'commercial_campaign_imports', 'commercial_campaign_facts', 'commercial_campaign_targets', 'commercial_campaign_outcomes']) {
@@ -112,6 +113,19 @@ test('19.6G atualiza o catálogo temporário após criar produtos novos', () => 
   assert.match(productCatalogRefreshMigration, /function_sql := replace\(function_sql, old_anchor, new_anchor\)/);
   assert.doesNotMatch(productCatalogRefreshMigration, /min\s*\(\s*[cp]\.id\s*\)/i);
   assert.doesNotMatch(productCatalogRefreshMigration, /max\s*\(\s*[cp]\.id\s*\)/i);
+});
+
+test('19.6H conclui somente derivados de um batch parcial com matching seguro e idempotência', () => {
+  assert.match(resumePartialMigration, /create or replace function public\.resume_commercial_campaign_import_atomic/);
+  assert.match(resumePartialMigration, /company_id = p_target_company and file_hash = p_file_hash and file_name = p_file_name/);
+  assert.match(resumePartialMigration, /case when count\(c\.id\) = 1 then \(array_agg\(c\.id\)\)\[1\] else null end/);
+  assert.match(resumePartialMigration, /case when count\(p\.id\) = 1 then \(array_agg\(p\.id\)\)\[1\] else null end/);
+  assert.match(resumePartialMigration, /on conflict|not exists/);
+  assert.match(resumePartialMigration, /already_complete/);
+  assert.match(resumePartialMigration, /grant execute on function public\.resume_commercial_campaign_import_atomic/);
+  assert.doesNotMatch(resumePartialMigration, /insert into public\.(customers|products|sales|quotes|crm_activities|stock_movements|financial_entries)/);
+  assert.doesNotMatch(resumePartialMigration, /min\s*\(\s*[cp]\.id\s*\)/i);
+  assert.doesNotMatch(resumePartialMigration, /max\s*\(\s*[cp]\.id\s*\)/i);
 });
 
 test('produto importado sem custo usa zero canônico com origem explicitamente desconhecida', () => {

@@ -80,6 +80,22 @@ export async function importCommercialCampaign({ company, file }) {
   return { status: result?.status, alreadyImported: result?.status === 'already_imported', campaignId: result?.campaign_id, importId: result?.import_id, counts: result?.counts || {} };
 }
 
+export async function resumeCommercialCampaignImport({ company, file, importRecord }) {
+  if (!company?.id || !file || !importRecord?.id) throw new Error('Selecione novamente o arquivo da campanha parcial.');
+  const workbook = await parseCampaignWorkbook(file);
+  if (workbook.sourceFileHash !== importRecord.file_hash || workbook.sourceFileName !== importRecord.file_name) {
+    throw new Error('O arquivo selecionado não corresponde ao batch parcial registrado.');
+  }
+  const result = await supabaseProvider.rpc('resume_commercial_campaign_import_atomic', {
+    p_target_company: company.id,
+    p_file_name: workbook.sourceFileName,
+    p_file_hash: workbook.sourceFileHash,
+    p_history_rows: workbook.historyRows,
+    p_action_rows: workbook.actionRows,
+  });
+  return { status: result?.status, campaignId: result?.campaign_id, importId: result?.import_id, counts: result?.counts || {} };
+}
+
 export async function loadTenantCatalog(companyId) {
   if (!companyId) throw new Error('Empresa não selecionada.');
   const [customers, products] = await Promise.all([
