@@ -108,7 +108,8 @@ test('19.6G atualiza o catálogo temporário após criar produtos novos', () => 
   assert.match(productCatalogRefreshMigration, /insert into campaign_product_catalog\(id, sku_key, name_key\)/);
   assert.match(productCatalogRefreshMigration, /not exists \(select 1 from campaign_product_catalog c where c\.id = p\.id\)/);
   assert.match(productCatalogRefreshMigration, /p\.company_id = p_target_company/);
-  assert.match(productCatalogRefreshMigration, /match_count = 1/);
+  assert.match(productCatalogRefreshMigration, /old_anchor text := 'update campaign_product_map m'/);
+  assert.match(productCatalogRefreshMigration, /function_sql := replace\(function_sql, old_anchor, new_anchor\)/);
   assert.doesNotMatch(productCatalogRefreshMigration, /min\s*\(\s*[cp]\.id\s*\)/i);
   assert.doesNotMatch(productCatalogRefreshMigration, /max\s*\(\s*[cp]\.id\s*\)/i);
 });
