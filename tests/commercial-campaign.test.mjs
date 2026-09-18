@@ -242,6 +242,15 @@ test('frontend não promove batch sem fatos e targets a sucesso operacional', ()
   assert.match(page, /bg-rose-950\/40/);
 });
 
+test('painel persistido deriva universos e potencial dos dados canônicos', () => {
+  const page = fs.readFileSync(new URL('../src/pages/Campanhas.jsx', import.meta.url), 'utf8');
+  assert.match(page, /target\.customer_id/);
+  assert.match(page, /target\.product_id/);
+  assert.match(page, /canonicalPotential/);
+  assert.match(page, /target\.canonical_potential/);
+  assert.match(page, /Potencial F7/);
+});
+
 test('payload de volume 19.6D é preparado sem matching repetitivo', () => {
   const customerRows = Array.from({ length: 291 }, (_, index) => ({ name: `Cliente ${index + 1}` }));
   const productRows = Array.from({ length: 32 }, (_, index) => ({ name: `Produto ${index + 1}`, sku: `SKU-${index + 1}` }));
