@@ -109,6 +109,7 @@ export function isNewCompany(company, snapshot = {}) {
   return Boolean(company?.id && company.onboarding_completed !== true && operationalCount === 0);
 }
 
+/** @param {string | null | undefined} journey @param {{canAccess?: (permission?: string) => boolean, featureEnabled?: (feature?: string) => boolean}} [options] */
 export function visibleOnboardingSteps(journey, { canAccess = () => true, featureEnabled = () => true } = {}) {
   return (definitions[journey] || []).filter((step) => canAccess(step.permission)).map((step) => ({ ...step, journey, locked: Boolean(step.requiredFeature && !featureEnabled(step.requiredFeature)) })).filter((step) => !step.locked);
 }

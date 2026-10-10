@@ -1,5 +1,11 @@
 import { createPeriodContext, matchesPeriod } from './metrics.js';
 
+/** @typedef {import('../types/f7Domain').Product} Product */
+/** @typedef {import('../types/f7Domain').Sale} Sale */
+/** @typedef {import('../types/f7Domain').Purchase} Purchase */
+/** @typedef {import('../types/f7Domain').PurchaseItem} PurchaseItem */
+/** @typedef {import('../types/f7Domain').Supplier} Supplier */
+
 const OPEN_PURCHASE_STATUSES = new Set(['pending', 'approved', 'sent', 'ordered', 'confirmed', 'in_transit']);
 const PARTIAL_PURCHASE_STATUSES = new Set(['partial']);
 const CANCELLED_SALE_STATUSES = new Set(['cancelled', 'canceled']);
@@ -83,6 +89,7 @@ function reasonFor({ stock, minimum, minimumConfigured, demandQuantity, demandDa
  * Deterministic, factual replenishment analysis. It only reads tenant-scoped
  * rows and never creates orders, changes stock or chooses a supplier.
  */
+/** @param {{companyId?: string, products?: Product[], sales?: Sale[], purchases?: Purchase[], purchaseItems?: PurchaseItem[], suppliers?: Supplier[], demandDays?: number, now?: Date}} [options] */
 export function analyzePurchaseNeeds({ companyId, products = [], sales = [], purchases = [], purchaseItems = [], suppliers = [], demandDays = 30, now = new Date() } = {}) {
   if (!companyId) throw new Error('company_id é obrigatório para analisar reposição.');
   const productRows = scoped(products, companyId).filter((product) => product.item_type !== 'service');

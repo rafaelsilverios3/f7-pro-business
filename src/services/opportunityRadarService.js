@@ -9,8 +9,7 @@ async function ensureRadarAllowed(companyId) {
   const { data, error } = await getSupabaseClient().rpc('company_has_feature', { target_company: companyId, feature: 'opportunity_radar' });
   if (error) throw error;
   if (!data) {
-    const blocked = new Error('FEATURE_NOT_AVAILABLE');
-    blocked.code = 'FEATURE_NOT_AVAILABLE';
+    const blocked = Object.assign(new Error('FEATURE_NOT_AVAILABLE'), { code: 'FEATURE_NOT_AVAILABLE' });
     throw blocked;
   }
 }
@@ -49,6 +48,7 @@ export const opportunityRadarService = {
   async scan(companyId, now = new Date()) {
     await ensureRadarAllowed(companyId);
     const [customerRows, productRows, saleRows, existing] = await Promise.all([customers.list(companyId, '-created_date'), products.list(companyId, '-created_date'), sales.list(companyId, '-sale_date'), opportunities.list(companyId, '-created_date')]);
+    /** @type {Array<{type: string, at?: string, signal_type?: string, radar_key?: string, counts?: {signals: number, created: number, updated: number}}>} */
     const events = [{ type: RADAR_EVENT_TYPES[0], at: new Date(now).toISOString() }];
     const detected = detectRadarSignals({ companyId, customers: customerRows, products: productRows, sales: saleRows, now });
     const byKey = new Map(existing.map((item) => [item.metadata?.radar_key, item]));
