@@ -28,3 +28,7 @@ $$;
 
 revoke all on function public.company_has_feature(uuid, text) from public, anon;
 grant execute on function public.company_has_feature(uuid, text) to authenticated, service_role;
+-- Conceptual rollback: restore the exact company_has_feature definition from
+-- the immediately preceding migration (0040) and its prior EXECUTE grants.
+-- This changes entitlement decisions, not stored data; evaluate any access
+-- granted while this version was active before reverting the gate.

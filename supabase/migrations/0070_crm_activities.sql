@@ -135,3 +135,8 @@ for update using (
 
 grant select, insert, update on table public.crm_activities to authenticated;
 revoke delete on table public.crm_activities from authenticated;
+-- Conceptual rollback: remove this migration's policies, triggers, helper,
+-- grants, indexes, and crm_activities table in dependency order after disabling
+-- dependent app/worker paths. Dropping the table permanently removes activity
+-- history; export/backup it first. Reverting policy/trigger DDL alone preserves
+-- rows but may expose invalid links or stop timestamp/tenant validation.

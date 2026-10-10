@@ -43,3 +43,7 @@ begin
   execute function_sql;
 end;
 $$;
+-- Conceptual rollback: restore the exact import RPC body from 0082 (or the
+-- verified pre-0083 database definition). This DO block only rewrites function
+-- code; it does not reverse imports already committed under that code. Reconcile
+-- persisted campaign/customer/product rows separately if their content is at issue.

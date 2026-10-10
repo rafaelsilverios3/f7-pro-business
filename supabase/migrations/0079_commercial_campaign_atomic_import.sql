@@ -286,3 +286,9 @@ $$;
 
 revoke all on function public.import_commercial_campaign_atomic(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb) from public, anon;
 grant execute on function public.import_commercial_campaign_atomic(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb) to authenticated;
+-- Conceptual rollback: restore prior definitions of the campaign helper/import
+-- RPCs and grants, then remove import-entity policies/table/index and cost_source
+-- only after checking consumers. Imports may have created customers/products,
+-- changed product cost provenance, and persisted campaign history. There is no
+-- safe automatic inverse; export affected rows, reconcile references and restore
+-- costs/provenance from a pre-import backup or use an audited forward correction.
