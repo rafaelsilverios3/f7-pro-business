@@ -2,7 +2,7 @@
 
 ## Escopo desta etapa
 
-F7 Commerce é uma central de navegação para capacidades comerciais já existentes no F7 PRO BUSINESS. A rota `/f7-commerce` usa o `Layout`, `CompanyGuard` e a permissão existente `sales_channels.view`. O painel não cria registros, chama integrações, altera estoque ou consulta tabelas adicionais.
+F7 Commerce é uma central de navegação para capacidades comerciais já existentes no F7 PRO BUSINESS. A rota `/f7-commerce` usa o `Layout`, `CompanyGuard` e a permissão existente `sales_channels.view`. Os links de cada módulo usam suas permissões de rota; no provider Supabase, a central lê `company_users` para filtrar os links pelo papel da associação ativa. O painel não cria registros, chama integrações ou altera estoque.
 
 Os cartões Mercado Livre e Shopee são apenas estado informativo: OAuth, anúncios, sincronização de catálogo/estoque/preço, pedidos externos e webhooks não estão implementados nesta etapa.
 

@@ -2,48 +2,12 @@ import React from 'react';
 import { ArrowUpRight, Boxes, CircleOff, Package, ShoppingCart, Store, Target, Truck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '@/components/layout/PageHeader';
+import { useAuth } from '@/lib/AuthContext';
+import { useCompany } from '@/lib/useCompany';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { getVisibleCommerceWorkspaces } from '@/lib/commerceNavigation';
 
-const workspaces = [
-  {
-    title: 'Fornecedores',
-    description: 'Reaproveite o cadastro atual de fornecedores, compras e inteligência de fornecedores.',
-    icon: Truck,
-    links: [
-      { to: '/compras', label: 'Compras e fornecedores' },
-      { to: '/supplier-intelligence', label: 'Inteligência de fornecedores' },
-    ],
-  },
-  {
-    title: 'Catálogo e estoque',
-    description: 'Gerencie produtos, preços e disponibilidade nos módulos existentes.',
-    icon: Package,
-    links: [
-      { to: '/produtos', label: 'Catálogo de produtos' },
-      { to: '/estoque', label: 'Estoque' },
-      { to: '/precificacao', label: 'Precificação' },
-    ],
-  },
-  {
-    title: 'Pedidos',
-    description: 'Acesse vendas, orçamentos e pedidos de compra já mantidos pelo sistema.',
-    icon: ShoppingCart,
-    links: [
-      { to: '/vendas', label: 'Vendas' },
-      { to: '/orcamentos', label: 'Orçamentos' },
-      { to: '/compras', label: 'Pedidos de compra' },
-    ],
-  },
-  {
-    title: 'Oportunidades comerciais',
-    description: 'Use as oportunidades e sinais de mercado existentes, sem criar um pipeline paralelo.',
-    icon: Target,
-    links: [
-      { to: '/opportunities', label: 'F7 Opportunity' },
-      { to: '/market-intelligence', label: 'Market Intelligence' },
-      { to: '/opportunity-radar', label: 'Opportunity Radar' },
-    ],
-  },
-];
+const workspaceIcons = { supplier: Truck, catalog: Package, orders: ShoppingCart, opportunities: Target };
 
 function WorkspaceCard({ title, description, icon: Icon, links }) {
   return (
@@ -73,7 +37,7 @@ function MarketplaceReadinessCard({ name }) {
     <article className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-medium text-slate-900">{name}</h3>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+        <span className="commerce-status inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium">
           <CircleOff className="h-3.5 w-3.5" aria-hidden="true" /> Não conectado
         </span>
       </div>
@@ -85,18 +49,44 @@ function MarketplaceReadinessCard({ name }) {
 }
 
 export default function Commerce() {
+  const { user } = useAuth();
+  const { company } = useCompany();
+  const [memberRole, setMemberRole] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? '' : String(user?.role || '').toLowerCase());
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) {
+      setMemberRole(String(user?.role || '').toLowerCase());
+      return undefined;
+    }
+    getSupabaseClient()
+      .from('company_users')
+      .select('role')
+      .eq('company_id', company.id)
+      .eq('user_id', user.id)
+      .eq('active', true)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled) setMemberRole(error ? '' : String(data?.role || '').toLowerCase());
+      })
+      .catch(() => { if (!cancelled) setMemberRole(''); });
+    return () => { cancelled = true; };
+  }, [company?.id, user?.id, user?.role]);
+
+  const visibleWorkspaces = getVisibleCommerceWorkspaces(memberRole);
+
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 sm:py-8">
+    <main data-commerce className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 sm:py-8">
       <PageHeader
         title="F7 Commerce"
         subtitle="Central para os fluxos comerciais existentes e a futura operação multicanal."
       />
 
-      <section aria-labelledby="commerce-marketplaces" className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-5">
+      <section aria-labelledby="commerce-marketplaces" className="commerce-marketplace-section mb-5 rounded-2xl border p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-700 shadow-sm">
-              <Store className="h-5 w-5" aria-hidden="true" />
+              <Store className="commerce-muted-icon h-5 w-5" aria-hidden="true" />
             </span>
             <div>
               <h2 id="commerce-marketplaces" className="font-semibold text-slate-900">Marketplaces</h2>
@@ -119,11 +109,11 @@ export default function Commerce() {
       </section>
 
       <section aria-label="Áreas comerciais existentes" className="grid gap-4 md:grid-cols-2">
-        {workspaces.map((workspace) => <WorkspaceCard key={workspace.title} {...workspace} />)}
+        {visibleWorkspaces.map((workspace) => <WorkspaceCard key={workspace.title} {...workspace} icon={workspaceIcons[workspace.iconName]} />)}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2">
           <div className="flex items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-              <Boxes className="h-5 w-5" aria-hidden="true" />
+              <Boxes className="commerce-muted-icon h-5 w-5" aria-hidden="true" />
             </span>
             <div>
               <h2 className="font-semibold text-slate-900">Canais e integrações</h2>
