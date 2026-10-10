@@ -90,7 +90,11 @@ test('billing webhook validates Mercado Pago timestamps in Unix seconds and fail
   assert.match(webhook, /const tsSeconds = Number\(value\)/);
   assert.doesNotMatch(webhook, /Math\.abs\(Date\.now\(\) - Number\(ts\)\)/);
 
-  const helperSource = webhook.match(/const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS[\s\S]*?;\n\nconst resolveDataId/)?.[0]?.replace(/\n\nconst resolveDataId[\s\S]*$/, '').replace(/\(value: string, nowSeconds =/, '(value, nowSeconds =');
+  const helperStart = webhook.indexOf('const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS =');
+  const helperEnd = webhook.indexOf('const resolveDataId', helperStart);
+  const helperSource = helperStart >= 0 && helperEnd > helperStart
+    ? webhook.slice(helperStart, helperEnd).trim().replace(/\(value: string, nowSeconds =/, '(value, nowSeconds =')
+    : null;
   assert.ok(helperSource, 'timestamp helper must remain isolated and testable');
   const context = {};
   vm.runInNewContext(`${helperSource}; this.validate = isWebhookTimestampValid;`, context);

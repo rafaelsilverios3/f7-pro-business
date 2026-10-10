@@ -31,7 +31,7 @@ test('mínimo ausente não inventa valor ou quantidade', () => {
 });
 
 test('compra aberta é descontada da quantidade mínima sugerida', () => {
-  const result = analyzePurchaseNeeds({ companyId, products: [product('p1', 2, 10)], sales: [sale('s1', 'p1', 2)], purchases: [purchase('po1', 'pending', 'sup1')], purchaseItems: [item('po1', 'p1', 8)] });
+  const result = analyzePurchaseNeeds({ companyId, products: [product('p1', 2, 10)], sales: [sale('s1', 'p1', 2)], purchases: [purchase('po1', 'pending', 'sup1')], purchaseItems: [item('po1', 'p1', 8)], now: new Date('2026-09-13T12:00:00Z') });
   assert.equal(result.rows[0].open_purchase_quantity, 8);
   assert.equal(result.rows[0].projected_stock, 10);
   assert.equal(result.rows[0].suggested_quantity, 0);
