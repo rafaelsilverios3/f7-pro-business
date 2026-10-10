@@ -5,6 +5,10 @@ const dateMs = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+/** @typedef {import('../types/f7Domain').Customer} Customer */
+/** @typedef {import('../types/f7Domain').Product} Product */
+/** @typedef {import('../types/f7Domain').Sale} Sale */
+
 const daysBetween = (from, to) => {
   const a = dateMs(from); const b = dateMs(to);
   return a === null || b === null ? null : Math.max(0, Math.floor((b - a) / DAY_MS));
@@ -22,6 +26,7 @@ const saleDate = (sale) => sale?.sale_date || sale?.created_at || sale?.created_
  * Detects actionable signals from real tenant data. This module is deliberately
  * deterministic: no LLM call is needed to decide whether a threshold was met.
  */
+/** @param {{companyId?: string, customers?: Customer[], products?: Product[], sales?: Sale[], now?: Date}} [options] */
 export function detectRadarSignals({ companyId, customers = [], products = [], sales = [], now = new Date() } = {}) {
   if (!companyId) throw new Error('company_id é obrigatório.');
   const currentMs = dateMs(now) || Date.now();

@@ -31,6 +31,7 @@ export function calculateCanonicalValues(baseValue, compareValue) {
   return { base, compare, difference, variationPct, potential: Math.max(0, base - compare), valid: true };
 }
 
+/** @param {{baseValue?: unknown, compareValue?: unknown, sourceDifference?: unknown, sourcePotential?: unknown, sourceVariationPct?: unknown}} values */
 export function reconcileCampaignValues({ baseValue, compareValue, sourceDifference, sourcePotential, sourceVariationPct }) {
   const canonical = calculateCanonicalValues(baseValue, compareValue);
   const sourceDiff = toFiniteNumber(sourceDifference);
@@ -116,6 +117,7 @@ function uniqueBy(rows, key) {
   });
 }
 
+/** @param {{ customerRows?: Array<{ id?: string, name?: string }>, productRows?: Array<{ id?: string, name?: string, sku?: string }>, historyRows?: Array<{ customer?: string, code?: string, product?: string, baseValue?: unknown, compareValue?: unknown, sourceDifference?: unknown, sourcePotential?: unknown, sourceVariationPct?: unknown }>, actionRows?: Array<Record<string, unknown>>, managementSummary?: { potential?: number | string, opportunities?: number | string, p1?: number | string, p2?: number | string, p3?: number | string }, customers?: Array<{ id?: string, name?: string }>, products?: Array<{ id?: string, name?: string, sku?: string, barcode?: string }>}} options */
 export function summarizeCampaignUniverses({ customerRows = [], productRows = [], historyRows = [], actionRows = [], managementSummary = {}, customers = [], products = [] }) {
   const customerMatches = uniqueBy(customerRows, (row) => row.name).map((row) => ({ ...row, match: matchCustomer(row.name, customers) }));
   const productMatches = uniqueBy(productRows, (row) => row.sku || row.name).map((row) => ({ ...row, match: matchProduct({ code: row.sku, name: row.name }, products) }));

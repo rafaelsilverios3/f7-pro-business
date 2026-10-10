@@ -101,3 +101,8 @@ comment on column public.automations.claim_token is 'short-lived server-side cla
 drop policy if exists automations_select on public.automations;
 create policy automations_select on public.automations for select to authenticated
   using (public.current_company_role(company_id) in ('admin','gestor','comercial','vendedor'));
+-- Conceptual rollback: restore the prior automations_select policy and prior
+-- definitions/grants for the three scheduler RPCs, then remove this migration's
+-- indexes, constraints, and added scheduler columns. Dropping columns discards
+-- schedules, claims, results, and run metadata written since application; back
+-- up/export those values first and reconfigure scheduled automations afterward.
