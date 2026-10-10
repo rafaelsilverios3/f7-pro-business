@@ -7,3 +7,7 @@ alter table public.billing_webhook_events
 
 create index if not exists idx_billing_checkout_provider_order
   on public.billing_checkout_sessions(provider, provider_order_id);
+-- Conceptual rollback: drop the added index and columns only after confirming
+-- no application/backend uses them. provider_order_id and error_message values
+-- written after application would be lost; export them first. No original
+-- values can be reconstructed from the schema after those columns are dropped.

@@ -285,3 +285,8 @@ $$;
 
 revoke all on function public.import_commercial_campaign_atomic(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb) from public, anon;
 grant execute on function public.import_commercial_campaign_atomic(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb) to authenticated;
+-- Conceptual rollback: restore the prior 0080 import RPC definition/grants and
+-- drop the three normalized lookup indexes after confirming no dependent query
+-- requires them. The function may have committed campaign, customer, product,
+-- fact, and target rows; reversing its code does not undo those writes. Backup
+-- and reconcile imported records explicitly; no automatic data rollback exists.

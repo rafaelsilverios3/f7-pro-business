@@ -60,3 +60,8 @@ begin
 end; $$;
 revoke all on function public.company_has_feature(uuid, text) from public, anon;
 grant execute on function public.company_has_feature(uuid, text) to authenticated, service_role;
+-- Conceptual rollback: restore the prior create_company_with_owner and
+-- company_has_feature definitions/grants, then remove the trial columns and
+-- restore the previous subscription status constraint. New trial records,
+-- status transitions, trial_used flags, and audit rows are not undone by that
+-- DDL; preserve a backup and reconcile affected subscriptions before reverting.

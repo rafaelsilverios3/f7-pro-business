@@ -46,3 +46,7 @@ end; $$;
 
 
 grant execute on function public.save_production_recipe(jsonb) to authenticated;
+-- Conceptual rollback: restore the save_production_recipe definition immediately
+-- preceding this migration (0054) only after reversing later replacements such
+-- as 0058. This restores behavior, not recipe rows or product costs changed by
+-- calls made afterward; those values require a pre-change backup to recover.
