@@ -7,9 +7,12 @@
     "src/lib/permissions.js",
     "src/lib/statuses.js",
     "src/lib/domainErrors.js",
+    "src/lib/campaignWorkbookGuards.js",
+    "src/lib/campaignWorkbookParser.js",
     "src/data/**/*.js",
     "src/services/**/*.js",
-    "src/schemas/**/*.js"
-    ,"src/vite-env.d.ts"
+    "src/schemas/**/*.js",
+    "src/vite-env.d.ts",
+    "src/workers/**/*.js"
   ]
 }

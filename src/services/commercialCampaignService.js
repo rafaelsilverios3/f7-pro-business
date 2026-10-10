@@ -1,91 +1,39 @@
 import { supabaseProvider } from '@/data/providers/supabaseProvider';
-import { buildAtomicCampaignPayload, buildCampaignPreview, campaignTargetFromFact, normalizeCampaignText, summarizeCampaignUniverses } from '@/lib/commercialCampaign';
+import { buildAtomicCampaignPayload, buildCampaignPreview, campaignTargetFromFact, summarizeCampaignUniverses } from '@/lib/commercialCampaign';
+import { assertCampaignResumeWorkbookMatches } from '@/lib/campaignWorkbookGuards';
+import { parseCampaignWorkbookInWorker } from '@/services/campaignWorkbookWorker';
 
-const workbookHeaders = {
-  priority: ['prioridade', 'priority'],
-  customer: ['cliente', 'customer'],
-  code: ['codigo', 'código', 'sku', 'part number'],
-  product: ['produto', 'descricao', 'descrição', 'item'],
-  baseValue: ['fy2025', 'base', 'ano base'],
-  compareValue: ['fy2026', 'compare', 'ano comparado'],
-  sourceDifference: ['variação r$', 'variacao r$', 'diferença r$', 'diferenca r$'],
-  sourcePotential: ['oportunidade r$', 'potencial r$', 'potential'],
-  sourceVariationPct: ['variação %', 'variacao %', 'percentual', 'queda %'],
-};
-
-function normalizeHeader(value) {
-  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+export async function parseWorkbookFile(file, options = {}) {
+  const workbook = await parseCampaignWorkbook(file, options);
+  return workbook.actionRows;
 }
 
-function getValue(row, headers, aliases) {
-  const index = headers.findIndex((header) => aliases.includes(normalizeHeader(header)));
-  return index < 0 ? null : row[index];
+export async function parseCampaignWorkbook(file, options = {}) {
+  return parseCampaignWorkbookInWorker(file, options);
 }
 
-export function parseActionSheetRows(rows, sheet = 'Plano de Acao') {
-  if (!Array.isArray(rows) || rows.length === 0) return [];
-  const headers = rows[0] || [];
-  return rows.slice(1).map((row, index) => ({
-    sheet,
-    sourceRow: index + 2,
-    priority: getValue(row, headers, workbookHeaders.priority),
-    customer: getValue(row, headers, workbookHeaders.customer),
-    code: getValue(row, headers, workbookHeaders.code),
-    product: getValue(row, headers, workbookHeaders.product),
-    baseValue: getValue(row, headers, workbookHeaders.baseValue),
-    compareValue: getValue(row, headers, workbookHeaders.compareValue),
-    sourceDifference: getValue(row, headers, workbookHeaders.sourceDifference),
-    sourcePotential: getValue(row, headers, workbookHeaders.sourcePotential),
-    sourceVariationPct: getValue(row, headers, workbookHeaders.sourceVariationPct),
-  })).filter((row) => row.customer || row.code || row.product);
+function assertWorkbookMatchesFile(workbook, file) {
+  if (!workbook || !Array.isArray(workbook.actionRows) || !/^[a-f0-9]{64}$/.test(workbook.sourceFileHash || '')) {
+    throw new Error('A prévia segura da planilha expirou. Selecione novamente o arquivo para analisá-lo.');
+  }
+  if (file && (workbook.sourceFileName !== file.name || workbook.sourceFileSize !== file.size)) {
+    throw new Error('O arquivo selecionado mudou após a prévia. Gere uma nova prévia antes de importar.');
+  }
 }
 
-export async function parseWorkbookFile(file) {
-  const XLSX = await import('xlsx');
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-  const sheet = workbook.Sheets['Plano de Acao'] || workbook.Sheets['Plano de Ação'];
-  if (!sheet) throw new Error('A planilha precisa conter a aba Plano de Acao.');
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
-  return parseActionSheetRows(rows, 'Plano de Acao');
-}
-
-export async function parseCampaignWorkbook(file) {
-  const XLSX = await import('xlsx');
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-  const read = (name) => workbook.Sheets[name] ? XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: null }) : [];
-  const actionRows = await parseWorkbookFile(file);
-  const historyRows = read('Cliente x Item').map((row, index) => ({
-    sheet: 'Cliente x Item', sourceRow: index + 2, customer: row.Cliente, code: row['Código'], product: row['Descrição'], baseValue: row.FY2025, compareValue: row.FY2026, sourceDifference: row['Variação R$'], sourceVariationPct: row['Variação %'], sourceStatus: row.Status,
-  })).filter((row) => row.customer || row.code || row.product);
-  const customerRows = read('Clientes').map((row) => ({ name: String(row.Cliente || '').trim() })).filter((row) => row.name);
-  const productRows = read('Itens').map((row) => ({ name: String(row['Descrição'] || '').trim(), sku: row['Código'] == null ? null : String(row['Código']).trim() })).filter((row) => row.name || row.sku);
-  const managementGrid = workbook.Sheets['Gestao Campanha'] ? XLSX.utils.sheet_to_json(workbook.Sheets['Gestao Campanha'], { header: 1, defval: null }) : [];
-  const management = Object.fromEntries(managementGrid.map((row) => [normalizeCampaignText(row?.[0]), row?.[1]]));
-  const managementSummary = { opportunities: Number(management['OPORTUNIDADES MAPEADAS'] || 0) || null, potential: Number(management['VALOR TOTAL DE OPORTUNIDADE'] || 0) || null, p1: Number(management['PRIORIDADE P1'] || 0) || null, p2: Number(management['PRIORIDADE P2'] || 0) || null, p3: Number(management['PRIORIDADE P3'] || 0) || null };
-  return { actionRows, historyRows, customerRows, productRows, managementSummary, sourceFileName: file.name, sourceFileHash: await hashFile(file) };
-}
-
-async function hashFile(file) {
-  if (!globalThis.crypto?.subtle) return `${file.name}:${file.size}:${file.lastModified}`;
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-export async function importCommercialCampaign({ company, file }) {
+export async function importCommercialCampaign({ company, file, workbook: parsedWorkbook }) {
   if (!company?.id || !company?.name) throw new Error('Empresa não selecionada.');
-  const workbook = await parseCampaignWorkbook(file);
+  const workbook = parsedWorkbook || await parseCampaignWorkbook(file);
+  assertWorkbookMatchesFile(workbook, file);
   const result = await supabaseProvider.rpc('import_commercial_campaign_atomic', { p_target_company: company.id, ...buildAtomicCampaignPayload(workbook) });
   return { status: result?.status, alreadyImported: result?.status === 'already_imported', campaignId: result?.campaign_id, importId: result?.import_id, counts: result?.counts || {} };
 }
 
-export async function resumeCommercialCampaignImport({ company, file, importRecord }) {
-  if (!company?.id || !file || !importRecord?.id) throw new Error('Selecione novamente o arquivo da campanha parcial.');
-  const workbook = await parseCampaignWorkbook(file);
-  if (workbook.sourceFileHash !== importRecord.file_hash || workbook.sourceFileName !== importRecord.file_name) {
-    throw new Error('O arquivo selecionado não corresponde ao batch parcial registrado.');
-  }
+export async function resumeCommercialCampaignImport({ company, file, workbook: parsedWorkbook, importRecord }) {
+  if (!company?.id || (!file && !parsedWorkbook) || !importRecord?.id) throw new Error('Selecione novamente o arquivo da campanha parcial.');
+  const workbook = parsedWorkbook || await parseCampaignWorkbook(file);
+  assertWorkbookMatchesFile(workbook, file);
+  assertCampaignResumeWorkbookMatches(workbook, importRecord);
   const result = await supabaseProvider.rpc('resume_commercial_campaign_import_atomic', {
     p_target_company: company.id,
     p_file_name: workbook.sourceFileName,
