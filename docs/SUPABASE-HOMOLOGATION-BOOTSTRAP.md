@@ -11,20 +11,20 @@ O arquivo `supabase/config.toml` deste repositório ainda contém `project_id = 
 - Supabase CLI `2.120.0`, executado com `npx` (não instalado globalmente).
 - Docker Engine `29.7.2`, ativo.
 - Container local de PostgreSQL da aplicação já ocupava a porta `5432`; o Supabase local usou a porta `54322`, sem interromper aquele container.
-- A imagem local foi Supabase Postgres `15.19.0.004`, compatível com `db.major_version = 15`.
+- A validação de homologação desta etapa usou uma stack Supabase CLI isolada com imagem `public.ecr.aws/supabase/postgres:17.11.0.004`, compatível com o major remoto PostgreSQL 17 (`17.11.0.003`). O patch difere; o major e minor são 17.11.
 - `psql` não está instalado no host; consultas de verificação foram feitas com o cliente dentro do container local do Supabase.
 
 ## Procedimento local reproduzido
 
-1. Copiar `supabase/migrations` e, se for validar os bundles, `supabase/functions` para um diretório temporário fora do checkout.
-2. Na cópia, definir `project_id = "f7-pro-business-homolog-local"` e acrescentar:
+1. Copiar `supabase/migrations` e `supabase/functions` para um diretório temporário fora do checkout.
+2. Na cópia, definir `project_id = "f7-pro-business-homolog-pg17-local"`, configurar PostgreSQL major 17, portas locais próprias e acrescentar:
 
    ```toml
    [db.seed]
    enabled = false
    ```
 
-3. Iniciar e reconstruir somente o banco local:
+3. Iniciar e reconstruir somente a stack local Supabase, sem seed:
 
    ```powershell
    npx --yes supabase@2.120.0 start
@@ -43,7 +43,9 @@ O `seed.sql` atual **não foi executado**. Ele depende de um UUID de empresa fix
 
 ## Resultado do teste local
 
-As 83 migrations existentes foram aplicadas em ordem num banco local vazio, duas vezes, com `--no-seed`; a segunda passagem foi um reset explícito do banco local. A primeira tentativa revelou um erro real em `0036_company_feature_overrides.sql`: a RPC `company_has_feature(uuid,text)` existente recebe o argumento nomeado `feature`, mas a migration tentava renomeá-lo para `target_feature` com `CREATE OR REPLACE`, o que PostgreSQL rejeita. A migration foi corrigida para preservar o parâmetro `feature` e qualificar a coluna da tabela com alias. Isso preserva a assinatura usada pelas chamadas PostgREST e o comportamento da regra.
+As 83 migrations existentes foram aplicadas em ordem em banco local vazio PostgreSQL 17.11, com `--no-seed`, e o reset local foi repetido com sucesso. A tabela local `supabase_migrations.schema_migrations` contém 83 versões, de `0001` a `0084` (lacuna `0022`), sem divergência entre o histórico local e os arquivos. Foram verificadas 89 tabelas públicas, a assinatura `company_has_feature(target_company, feature)` e a chamada nomeada `feature`; o resultado para uma feature não cadastrada foi `false`. A stack Supabase CLI iniciou os serviços locais de Auth, PostgREST, Storage, Realtime e demais componentes; o coletor Vector não conseguiu alcançar o endpoint de logs do Docker Desktop neste host. Isso limita a validação da coleta local de logs, não a aplicação das migrations.
+
+A primeira tentativa de bootstrap revelou um erro real em `0036_company_feature_overrides.sql`: a RPC `company_has_feature(uuid,text)` existente recebe o argumento nomeado `feature`, mas a migration tentava renomeá-lo para `target_feature` com `CREATE OR REPLACE`, o que PostgreSQL rejeita. A migration foi corrigida para preservar o parâmetro `feature` e qualificar a coluna da tabela com alias. Isso preserva a assinatura usada pelas chamadas PostgREST e o comportamento da regra.
 
 A correção altera apenas o arquivo histórico para que um bootstrap vazio possa aplicá-lo. Em um banco que já registrou a versão `0036`, o Supabase CLI não reaplica esse arquivo: a função e os dados existentes permanecem como estão. Assim, a mudança não substitui uma definição já instalada nem corrige retroativamente uma instalação divergente; qualquer estado divergente deve ser inspecionado e tratado em uma migration nova, após revisão própria.
 
@@ -65,8 +67,8 @@ Fixtures criadas apenas no banco local: três usuários Auth fictícios, duas em
 ### Antes de vincular ou aplicar migrations
 
 1. No Dashboard, confirmar por fonte independente o nome `f7-pro-business-homolog`, o project ref, a região e a versão PostgreSQL. Na verificação somente de leitura desta etapa, o nome/ref conferidos foram `f7-pro-business-homolog` / `vwylnjmapixtzhryiutt`, a região `us-east-1` e o PostgreSQL remoto `17.11.0.003`. O painel também mostra a branch `main PRODUCTION`; o nome e ref atuais correspondem ao projeto homolog solicitado, mas devem ser reconferidos antes de qualquer comando remoto.
-2. A leitura do schema `public` mostrou zero tabelas, e a página Migrations mostrou “Run your first migration”; não há histórico de migrations exibido. A lista Auth mostrou o estado “No users”, mas também um total estimado de 10 usuários. Essa inconsistência impede certificar que Auth esteja vazio; resolva-a antes de instalação ou testes com dados.
-3. A configuração consultada mostrou Auth `2.197.0`, PostgREST `14.18` e PostgreSQL `17.11.0.003`. O bootstrap local validado nesta etapa usou PostgreSQL `15.19.0.004` (configuração `db.major_version = 15`), portanto a compatibilidade do bootstrap com o major remoto 17 não foi comprovada. Reproduza o reset limpo local com PostgreSQL major 17 antes de considerar o destino pronto para instalação.
+2. O Dashboard apresentou “No users” e simultaneamente “Total: 10 users (estimated)”. Para resolver a divergência foram executadas somente consultas `SELECT` no SQL Editor vinculado a esse ref: `auth.users` retornou 0; também foram confirmados 0 tabelas `public`, ausência da tabela de histórico `supabase_migrations.schema_migrations`, 0 buckets e 0 objetos em Storage. Portanto o total estimado exibido não corresponde a usuários atualmente presentes em `auth.users`; não foi feita qualquer escrita remota.
+3. A configuração consultada mostrou Auth `2.197.0`, PostgREST `14.18` e PostgreSQL `17.11.0.003`. A stack Supabase CLI local validada usou `public.ecr.aws/supabase/postgres:17.11.0.004`, major/minor compatível. Essa verificação comprova bootstrap local no PostgreSQL 17 e nos serviços locais configurados pelo Supabase CLI, mas não prova paridade completa com serviços gerenciados ou configurações específicas do Supabase Cloud.
 4. A tela de Database Settings não exibiu o estado SSL em leitura, e a página de URLs/Auth não exibiu os valores de Site URL/redirect allowlist. A revisão desses ajustes permanece pendente; não inferir configuração a partir dos campos não carregados.
 5. Confirmar que nenhuma sessão/comando Supabase está vinculada ao projeto de produção. Não incluir `SUPABASE_ACCESS_TOKEN`, database password ou chave `service_role` em comandos salvos, arquivos, logs ou variáveis `VITE_*`.
 6. Revisar no Dashboard os serviços padrão Auth e Storage e os papéis `anon`, `authenticated` e `service_role`. Não desabilitar RLS nem reduzir grants para acomodar migrations.
@@ -85,7 +87,7 @@ npx --yes supabase@2.120.0 migration list --linked
 npx --yes supabase@2.120.0 db push --linked --dry-run
 ```
 
-**PARE após o `--dry-run`: não execute SQL nem continue automaticamente.** Registre o project ref e o plano apresentado, confirme que o alvo é o projeto homolog, que não há versões remotas desconhecidas e que o plano lista exatamente as migrations locais esperadas. Uma divergência, qualquer migration já registrada ou qualquer dado/schema encontrado exige revisão. Não prossiga enquanto o Auth não for verificado como vazio, o estado das URLs/SSL não estiver confirmado e o bootstrap local não tiver sido validado em PostgreSQL major 17. Solicite autorização explícita separada para a aplicação remota; somente em uma etapa posterior autorizada, aplique sem `--include-all` e sem `--yes`, para manter a confirmação interativa do CLI:
+**PARE após o `--dry-run`: não execute SQL nem continue automaticamente.** Registre o project ref e o plano apresentado, confirme que o alvo é o projeto homolog, que não há versões remotas desconhecidas e que o plano lista exatamente as migrations locais esperadas. Uma divergência, qualquer migration já registrada ou qualquer dado/schema encontrado exige revisão. O preflight desta etapa confirmou Auth vazio por consulta, ausência de tabelas, histórico, buckets e objetos remotos; confirmou também bootstrap local Supabase CLI PostgreSQL 17. Reconfirme o nome e ref no Dashboard imediatamente antes de comandos remotos, especialmente porque a tela identificava a branch como `main PRODUCTION`. A revisão de URLs/SSL continua pendente para futuros testes de login/Preview, mas não substitui a confirmação de destino nem a aprovação explícita da instalação. Solicite autorização explícita separada para a aplicação remota; somente em uma etapa posterior autorizada, aplique sem `--include-all` e sem `--yes`, para manter a confirmação interativa do CLI:
 
 ```powershell
 npx --yes supabase@2.120.0 db push --linked
