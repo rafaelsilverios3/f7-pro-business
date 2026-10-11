@@ -1,5 +1,6 @@
 import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
+import { productSearchTerm } from '../_shared/productSearchTerm.js';
 
 const ROLES = new Set(['admin', 'gestor', 'comercial', 'vendedor', 'atendimento']);
 const MAX_MESSAGE = 600;
@@ -18,7 +19,6 @@ function sanitizeContext(value: any) {
 }
 function normalize(value: unknown) { return clean(value, 300).toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function safeRows(rows: any[] = []) { return rows.map((row) => ({ id: row.id, name: clean(row.name, 160), sku: clean(row.sku, 80) || null, barcode: clean(row.barcode, 80) || null, brand: clean(row.brand, 100) || null, model: clean(row.model, 100) || null, description: clean(row.description, 240) || null, price: Number(row.price ?? 0), stock: Number(row.stock ?? 0), minimum_stock: Number(row.minimum_stock ?? 0), active: row.active !== false })); }
-function productTerm(message: string) { return clean(message.replace(/\b(temos|tem|tenho|quanto|custa|custa|preco|preço|valor|estoque|unidades|disponivel|disponível|produto|qual|quais|variacao|variação|tamanho|cor|monte|crie|pedido|rascunho|para|com|do|da|de|o|a|um|uma|cliente|fornecedor)\b/gi, ' '), 120); }
 function customerTerm(message: string) { return clean(message.replace(/\b(procure|buscar|busque|cliente|último|ultimo|pedido|oportunidade|para|do|da|de|qual|tem|alguma)\b/gi, ' '), 120); }
 function classify(message: string) {
   const text = normalize(message);
@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
     let tool = 'buscar_produto'; let result: any = null; let context: any = { ...routeContext };
     if (intent === 'product' || intent === 'stock' || intent === 'price' || intent === 'variations' || intent === 'draft') {
       const previousProduct = history.slice().reverse().map((item: any) => item.context?.product || (item.tool === 'buscar_produto' && Array.isArray(item.data) && item.data.length === 1 ? item.data[0] : null)).find(Boolean);
-      const term = productTerm(message) || clean(previousProduct?.name, 120); const products = await searchProducts(sb, companyId, term, routeContext.product_id as string | null); await logEvent(sb, companyId, traceId, 'TOOL_SELECTED', 'success', { tool: 'buscar_produto' });
+      const term = productSearchTerm(message) || clean(previousProduct?.name, 120); const products = await searchProducts(sb, companyId, term, routeContext.product_id as string | null); await logEvent(sb, companyId, traceId, 'TOOL_SELECTED', 'success', { tool: 'buscar_produto' });
       if (intent === 'product') { tool = 'buscar_produto'; result = products; }
       else if (products.length !== 1) { tool = 'buscar_produto'; result = products; }
       else { const product = products[0]; context.product = product; if (intent === 'stock') { tool = 'consultar_estoque'; result = { product_id: product.id, name: product.name, stock: product.stock, available: product.stock > 0 }; } else if (intent === 'price') { tool = 'consultar_preco'; result = { product_id: product.id, name: product.name, price: product.price, currency: 'BRL' }; } else if (intent === 'variations') { tool = 'listar_variacoes'; result = await loadVariants(sb, companyId, product.id); } else { const quantity = qtyFrom(message); const customerMatches = /cliente/.test(normalize(message)) ? await searchCustomers(sb, companyId, customerTerm(message)) : []; context.quantity = quantity; context.customer = customerMatches.length === 1 ? customerMatches[0] : null; context.unitPrice = product.price; tool = 'draft'; result = { preview: true, product, customer: context.customer, quantity, total: product.price * quantity, requires_confirmation: true }; } }

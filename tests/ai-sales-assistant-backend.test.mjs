@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { productSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
 
 const fn = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
 const page = fs.readFileSync('src/pages/AiSalesAssistant.jsx', 'utf8');
@@ -19,6 +20,13 @@ test('ferramentas comerciais são explícitas e tenant-scoped', () => {
   for (const name of ['buscar_produto', 'consultar_estoque', 'consultar_preco', 'listar_variacoes', 'buscar_cliente', 'consultar_pedido', 'buscar_oportunidades', 'consultar_fornecedor', 'consultar_canais']) assert.match(fn, new RegExp(name));
   assert.match(fn, /eq\('company_id', companyId\)/);
   assert.doesNotMatch(fn, /body\.sql|query\(body/);
+});
+
+test('consultas genéricas de produtos reconhecem o plural e não viram busca literal', () => {
+  assert.match(fn, /productSearchTerm\(message\)/);
+  assert.equal(productSearchTerm('Quais produtos temos?'), '');
+  assert.equal(productSearchTerm('HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('temos o produto F7?'), 'F7');
 });
 
 test('rascunho exige confirmação e passa por RPC autenticada sem DML direto', () => {
