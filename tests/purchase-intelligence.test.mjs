@@ -77,6 +77,12 @@ test('consulta itens de compra usa coluna existente do schema e não presume cre
   assert.doesNotMatch(purchaseService, /purchaseItemsRepository\.list\(companyId, '-created_date'/);
 });
 
+test('data de previsão vazia é enviada como null, nunca como string inválida para PostgreSQL date', () => {
+  assert.match(purchaseService, /expected_date: purchase\.expected_date \|\| null/);
+  const base44Purchases = fs.readFileSync('src/lib/purchases.js', 'utf8');
+  assert.match(base44Purchases, /expected_date: data\.expected_date \|\| null/);
+});
+
 test('formulário de compra consulta fornecedores somente por empresa, conforme o schema atual', () => {
   const dialog = fs.readFileSync('src/components/compras/PurchaseDialog.jsx', 'utf8');
   const supplierSchema = fs.readFileSync('supabase/migrations/0001_initial_schema.sql', 'utf8').match(/create table if not exists suppliers \(([^;]+)\);/i)?.[1] || '';

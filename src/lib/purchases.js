@@ -17,7 +17,7 @@ export async function createPurchase(companyId, data) {
     supplier_name: data.supplier_name,
     items,
     total,
-    expected_date: data.expected_date || '',
+    expected_date: data.expected_date || null,
     status: 'pending',
     notes: data.notes || '',
   });
