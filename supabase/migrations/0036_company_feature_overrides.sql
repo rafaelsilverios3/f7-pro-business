@@ -21,7 +21,7 @@ revoke insert, update, delete on public.company_feature_overrides from authentic
 grant select on public.company_feature_overrides to authenticated;
 grant select, insert, update, delete on public.company_feature_overrides to service_role;
 
-create or replace function public.company_has_feature(target_company uuid, target_feature text)
+create or replace function public.company_has_feature(target_company uuid, feature text)
 returns boolean
 language plpgsql
 stable
@@ -33,14 +33,15 @@ declare
   override_enabled boolean;
 begin
   select enabled into override_enabled
-    from public.company_feature_overrides
-   where company_id = target_company and feature = lower(trim(target_feature));
+    from public.company_feature_overrides as feature_override
+   where feature_override.company_id = target_company
+     and feature_override.feature = lower(trim($2));
   if override_enabled is not null then return override_enabled; end if;
 
   select coalesce(plan, 'free') into plan_name
     from public.company_subscriptions
    where company_id = target_company;
-  return case lower(trim(target_feature))
+  return case lower(trim(feature))
     when 'intelligence' then true
     when 'automations' then plan_name in ('pro', 'business', 'premium')
     when 'atendimento' then plan_name in ('business', 'premium')
