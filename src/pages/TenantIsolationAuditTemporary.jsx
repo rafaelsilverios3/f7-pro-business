@@ -33,7 +33,12 @@ export default function TenantIsolationAuditTemporary() {
     try { return new URL(import.meta.env.VITE_SUPABASE_URL).hostname === `${HOMOLOG_REF}.supabase.co`; }
     catch { return false; }
   }, []);
-  const ownKey = company?.id === COMPANIES.A ? 'A' : company?.id === COMPANIES.B ? 'B' : null;
+  const ownKey = company?.id?.toLowerCase() === COMPANIES.A.toLowerCase() || company?.name === 'Empresa Homolog A'
+    ? 'A'
+    : company?.id?.toLowerCase() === COMPANIES.B.toLowerCase() || company?.name === 'Empresa Homolog B'
+      ? 'B'
+      : null;
+  const companyIdentityMatches = Boolean(ownKey && company?.id?.toLowerCase() === COMPANIES[ownKey].toLowerCase());
   const otherKey = ownKey === 'A' ? 'B' : ownKey === 'B' ? 'A' : null;
   const otherCompanyId = otherKey ? COMPANIES[otherKey] : null;
 
@@ -45,7 +50,7 @@ export default function TenantIsolationAuditTemporary() {
   });
 
   const runAudit = async () => {
-    if (!projectMatches || !ownKey || !user?.id || companyLoading) return;
+    if (!projectMatches || !ownKey || !companyIdentityMatches || !user?.id || companyLoading) return;
     setRunning(true);
     setMessage('');
     setResults([]);
@@ -56,7 +61,7 @@ export default function TenantIsolationAuditTemporary() {
       if (authError || !authData?.user?.id || authData.user.id !== user.id) throw new Error('Sessão Auth não corresponde ao usuário do app.');
       const member = await db.from('company_users').select('company_id,role,active').eq('company_id', company.id).eq('user_id', user.id).maybeSingle();
       if (member.error || !member.data?.active) throw new Error('Membership ativa não confirmada.');
-      add(checks, 'Sessão autenticada e membership', { authenticated: true, active: member.data.active, role: member.data.role, company: ownKey }, 'Usuário real ativo somente no contexto corrente.', true);
+      add(checks, 'Sessão autenticada e membership', { authenticated: true, active: member.data.active, role: member.data.role, company: ownKey, identityMatchesApprovedCompany: companyIdentityMatches }, 'Usuário real ativo somente na empresa autorizada correspondente.', true);
 
       const tables = ['customers', 'products', 'product_variants', 'stock_movements', 'sales', 'sale_items', 'purchases', 'purchase_items', 'suppliers', 'company_subscriptions'];
       for (const table of tables) {
@@ -104,7 +109,7 @@ export default function TenantIsolationAuditTemporary() {
   };
 
   const createOwnFixture = async () => {
-    if (!projectMatches || !ownKey || !user?.id || companyLoading) return;
+    if (!projectMatches || !ownKey || !companyIdentityMatches || !user?.id || companyLoading) return;
     setRunning(true);
     setMessage('');
     try {
@@ -129,8 +134,8 @@ export default function TenantIsolationAuditTemporary() {
   if (!projectMatches) return <main className="mx-auto max-w-3xl p-8"><h1 className="text-xl font-bold">Diagnóstico indisponível</h1><p>O Preview não corresponde ao projeto homolog autorizado.</p></main>;
   return <main className="mx-auto max-w-5xl space-y-5 p-6">
     <header><p className="text-xs font-semibold uppercase text-amber-700">Ferramenta temporária de homologação</p><h1 className="mt-2 text-2xl font-bold">Auditoria REST multiempresa</h1><p className="mt-2 text-sm text-slate-600">Projeto fixado na homologação. Chamadas usam a sessão atual do usuário, sem exibir ou copiar JWT.</p></header>
-    <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm"><p>Empresa atual: <strong>{ownKey ? `Homolog ${ownKey}` : 'não autorizada'}</strong></p><p>Papel atual: <strong>{user?.id ? 'membership será conferida no teste' : 'não autenticado'}</strong></p></section>
-    <div className="flex flex-wrap gap-3"><button disabled={running || !ownKey || companyLoading} onClick={createOwnFixture} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-50">Criar fixture própria (cliente fictício)</button><button disabled={running || !ownKey || companyLoading} onClick={runAudit} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Executar testes REST cross-tenant</button></div>
+    <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm"><p>Empresa atual: <strong>{ownKey ? `Homolog ${ownKey}` : company?.name || 'não autorizada'}</strong></p><p>Identidade da empresa coincide com o destino homolog aprovado: <strong>{companyIdentityMatches ? 'sim' : 'não'}</strong></p><p>Papel atual: <strong>{user?.id ? 'membership será conferida no teste' : 'não autenticado'}</strong></p></section>
+    <div className="flex flex-wrap gap-3"><button disabled={running || !ownKey || !companyIdentityMatches || companyLoading} onClick={createOwnFixture} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-50">Criar fixture própria (cliente fictício)</button><button disabled={running || !ownKey || !companyIdentityMatches || companyLoading} onClick={runAudit} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Executar testes REST cross-tenant</button></div>
     {message && <p role="status" className="rounded-lg bg-slate-100 p-3 text-sm">{message}</p>}
     {!!results.length && <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="w-full text-left text-xs"><thead><tr className="border-b bg-slate-50"><th className="p-3">Operação</th><th className="p-3">Resultado</th><th className="p-3">Esperado</th><th className="p-3">Observado</th></tr></thead><tbody>{results.map((item) => <tr key={item.name} className="border-b last:border-0"><td className="p-3 font-medium">{item.name}</td><td className={`p-3 font-semibold ${item.outcome === 'APROVADO' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.outcome}</td><td className="p-3">{item.expected}</td><td className="p-3 font-mono">{JSON.stringify(item.observed)}</td></tr>)}</tbody></table></div>}
   </main>;
