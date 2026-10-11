@@ -44,7 +44,10 @@ export default function Vendas() {
   }, [items]);
 
   const handleCancel = async (sale) => {
-    if (!confirm('Cancelar esta venda? O estoque será devolvido.')) return;
+    const confirmation = sale.status === 'draft'
+      ? 'Cancelar este rascunho? O estoque e os registros financeiros permanecerão inalterados.'
+      : 'Cancelar esta venda? O estoque será devolvido.';
+    if (!confirm(confirmation)) return;
     await salesService.cancel(sale);
     load();
   };
@@ -108,7 +111,7 @@ export default function Vendas() {
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
                         <button onClick={() => setViewing(s)} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Eye className="h-4 w-4" /></button>
-                        {s.status !== 'cancelled' && s.status !== 'canceled' && s.status !== 'draft' && (
+                        {s.status !== 'cancelled' && s.status !== 'canceled' && (
                           <button onClick={() => handleCancel(s)} className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Ban className="h-4 w-4" /></button>
                         )}
                       </div>

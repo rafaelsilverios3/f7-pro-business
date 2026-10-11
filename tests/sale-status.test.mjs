@@ -29,12 +29,13 @@ test('draft line totals fall back to quantity times price when the RPC omits tot
   assert.equal(saleItemTotal({ qty: 'bad', price: 5 }), 0);
 });
 
-test('sales page labels drafts, excludes them from KPIs and hides unsafe cancellation until migration 0088', () => {
+test('sales page labels drafts, excludes them from KPIs and explains draft-safe cancellation', () => {
   const page = fs.readFileSync('src/pages/Vendas.jsx', 'utf8');
   assert.match(page, /items\.filter\(isRevenueSale\)/);
   assert.match(page, /draft: 'Rascunho'/);
   assert.match(page, /saleItemTotal\(i\)/);
-  assert.match(page, /s\.status !== 'draft'/);
+  assert.match(page, /sale\.status === 'draft'\s*\?/);
+  assert.doesNotMatch(page, /s\.status !== 'draft'/);
 });
 
 test('draft cancellation migration returns before any stock or commercial-ledger reversal', () => {
