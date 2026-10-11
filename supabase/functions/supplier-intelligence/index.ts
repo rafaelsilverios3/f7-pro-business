@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     if (!companyId) return json({ code: 'INVALID_REQUEST' }, 422);
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle();
     if (!member?.active || !ROLES.has(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    const { data: supplierAllowed, error: supplierGateError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'supplier_intelligence' });
+    const { data: supplierAllowed, error: supplierGateError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'supplier_intelligence' });
     if (supplierGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
     if (!supplierAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'Supplier Intelligence está disponível a partir do plano PREMIUM.' }, 403);
     if (body?.action === 'save') {

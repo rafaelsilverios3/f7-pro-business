@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     if (memberError) return stageFailure(sb, companyId, 'membership_lookup', safeCode(memberError) || 'INTERNAL_PROVIDER_ERROR', 500, requestId);
     if (!member?.active || !ALLOWED_ROLES.includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
 
-    const { data: allowed, error: featureError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
+    const { data: allowed, error: featureError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'whatsapp' });
     if (featureError) return stageFailure(sb, companyId, 'feature_lookup', safeCode(featureError) || 'INTERNAL_PROVIDER_ERROR', 500, requestId);
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
 

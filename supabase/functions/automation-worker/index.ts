@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
   const eventData = body?.event_data && typeof body.event_data === 'object' && !Array.isArray(body.event_data) ? body.event_data : {};
   const sb = admin();
   if (!(await authorized(req, companyId, sb))) return json({ code: 'FORBIDDEN' }, 403);
-  const { data: automationAllowed, error: automationGateError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'automations' });
+  const { data: automationAllowed, error: automationGateError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'automations' });
   if (automationGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
   if (!automationAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'Automações estão disponíveis a partir do plano BUSINESS.' }, 403);
   let rulesQuery = sb.from('automations').select('id,company_id,name,active,trigger_type,conditions,actions,timezone').eq('company_id', companyId).eq('trigger_type', triggerType).eq('active', true).is('deleted_at', null).limit(100);

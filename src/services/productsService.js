@@ -2,6 +2,7 @@ import { productsRepository } from '@/data/repositories/productsRepository';
 import { inventoryRepository } from '@/data/repositories/inventoryRepository';
 import { productSchema } from '@/schemas';
 import { parseMoneyInput } from '@/lib/money';
+import { getDataProvider } from '@/data/providerSelector';
 
 const isSupabase = () => import.meta.env.VITE_DATA_PROVIDER === 'supabase';
 const numberField = (value, fallback = 0) => {
@@ -77,8 +78,30 @@ export const productsService = {
     const canonicalPayload = productPayload(companyId, data);
     if ((data.item_type || current.item_type) === 'service') { canonicalPayload.item_type = 'service'; canonicalPayload.stock = 0; canonicalPayload.minimum_stock = 0; }
     const payload = isSupabase() ? canonicalPayload : { ...canonicalPayload, sale_price: canonicalPayload.price, cost_price: canonicalPayload.cost, min_stock: canonicalPayload.minimum_stock, commission: canonicalPayload.commission_rate };
+    const hasStockChange = Object.prototype.hasOwnProperty.call(payload, 'stock')
+      && Number(payload.stock) !== Number(current.stock);
+    if (isSupabase() && hasStockChange) {
+      const { stock, ...productChanges } = payload;
+      const adjustStock = () => getDataProvider().rpc('adjust_inventory', {
+        target_product: id,
+        target_stock: Number(stock),
+        adjustment_reason: 'Ajuste de estoque na edição do produto',
+      });
+      const updateFields = () => Object.keys(productChanges).some((field) => field !== 'company_id')
+        ? productsRepository.update(id, productChanges, companyId)
+        : Promise.resolve(current);
+      // A service can hold no stock, so adjust before converting a product to a
+      // service. The reverse conversion must change item_type before stock can
+      // be added through the guarded RPC.
+      const convertingToService = Object.prototype.hasOwnProperty.call(productChanges, 'item_type')
+        && data.item_type === 'service';
+      const adjusted = convertingToService ? await adjustStock() : null;
+      const updated = await updateFields();
+      const finalAdjustment = adjusted || await adjustStock();
+      return { ...finalAdjustment, ...updated, stock: finalAdjustment.stock };
+    }
     const updated = await productsRepository.update(id, payload, companyId);
-    if (Object.prototype.hasOwnProperty.call(payload, 'stock') && Number(payload.stock) !== Number(current.stock)) {
+    if (!isSupabase() && hasStockChange) {
       await inventoryRepository.create({ product_id: id, type: 'adjust', quantity: Number(payload.stock) - Number(current.stock || 0), reason: 'Ajuste de estoque na edição do produto' }, companyId);
     }
     return updated;

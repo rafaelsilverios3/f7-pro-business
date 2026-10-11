@@ -369,7 +369,7 @@ Deno.serve(async (req) => {
       stage = 'PERMISSION_OK';
       await logStage(sb, conversation.company_id, stage);
     }
-    const { data: allowed, error: featureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'ai' });
+    const { data: allowed, error: featureError } = await sb.rpc('company_has_feature_internal', { target_company: conversation.company_id, feature: 'ai' });
     if (featureError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o entitlement da empresa.', stage: 'feature_lookup', internal_error_code: safeInternalCode(featureError) }, 500);
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     stage = 'ENTITLEMENT_OK';
@@ -474,7 +474,7 @@ Deno.serve(async (req) => {
     await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_INTENT_EXTRACTED', { research_trace_id: researchTraceId, technical_research_needed: researchNeeded, model: technicalInput?.model, requested_part: technicalInput?.part_description, reason: 'backend_intent_detection' });
     if (researchNeeded) await logResearchEvent(sb, conversation.company_id, conversationId, 'PART_RESEARCH_REQUIRED', { research_trace_id: researchTraceId, technical_research_needed: true, model: technicalInput?.model, requested_part: technicalInput?.part_description, reason: 'technical_intent' });
     if (researchNeeded) {
-      const { data: rpcResearchAllowed, error: researchFeatureError } = await sb.rpc('company_has_feature', { target_company: conversation.company_id, feature: 'external_product_intelligence' });
+      const { data: rpcResearchAllowed, error: researchFeatureError } = await sb.rpc('company_has_feature_internal', { target_company: conversation.company_id, feature: 'external_product_intelligence' });
       // Keep the database feature gate authoritative, but recognize an
       // explicit beta override when the hosted RPC predates migration 0040.
       let researchAllowed = rpcResearchAllowed === true;
