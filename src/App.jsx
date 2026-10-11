@@ -55,6 +55,7 @@ import TrialExpired from './pages/TrialExpired.jsx';
 import FeatureLocked from './pages/FeatureLocked.jsx';
 import PublicSite from './pages/PublicSite.jsx';
 import Commerce from './pages/Commerce.jsx';
+import TenantIsolationAuditTemporary from './pages/TenantIsolationAuditTemporary.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 import { can } from '@/lib/permissions';
@@ -146,6 +147,10 @@ const AuthenticatedApp = () => {
   }
 
   if (!authChecked || !isAuthenticated) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+
+  // Temporary, homologation-only Data API verification route. Remove after
+  // authenticated cross-tenant tests; the component hard-fails outside homolog.
+  if (location.pathname === '/__tenant-audit') return <Routes><Route path="/__tenant-audit" element={<TenantIsolationAuditTemporary />} /></Routes>;
 
   if (location.pathname === '/administracao-f7' || location.pathname.startsWith('/administracao-f7/')) {
     return <Routes><Route path="/administracao-f7" element={<PlatformAdmin />} /><Route path="/administracao-f7/empresas/:companyId" element={<PlatformAdmin />} /></Routes>;
