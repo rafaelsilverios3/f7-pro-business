@@ -27,6 +27,9 @@ test('consultas genéricas de produtos reconhecem o plural e não viram busca li
   assert.match(fn, /productSearchTerm\(message\)/);
   assert.equal(productSearchTerm('Quais produtos temos?'), '');
   assert.equal(productSearchTerm('HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Qual o estoque do HOMOLOG-A-QA-20261011?'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Quanto tem de estoque do HOMOLOG-A-QA-20261011?'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Quanto temos em estoque?'), '');
   assert.equal(productSearchTerm('temos o produto F7?'), 'F7');
 });
 
