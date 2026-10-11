@@ -1,9 +1,88 @@
 -- Tenant isolation and transactional write boundary hardening.
--- Conceptual rollback: restore the prior feature RPC definition/grants, table
--- grants/policies and SECURITY INVOKER attributes; restore the prior purchase
--- RPC body; then remove adjust_inventory and company_has_feature_internal.
--- Security grants are deliberately not widened by rollback. No data is changed
--- by this migration; stock and commercial rows are changed only by RPC calls.
+-- Conceptual rollback is manual, not an automated inverse: prefer a forward-fix.
+-- If business logic must be reverted, restore
+-- the prior feature RPC definition/grants, table policies and SECURITY INVOKER
+-- attributes, and prior purchase RPC body; then remove adjust_inventory and
+-- company_has_feature_internal only after dependent Edge Functions are rolled
+-- back. Keep TRUNCATE/TRIGGER revocations; never restore those unsafe grants.
+-- This migration changes no application rows.
+
+-- Supabase's role bootstrap may grant TRUNCATE, TRIGGER, REFERENCES and
+-- MAINTAIN to API roles by default. These are schema/maintenance privileges,
+-- not application row access. Revoke them from existing public relations and
+-- defaults owned by the migration executor. Supabase-managed owners such as
+-- supabase_admin are not alterable by an ordinary migration role; their
+-- defaults are intentionally not modified. Keep row-level privileges and
+-- database-owner administration.
+revoke truncate, trigger, references, maintain on all tables in schema public
+  from public, anon, authenticated, service_role;
+
+do $$
+begin
+  -- Per-schema REVOKE cannot cancel a privilege supplied by the role's global
+  -- defaults, so harden both scopes for the migration executor.
+  execute format(
+    'alter default privileges for role %I revoke truncate, trigger, references, maintain on tables from public, anon, authenticated, service_role',
+    current_user
+  );
+  execute format(
+    'alter default privileges for role %I in schema public revoke truncate, trigger, references, maintain on tables from public, anon, authenticated, service_role',
+    current_user
+  );
+
+  -- If an inherited role still conveys these rights, stop instead of leaving
+  -- an apparently successful but incomplete hardening migration.
+  if exists (
+    select 1
+    from pg_catalog.pg_class relation
+    join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relkind in ('r', 'p', 'v', 'm', 'f')
+      and (
+        has_table_privilege('anon', relation.oid, 'TRUNCATE')
+        or has_table_privilege('anon', relation.oid, 'TRIGGER')
+        or has_table_privilege('anon', relation.oid, 'REFERENCES')
+        or has_table_privilege('anon', relation.oid, 'MAINTAIN')
+        or has_table_privilege('authenticated', relation.oid, 'TRUNCATE')
+        or has_table_privilege('authenticated', relation.oid, 'TRIGGER')
+        or has_table_privilege('authenticated', relation.oid, 'REFERENCES')
+        or has_table_privilege('authenticated', relation.oid, 'MAINTAIN')
+        or has_table_privilege('service_role', relation.oid, 'TRUNCATE')
+        or has_table_privilege('service_role', relation.oid, 'TRIGGER')
+        or has_table_privilege('service_role', relation.oid, 'REFERENCES')
+        or has_table_privilege('service_role', relation.oid, 'MAINTAIN')
+      )
+  ) then
+    raise exception 'Unexpected inherited table-level schema or maintenance privilege remains on a public relation';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_default_acl defaults
+    join pg_catalog.pg_roles owner_role on owner_role.oid = defaults.defaclrole
+    cross join lateral pg_catalog.aclexplode(defaults.defaclacl) acl
+    where owner_role.rolname = current_user
+      and (defaults.defaclnamespace = 0 or exists (
+        select 1 from pg_catalog.pg_namespace namespace
+        where namespace.oid = defaults.defaclnamespace and namespace.nspname = 'public'
+      ))
+      and acl.grantee in (
+        0,
+        (select oid from pg_catalog.pg_roles where rolname = 'anon'),
+        (select oid from pg_catalog.pg_roles where rolname = 'authenticated'),
+        (select oid from pg_catalog.pg_roles where rolname = 'service_role')
+      )
+      and acl.privilege_type in ('TRUNCATE', 'TRIGGER', 'REFERENCES', 'MAINTAIN')
+  ) then
+    raise exception 'Migration-owner default schema or maintenance privilege remains for public tables';
+  end if;
+
+  -- Supabase-managed role defaults (including supabase_admin) are an
+  -- operational prerequisite: public application tables must be created by
+  -- the migration role whose defaults this migration hardened. Do not attempt
+  -- to mutate defaults outside the migration executor's authority.
+end;
+$$;
 
 -- Keep the entitlement calculation for trusted backend jobs, but isolate it
 -- behind an EXECUTE grant available only to service_role.
@@ -233,8 +312,8 @@ $$;
 revoke all on function public.adjust_inventory(uuid, numeric, text) from public, anon;
 grant execute on function public.adjust_inventory(uuid, numeric, text) to authenticated;
 
--- Conceptual rollback: restore the prior company_has_feature implementation,
--- role policies/grants and invoker properties; restore receive_purchase, and
--- revoke/drop adjust_inventory and company_has_feature_internal. Because that
--- reopens direct writes, rollback requires a security review and must not be
--- treated as a safe automated inverse.
+-- Business-logic rollback requires restoring the prior company_has_feature
+-- implementation, role policies/grants and invoker properties, plus
+-- receive_purchase; remove the new RPCs only after dependent consumers are
+-- rolled back. Keep the schema/maintenance privilege revocations above. Since
+-- reverting business guards can reopen direct writes, review before rollback.

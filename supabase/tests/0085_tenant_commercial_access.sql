@@ -1,6 +1,6 @@
 begin;
 
-select plan(50);
+select plan(70);
 
 insert into public.companies(id, name) values
   ('d1500000-0000-4000-8000-000000000001', 'Tenant Isolation Test A'),
@@ -43,6 +43,35 @@ insert into public.stock_movements(id, company_id, product_id, type, quantity) v
   ('d1b00000-0000-4000-8000-000000000001', 'd1500000-0000-4000-8000-000000000001', 'd1800000-0000-4000-8000-000000000001', 'adjust', 1),
   ('d1b00000-0000-4000-8000-000000000002', 'd1500000-0000-4000-8000-000000000002', 'd1800000-0000-4000-8000-000000000002', 'adjust', 2);
 
+create or replace function public.codex_0085_privilege_probe()
+returns trigger language plpgsql as $$ begin return new; end $$;
+grant execute on function public.codex_0085_privilege_probe() to authenticated;
+grant create on schema public to authenticated;
+
+select is((select count(*) from pg_catalog.pg_class relation join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace where namespace.nspname = 'public' and relation.relkind in ('r','p','v','m','f') and (has_table_privilege('authenticated', relation.oid, 'TRUNCATE') or has_table_privilege('authenticated', relation.oid, 'TRIGGER') or has_table_privilege('authenticated', relation.oid, 'REFERENCES') or has_table_privilege('authenticated', relation.oid, 'MAINTAIN'))), 0::bigint, 'Authenticated and inherited roles have no schema or maintenance privileges on public relations');
+select is((select count(*) from pg_catalog.pg_class relation join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace where namespace.nspname = 'public' and relation.relkind in ('r','p','v','m','f') and (has_table_privilege('anon', relation.oid, 'TRUNCATE') or has_table_privilege('anon', relation.oid, 'TRIGGER') or has_table_privilege('anon', relation.oid, 'REFERENCES') or has_table_privilege('anon', relation.oid, 'MAINTAIN'))), 0::bigint, 'Anonymous role has no schema or maintenance privileges on public relations');
+select is((select count(*) from pg_catalog.pg_class relation join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace where namespace.nspname = 'public' and relation.relkind in ('r','p','v','m','f') and (has_table_privilege('service_role', relation.oid, 'TRUNCATE') or has_table_privilege('service_role', relation.oid, 'TRIGGER') or has_table_privilege('service_role', relation.oid, 'REFERENCES') or has_table_privilege('service_role', relation.oid, 'MAINTAIN'))), 0::bigint, 'Service role has no schema or maintenance privileges on public relations');
+select is((select count(*) from pg_catalog.pg_class relation join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace cross join lateral pg_catalog.aclexplode(coalesce(relation.relacl, pg_catalog.acldefault('r'::"char", relation.relowner))) acl where namespace.nspname = 'public' and relation.relkind in ('r','p','v','m','f') and acl.grantee = 0 and acl.privilege_type in ('TRUNCATE','TRIGGER','REFERENCES','MAINTAIN')), 0::bigint, 'No schema or maintenance table privilege is granted to PUBLIC');
+select is((select count(*) from pg_catalog.pg_default_acl defaults join pg_catalog.pg_roles owner_role on owner_role.oid=defaults.defaclrole cross join lateral pg_catalog.aclexplode(defaults.defaclacl) acl where owner_role.rolname=current_user and (defaults.defaclnamespace=0 or exists (select 1 from pg_catalog.pg_namespace namespace where namespace.oid=defaults.defaclnamespace and namespace.nspname='public')) and acl.grantee in (0, (select oid from pg_catalog.pg_roles where rolname='anon'), (select oid from pg_catalog.pg_roles where rolname='authenticated'), (select oid from pg_catalog.pg_roles where rolname='service_role')) and acl.privilege_type in ('TRUNCATE','TRIGGER','REFERENCES','MAINTAIN')), 0::bigint, 'Migration-owner global and public defaults do not restore schema or maintenance privileges');
+create table public.codex_0085_future_acl_test(id integer);
+select ok(not has_table_privilege('authenticated', 'public.codex_0085_future_acl_test', 'TRUNCATE') and not has_table_privilege('authenticated', 'public.codex_0085_future_acl_test', 'TRIGGER') and not has_table_privilege('authenticated', 'public.codex_0085_future_acl_test', 'REFERENCES') and not has_table_privilege('authenticated', 'public.codex_0085_future_acl_test', 'MAINTAIN'), 'A new migration-owned public table does not inherit extra schema or maintenance privileges');
+drop table public.codex_0085_future_acl_test;
+select ok(
+  has_table_privilege('service_role', 'public.sales', 'SELECT')
+  and has_table_privilege('service_role', 'public.sale_items', 'SELECT')
+  and has_table_privilege('service_role', 'public.stock_movements', 'SELECT')
+  and not has_table_privilege('service_role', 'public.sales', 'INSERT')
+  and not has_table_privilege('service_role', 'public.sales', 'UPDATE')
+  and not has_table_privilege('service_role', 'public.sales', 'DELETE')
+  and not has_table_privilege('service_role', 'public.sale_items', 'INSERT')
+  and not has_table_privilege('service_role', 'public.sale_items', 'UPDATE')
+  and not has_table_privilege('service_role', 'public.sale_items', 'DELETE')
+  and not has_table_privilege('service_role', 'public.stock_movements', 'INSERT')
+  and not has_table_privilege('service_role', 'public.stock_movements', 'UPDATE')
+  and not has_table_privilege('service_role', 'public.stock_movements', 'DELETE'),
+  'Service role retains ledger reads but cannot bypass transactional RPCs with direct DML'
+);
+
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', 'd1600000-0000-4000-8000-000000000001', true);
@@ -62,6 +91,86 @@ select ok(has_table_privilege('authenticated', 'public.sales', 'SELECT'), 'Sales
 select ok(not (has_table_privilege('authenticated', 'public.sales', 'INSERT') or has_table_privilege('authenticated', 'public.sales', 'UPDATE') or has_table_privilege('authenticated', 'public.sales', 'DELETE')), 'Direct sales writes are denied');
 select ok(not (has_table_privilege('authenticated', 'public.sale_items', 'INSERT') or has_table_privilege('authenticated', 'public.sale_items', 'UPDATE') or has_table_privilege('authenticated', 'public.sale_items', 'DELETE')), 'Direct sale item writes are denied');
 select ok(not (has_table_privilege('authenticated', 'public.stock_movements', 'INSERT') or has_table_privilege('authenticated', 'public.stock_movements', 'UPDATE') or has_table_privilege('authenticated', 'public.stock_movements', 'DELETE')), 'Direct stock ledger writes are denied');
+do $$
+declare table_name text; outcome text;
+begin
+  foreach table_name in array array['customers','sales','sale_items','stock_movements'] loop
+    begin
+      execute format('truncate table public.%I', table_name);
+      raise exception using errcode = 'P0001', message = 'codex_0085_probe_succeeded';
+    exception
+      when insufficient_privilege then outcome := 'denied';
+      when others then
+        if sqlstate = 'P0001' and sqlerrm = 'codex_0085_probe_succeeded' then
+          outcome := 'allowed';
+        else
+          outcome := 'unexpected:' || sqlstate;
+        end if;
+    end;
+    perform set_config('test.truncate.' || table_name, outcome, true);
+  end loop;
+end $$;
+select is(current_setting('test.truncate.customers'), 'denied', 'Authenticated TRUNCATE on customers is denied');
+select is(current_setting('test.truncate.sales'), 'denied', 'Authenticated TRUNCATE on sales is denied');
+select is(current_setting('test.truncate.sale_items'), 'denied', 'Authenticated TRUNCATE on sale_items is denied');
+select is(current_setting('test.truncate.stock_movements'), 'denied', 'Authenticated TRUNCATE on stock_movements is denied');
+do $$
+declare table_name text; outcome text;
+begin
+  foreach table_name in array array['customers','sales','sale_items','stock_movements'] loop
+    begin
+      execute format('create trigger codex_0085_probe_%I before insert on public.%I for each row execute function public.codex_0085_privilege_probe()', table_name, table_name);
+      raise exception using errcode = 'P0001', message = 'codex_0085_probe_succeeded';
+    exception
+      when insufficient_privilege then outcome := 'denied';
+      when others then
+        if sqlstate = 'P0001' and sqlerrm = 'codex_0085_probe_succeeded' then
+          outcome := 'allowed';
+        else
+          outcome := 'unexpected:' || sqlstate;
+        end if;
+    end;
+    perform set_config('test.trigger.' || table_name, outcome, true);
+  end loop;
+end $$;
+select is(current_setting('test.trigger.customers'), 'denied', 'Authenticated cannot create triggers on customers');
+select is(current_setting('test.trigger.sales'), 'denied', 'Authenticated cannot create triggers on sales');
+select is(current_setting('test.trigger.sale_items'), 'denied', 'Authenticated cannot create triggers on sale_items');
+select is(current_setting('test.trigger.stock_movements'), 'denied', 'Authenticated cannot create triggers on stock_movements');
+do $$ declare outcome text;
+begin
+  begin
+    execute 'create table public.codex_0085_reference_probe (customer_id uuid references public.customers(id))';
+    raise exception using errcode = 'P0001', message = 'codex_0085_probe_succeeded';
+  exception
+    when insufficient_privilege then outcome := 'denied';
+    when others then
+      if sqlstate = 'P0001' and sqlerrm = 'codex_0085_probe_succeeded' then outcome := 'allowed';
+      else outcome := 'unexpected:' || sqlstate;
+      end if;
+  end;
+  perform set_config('test.references.customers', outcome, true);
+end $$;
+select is(current_setting('test.references.customers'), 'denied', 'Authenticated cannot add foreign keys referencing customer data');
+do $$ declare outcome text;
+begin
+  begin
+    execute 'lock table public.sales in access exclusive mode';
+    raise exception using errcode = 'P0001', message = 'codex_0085_probe_succeeded';
+  exception
+    when insufficient_privilege then outcome := 'denied';
+    when others then
+      if sqlstate = 'P0001' and sqlerrm = 'codex_0085_probe_succeeded' then outcome := 'allowed';
+      else outcome := 'unexpected:' || sqlstate;
+      end if;
+  end;
+  perform set_config('test.maintain.sales', outcome, true);
+end $$;
+select is(current_setting('test.maintain.sales'), 'denied', 'Authenticated cannot acquire maintenance-level exclusive locks on sales');
+reset role;
+revoke create on schema public from authenticated;
+revoke execute on function public.codex_0085_privilege_probe() from authenticated;
+set local role authenticated;
 select ok(has_function_privilege('authenticated', 'public.finalize_sale_financial(jsonb)', 'EXECUTE'), 'Sale finalization remains available through its guarded RPC');
 select ok(has_function_privilege('authenticated', 'public.cancel_sale(uuid)', 'EXECUTE'), 'Sale cancellation remains available through its guarded RPC');
 select ok(has_function_privilege('authenticated', 'public.receive_purchase(uuid)', 'EXECUTE'), 'Purchase receiving remains available through its guarded RPC');
@@ -190,6 +299,36 @@ exception when others then
   perform set_config('test.seller_production_error', sqlerrm, true);
 end $$;
 select is(current_setting('test.seller_production_error'), 'Sem permissão para produzir', 'Seller cannot produce without the stock role');
+reset role;
+
+set local role service_role;
+do $$ declare denied boolean := false; begin
+  begin
+    insert into public.sales(company_id, status, total)
+    values ('d1500000-0000-4000-8000-000000000001', 'draft', 1);
+  exception when insufficient_privilege then denied := true;
+  end;
+  perform set_config('test.service_sales_insert_denied', denied::text, true);
+end $$;
+select is(current_setting('test.service_sales_insert_denied'), 'true', 'Service role cannot insert sales outside transactional RPCs');
+do $$ declare denied boolean := false; begin
+  begin
+    insert into public.sale_items(company_id, sale_id, product_id, quantity, price, cost)
+    values ('d1500000-0000-4000-8000-000000000001', 'd1900000-0000-4000-8000-000000000001', 'd1800000-0000-4000-8000-000000000001', 1, 10, 5);
+  exception when insufficient_privilege then denied := true;
+  end;
+  perform set_config('test.service_sale_items_insert_denied', denied::text, true);
+end $$;
+select is(current_setting('test.service_sale_items_insert_denied'), 'true', 'Service role cannot insert sale items outside transactional RPCs');
+do $$ declare denied boolean := false; begin
+  begin
+    insert into public.stock_movements(company_id, product_id, type, quantity)
+    values ('d1500000-0000-4000-8000-000000000001', 'd1800000-0000-4000-8000-000000000001', 'adjust', 1);
+  exception when insufficient_privilege then denied := true;
+  end;
+  perform set_config('test.service_stock_insert_denied', denied::text, true);
+end $$;
+select is(current_setting('test.service_stock_insert_denied'), 'true', 'Service role cannot insert stock movements outside transactional RPCs');
 reset role;
 
 select * from finish();

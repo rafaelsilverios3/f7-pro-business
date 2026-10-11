@@ -1,4 +1,4 @@
-import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
+import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 
 const ROLES = new Set(['admin', 'gestor', 'comercial', 'vendedor', 'atendimento']);
@@ -84,15 +84,34 @@ async function generateResponse(input: { message: string; tool: string; result: 
 }
 const modelRouter = new ModelRouter([new FunctionModelProvider('openai_compatible', (input) => generateResponse(input as any))]);
 
-async function createDraft(sb: any, companyId: string, userId: string, draft: any) {
-  const productId = uuid(draft?.product_id); const customerId = uuid(draft?.customer_id); const quantity = Number(draft?.quantity); if (!productId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 10000) throw new Error('Rascunho de pedido inválido.');
-  const { data: product, error: productError } = await sb.from('products').select(PRODUCT_FIELDS).eq('company_id', companyId).eq('id', productId).eq('active', true).maybeSingle(); if (productError) throw productError; if (!product) throw new Error('Produto não encontrado.');
-  const price = Number(product.price || 0); if (Number(product.stock || 0) < quantity) throw new Error('Estoque insuficiente para criar o rascunho.');
-  if (customerId) { const { data: customer } = await sb.from('customers').select('id').eq('company_id', companyId).eq('id', customerId).maybeSingle(); if (!customer) throw new Error('Cliente não encontrado.'); }
-  const items = [{ product_id: product.id, name: product.name, qty: quantity, quantity, price, cost: Number(product.cost || 0) }];
-  const { data: sale, error } = await sb.from('sales').insert({ company_id: companyId, customer_id: customerId, status: 'draft', items, subtotal: price * quantity, total: price * quantity, discount: 0, addition: 0, cost_total: Number(product.cost || 0) * quantity, profit: (price - Number(product.cost || 0)) * quantity }).select('id,company_id,customer_id,status,items,total,created_at').single();
-  if (error) throw error;
-  try { await sb.from('audit_logs').insert({ company_id: companyId, user_id: userId, action: 'sales_assistant.draft_created', entity: 'Sale', entity_id: sale.id, new_data: sale }); } catch { /* audit is best effort */ }
+async function createDraft(db: any, companyId: string, draft: any, confirmed: boolean) {
+  const productId = uuid(draft?.product_id);
+  const customerId = draft?.customer_id == null ? null : uuid(draft.customer_id);
+  const quantity = Number(draft?.quantity);
+  const idempotencyKey = clean(draft?.idempotency_key, 200);
+  if (!productId || (draft?.customer_id != null && !customerId) || !Number.isFinite(quantity) || quantity <= 0 || quantity > 10000 || confirmed !== true) {
+    throw new Error('Rascunho de pedido inválido.');
+  }
+  const { data, error } = await db.rpc('create_draft_sale', {
+    sale_payload: {
+      company_id: companyId,
+      product_id: productId,
+      customer_id: customerId,
+      quantity,
+      confirmed,
+      idempotency_key: idempotencyKey || null,
+    },
+  });
+  if (error) {
+    const message = String(error.message || '');
+    if (message.includes('Estoque insuficiente')) throw new Error('Estoque insuficiente para criar o rascunho.');
+    if (message.includes('Produto não encontrado')) throw new Error('Produto não encontrado.');
+    if (message.includes('Cliente não encontrado')) throw new Error('Cliente não encontrado.');
+    if (message.includes('Confirmação humana')) throw new Error('Confirmação humana obrigatória para criar o rascunho.');
+    throw new Error('Não foi possível criar o rascunho.');
+  }
+  const sale = Array.isArray(data) ? data[0] : data;
+  if (!sale?.id || sale.status !== 'draft') throw new Error('Não foi possível criar o rascunho.');
   return sale;
 }
 
@@ -105,7 +124,7 @@ Deno.serve(async (req) => {
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle(); if (!member?.active || !ROLES.has(member.role)) return json({ code: 'FORBIDDEN' }, 403);
     const { data: enabled, error: featureError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'ai_sales' }); if (featureError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500); if (!enabled) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'Sales Assistant não está habilitado para esta empresa.' }, 403);
     await startRun(sb, companyId, traceId); await logEvent(sb, companyId, traceId, 'SALES_ASSISTANT_STARTED');
-    if (body?.action === 'create_draft') { if (!['admin', 'gestor', 'comercial', 'vendedor'].includes(member.role)) return json({ code: 'FORBIDDEN', message: 'Você não possui permissão para criar rascunhos.' }, 403); if (body?.confirmed !== true) return json({ code: 'CONFIRMATION_REQUIRED' }, 409); await logEvent(sb, companyId, traceId, 'CONFIRMATION_REQUIRED'); const sale = await createDraft(sb, companyId, userData.user.id, body.draft); await logEvent(sb, companyId, traceId, 'DRAFT_ORDER_CREATED', 'success', { sale_id: sale.id }); await finishRun(sb, companyId, traceId, { status: 'completed', current_stage: 'DRAFT_ORDER_CREATED', duration_ms: Date.now() - started }); return json({ success: true, trace_id: traceId, action: 'draft_created', draft: sale }); }
+    if (body?.action === 'create_draft') { if (!['admin', 'gestor', 'comercial', 'vendedor'].includes(member.role)) return json({ code: 'FORBIDDEN', message: 'Você não possui permissão para criar rascunhos.' }, 403); if (body?.confirmed !== true) return json({ code: 'CONFIRMATION_REQUIRED' }, 409); await logEvent(sb, companyId, traceId, 'CONFIRMATION_REQUIRED'); const sale = await createDraft(userClient(jwt), companyId, body.draft, body.confirmed); await logEvent(sb, companyId, traceId, 'DRAFT_ORDER_CREATED', 'success', { sale_id: sale.id }); await finishRun(sb, companyId, traceId, { status: 'completed', current_stage: 'DRAFT_ORDER_CREATED', duration_ms: Date.now() - started }); return json({ success: true, trace_id: traceId, action: 'draft_created', draft: sale }); }
     const history = Array.isArray(body?.history) ? body.history.slice(-8).map((item: any) => ({ message: clean(item?.message, 400), answer: clean(item?.answer, 800), tool: clean(item?.tool, 80), data: item?.data, context: item?.context })).filter((item: any) => item.message) : [];
     const intent = classify(message); await logEvent(sb, companyId, traceId, 'INTENT_CLASSIFIED', 'success', { intent });
     if (intent === 'supplier_external') { await logEvent(sb, companyId, traceId, 'TOOL_SELECTED', 'success', { tool: 'consultar_fornecedor' }); const answer = factual('supplier_external', []); await finishRun(sb, companyId, traceId, { status: 'completed', current_stage: 'GENERATION_COMPLETED', duration_ms: Date.now() - started }); return json({ success: true, trace_id: traceId, feature_enabled: true, intent, tool: 'consultar_fornecedor', answer, data: null, context: routeContext, actions: { open_supplier_intelligence: true, requires_human: true } }); }

@@ -5,6 +5,7 @@ import test from 'node:test';
 const fn = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
 const page = fs.readFileSync('src/pages/AiSalesAssistant.jsx', 'utf8');
 const gate = fs.readFileSync('supabase/migrations/0062_ai_sales_assistant_gate.sql', 'utf8');
+const draftRpc = fs.readFileSync('supabase/migrations/0086_ai_sales_draft_rpc.sql', 'utf8');
 
 test('Sales Assistant usa gate da empresa e membership server-side', () => {
   assert.match(fn, /company_has_feature/);
@@ -20,11 +21,20 @@ test('ferramentas comerciais são explícitas e tenant-scoped', () => {
   assert.doesNotMatch(fn, /body\.sql|query\(body/);
 });
 
-test('rascunho exige confirmação e não baixa estoque', () => {
+test('rascunho exige confirmação e passa por RPC autenticada sem DML direto', () => {
   assert.match(fn, /confirmed !== true/);
-  assert.match(fn, /status: 'draft'/);
-  assert.match(fn, /audit_logs/);
-  assert.doesNotMatch(fn, /stock_movements.*insert/);
+  assert.match(fn, /createDraft\(userClient\(jwt\)/);
+  assert.match(fn, /\.rpc\('create_draft_sale'/);
+  assert.doesNotMatch(fn, /from\('sales'\)\.insert/);
+  assert.match(draftRpc, /security definer/i);
+  assert.match(draftRpc, /auth\.uid\(\) is null/i);
+  assert.match(draftRpc, /is_company_member\(company\)/i);
+  assert.match(draftRpc, /current_company_role\(company\) not in \('admin', 'gestor', 'comercial', 'vendedor'\)/i);
+  assert.match(draftRpc, /company_has_feature\(company, 'ai_sales'\)/i);
+  assert.match(draftRpc, /'draft'/);
+  assert.match(draftRpc, /revoke all on function public\.create_draft_sale\(jsonb\) from public, anon, service_role/i);
+  assert.match(page, /idempotency_key: crypto\.randomUUID\(\)/);
+  assert.match(page, /idempotency_key: pendingDraft\.idempotency_key/);
 });
 
 test('UI ativa conversa, fallback factual e confirmação humana', () => {

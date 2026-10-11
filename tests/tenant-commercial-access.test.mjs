@@ -6,6 +6,8 @@ const migration = fs.readFileSync('supabase/migrations/0085_tenant_commercial_ac
 const saleMigration = fs.readFileSync('supabase/migrations/0053_product_service_items.sql', 'utf8');
 const purchaseMigration = fs.readFileSync('supabase/migrations/0003_transactional_flows.sql', 'utf8');
 const productionMigration = fs.readFileSync('supabase/migrations/0054_production_module.sql', 'utf8');
+const draftMigration = fs.readFileSync('supabase/migrations/0086_ai_sales_draft_rpc.sql', 'utf8');
+const serviceLedgerMigration = fs.readFileSync('supabase/migrations/0087_service_role_commercial_ledger_write_boundary.sql', 'utf8');
 
 test('browser entitlement RPC preserves PostgREST argument names and requires active company membership', () => {
   assert.match(migration, /company_has_feature\(target_company uuid, feature text\)/i);
@@ -50,6 +52,21 @@ test('commercial ledgers allow tenant-scoped reads but deny browser-side transac
   assert.match(migration, /create policy tenant_member_select on public\.%I for select to authenticated using \(public\.is_company_member\(company_id\)\)/i);
 });
 
+test('non-row table privileges are removed from public relations and migration-owner defaults', () => {
+  assert.match(migration, /revoke truncate, trigger, references, maintain on all tables in schema public\s+from public, anon, authenticated, service_role/i);
+  assert.match(migration, /alter default privileges for role %I revoke truncate, trigger, references, maintain on tables/i);
+  assert.match(migration, /alter default privileges for role %I in schema public revoke truncate, trigger, references, maintain on tables from public, anon, authenticated, service_role/i);
+  assert.match(migration, /current_user[\s\S]*?alter default privileges[\s\S]*?current_user/i);
+  assert.match(migration, /has_table_privilege\('authenticated', relation\.oid, 'TRUNCATE'\)/i);
+  assert.match(migration, /has_table_privilege\('authenticated', relation\.oid, 'TRIGGER'\)/i);
+  assert.match(migration, /has_table_privilege\('authenticated', relation\.oid, 'REFERENCES'\)/i);
+  assert.match(migration, /has_table_privilege\('authenticated', relation\.oid, 'MAINTAIN'\)/i);
+  assert.match(migration, /has_table_privilege\('service_role', relation\.oid, 'TRUNCATE'\)/i);
+  assert.match(migration, /supabase_admin/i);
+  assert.doesNotMatch(migration, /alter default privileges for role %I[\s\S]*?default_owner\.rolname/i);
+  assert.doesNotMatch(migration, /grant\s+(?:all|truncate|trigger)[^;]*\bto\s+(?:public|anon|authenticated|service_role)/i);
+});
+
 test('customer CRUD follows server-side roles instead of frontend-only permissions', () => {
   assert.match(migration, /create policy customers_select[\s\S]*?current_company_role\(company_id\) in \('admin', 'gestor', 'comercial', 'vendedor', 'atendimento'\)/i);
   assert.match(migration, /create policy customers_insert[\s\S]*?current_company_role\(company_id\) in \('admin', 'gestor', 'comercial', 'vendedor', 'atendimento'\)/i);
@@ -77,4 +94,42 @@ test('inventory adjustments use an atomic server-side RPC for Supabase', () => {
   assert.match(service, /rpc\('adjust_inventory'/);
   assert.match(products, /rpc\('adjust_inventory'/);
   assert.match(migration, /update public\.products set stock = target_stock[\s\S]*?insert into public\.stock_movements/i);
+});
+
+test('service role keeps commercial ledger reads but loses direct write grants', () => {
+  assert.match(serviceLedgerMigration, /revoke insert, update, delete on table\s+public\.sales,\s+public\.sale_items,\s+public\.stock_movements\s+from service_role/i);
+  assert.doesNotMatch(serviceLedgerMigration, /revoke\s+select/i);
+  assert.match(serviceLedgerMigration, /conceptual rollback/i);
+});
+
+test('AI Sales draft RPC is tenant-checked, confirmation-gated and idempotent', () => {
+  assert.match(draftMigration, /security definer/i);
+  assert.match(draftMigration, /set search_path = pg_catalog, public, pg_temp/i);
+  assert.match(draftMigration, /auth\.uid\(\) is null/i);
+  assert.match(draftMigration, /is_company_member\(company\)/i);
+  assert.match(draftMigration, /current_company_role\(company\) not in/i);
+  assert.match(draftMigration, /company_has_feature\(company, 'ai_sales'\)/i);
+  assert.match(draftMigration, /confirmed boolean := coalesce/i);
+  assert.match(draftMigration, /pg_advisory_xact_lock/i);
+  assert.match(draftMigration, /where id = product_id and company_id = company and active\s+for update/i);
+  assert.match(draftMigration, /product_row\.stock < quantity/i);
+  assert.match(draftMigration, /insert into public\.sales[\s\S]*?'draft'/i);
+  assert.doesNotMatch(draftMigration, /insert into public\.(sale_items|stock_movements)/i);
+  assert.match(draftMigration, /revoke all on function public\.create_draft_sale\(jsonb\) from public, anon, service_role/i);
+  assert.match(draftMigration, /grant execute on function public\.create_draft_sale\(jsonb\) to authenticated/i);
+});
+
+test('sales and inventory clients use transactional RPCs; Edge Functions do not directly mutate ledgers', () => {
+  assert.match(fs.readFileSync('src/services/salesService.js', 'utf8'), /rpc\('finalize_sale_financial'/);
+  assert.match(fs.readFileSync('src/services/salesService.js', 'utf8'), /rpc\('cancel_sale'/);
+  assert.match(fs.readFileSync('src/services/inventoryService.js', 'utf8'), /rpc\('adjust_inventory'/);
+  assert.match(fs.readFileSync('src/services/purchasesService.js', 'utf8'), /rpc\('receive_purchase'/);
+  assert.match(fs.readFileSync('src/services/productionService.js', 'utf8'), /rpc\('complete_production_order'/);
+  for (const table of ['sales', 'sale_items', 'stock_movements']) {
+    const directMutation = new RegExp(`from\\(['\"]${table}['\"]\\)\\.(insert|update|upsert|delete)`);
+    for (const file of fs.readdirSync('supabase/functions', { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+      const entry = `supabase/functions/${file.name}/index.ts`;
+      if (fs.existsSync(entry)) assert.doesNotMatch(fs.readFileSync(entry, 'utf8'), directMutation, `${entry} must not directly mutate ${table}`);
+    }
+  }
 });
