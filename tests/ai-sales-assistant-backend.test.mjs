@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { productSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
+import { buildAiSalesHistory } from '../src/lib/aiSalesHistory.js';
 
 const fn = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
 const page = fs.readFileSync('src/pages/AiSalesAssistant.jsx', 'utf8');
@@ -55,5 +56,14 @@ test('UI ativa conversa, fallback factual e confirmação humana', () => {
 test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {
   assert.match(fn, /previousProduct/);
   assert.match(fn, /previousCustomer/);
-  assert.match(page, /context: messages\[index \+ 1\]/);
+  const product = { id: 'p1', name: 'Produto fictício', sku: 'TEST-1' };
+  const history = buildAiSalesHistory([
+    { role: 'assistant', answer: 'Olá' },
+    { role: 'user', answer: 'Quais produtos temos?' },
+    { role: 'assistant', answer: 'Encontrei um produto', tool: 'buscar_produto', data: [product], context: {} },
+    { role: 'user', answer: 'Quanto temos em estoque?' },
+  ]);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].message, 'Quais produtos temos?');
+  assert.equal(history[0].data[0].id, 'p1');
 });
