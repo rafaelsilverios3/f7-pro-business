@@ -76,3 +76,12 @@ test('consulta itens de compra usa coluna existente do schema e não presume cre
   assert.match(purchaseService, /purchaseItemsRepository\.list\(companyId, 'purchase_id', 2000\)/);
   assert.doesNotMatch(purchaseService, /purchaseItemsRepository\.list\(companyId, '-created_date'/);
 });
+
+test('formulário de compra consulta fornecedores somente por empresa, conforme o schema atual', () => {
+  const dialog = fs.readFileSync('src/components/compras/PurchaseDialog.jsx', 'utf8');
+  const supplierSchema = fs.readFileSync('supabase/migrations/0001_initial_schema.sql', 'utf8').match(/create table if not exists suppliers \(([^;]+)\);/i)?.[1] || '';
+  assert.match(supplierSchema, /company_id uuid/);
+  assert.doesNotMatch(supplierSchema, /\bactive\b/i);
+  assert.match(dialog, /entity\('Supplier'\)\.filter\(\{ company_id: company\.id \}/);
+  assert.doesNotMatch(dialog, /entity\('Supplier'\)\.filter\(\{[^}]*active:/);
+});

@@ -23,7 +23,9 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
     if (!open || !company) return;
     (async () => {
       const provider = getDataProvider();
-      setSuppliers(await provider.entity('Supplier').filter({ company_id: company.id, active: true }, '-created_date', 500));
+      // The current Supabase suppliers schema has no `active` column; scope the
+      // selector to the tenant and show its existing suppliers.
+      setSuppliers(await provider.entity('Supplier').filter({ company_id: company.id }, '-created_date', 500));
       setProducts(await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500));
     })();
     if (suggestion?.product_id && suggestion.suggested_quantity > 0) {
