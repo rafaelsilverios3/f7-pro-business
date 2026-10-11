@@ -23,6 +23,10 @@ function rowCount(result) {
   return Array.isArray(result?.data) ? result.data.length : result?.data ? 1 : 0;
 }
 
+function isPermissionDenied(error) {
+  return Boolean(error && ([401, 403].includes(error.status) || error.code === '42501'));
+}
+
 export default function TenantIsolationAuditTemporary() {
   const { user } = useAuth();
   const { company, loading: companyLoading } = useCompany();
@@ -93,13 +97,13 @@ export default function TenantIsolationAuditTemporary() {
       for (const table of tables) {
         const response = await db.from(table).select('id').eq('company_id', otherCompanyId).limit(2);
         const count = rowCount(response);
-        const denied = Boolean(response.error && [401, 403].includes(response.error.status));
+        const denied = isPermissionDenied(response.error);
         const pass = !response.error && count === 0 || denied;
         add(checks, `REST SELECT ${table} da outra empresa`, { rowsReturned: count, error: safeError(response.error) }, 'HTTP lógico sem erro e zero linhas, ou acesso negado.', pass);
       }
 
       const feature = await db.rpc('company_has_feature', { target_company: otherCompanyId, feature: 'ai_sales' });
-      add(checks, 'RPC company_has_feature cross-tenant', { value: feature.data ?? null, error: safeError(feature.error) }, 'false ou acesso negado.', !feature.error && feature.data === false || Boolean(feature.error && [401, 403].includes(feature.error.status)));
+      add(checks, 'RPC company_has_feature cross-tenant', { value: feature.data ?? null, error: safeError(feature.error) }, 'false ou acesso negado.', !feature.error && feature.data === false || isPermissionDenied(feature.error));
 
       const foreignInsertName = `F7_TENANT_AUDIT_CROSS_INSERT_${ownKey}_20261011`;
       const insert = await db.from('customers').insert({ company_id: otherCompanyId, name: foreignInsertName }).select('id');
@@ -108,19 +112,27 @@ export default function TenantIsolationAuditTemporary() {
         const cleanup = insertedId ? await db.from('customers').delete().eq('id', insertedId) : { error: { code: 'MISSING_CREATED_ID', status: null } };
         add(checks, 'REST INSERT customer com company_id alheio', { insertedRows: rowCount(insert), cleanupRows: rowCount(cleanup), cleanupError: safeError(cleanup.error) }, 'Negado; nenhum registro cross-tenant criado.', false);
       } else {
-        const denied = Boolean(insert.error && [401, 403].includes(insert.error.status));
+        const denied = isPermissionDenied(insert.error);
         add(checks, 'REST INSERT customer com company_id alheio', { insertedRows: 0, error: safeError(insert.error) }, 'Negado; nenhum registro cross-tenant criado.', denied);
       }
 
       const foreignFixture = CUSTOMER_FIXTURES[otherKey];
-      const update = await db.from('customers').update({ name: foreignFixture }).eq('company_id', otherCompanyId).eq('name', foreignFixture).select('id');
+      const probeName = `${foreignFixture} CROSS_UPDATE_PROBE_${ownKey}`;
+      const update = await db.from('customers').update({ name: probeName }).eq('company_id', otherCompanyId).eq('name', foreignFixture).select('id');
       const updateRows = rowCount(update);
-      const updateDenied = Boolean(update.error && [401, 403].includes(update.error.status));
-      add(checks, 'REST UPDATE do cliente fictício alheio (no-op)', { affectedRows: updateRows, error: safeError(update.error) }, 'Zero linhas alteradas ou acesso negado.', !update.error && updateRows === 0 || updateDenied);
+      const updateDenied = isPermissionDenied(update.error);
+      let restoreRows = 0;
+      let restoreError = null;
+      if (!update.error && updateRows > 0) {
+        const restored = await db.from('customers').update({ name: foreignFixture }).eq('company_id', otherCompanyId).eq('name', probeName).select('id');
+        restoreRows = rowCount(restored);
+        restoreError = safeError(restored.error);
+      }
+      add(checks, 'REST UPDATE do cliente fictício alheio', { affectedRows: updateRows, error: safeError(update.error), restoredRows: restoreRows, restoreError }, 'Zero linhas alteradas ou acesso negado; qualquer alteração acidental ao fixture é restaurada.', !update.error && updateRows === 0 || updateDenied);
 
       const remove = await db.from('customers').delete().eq('company_id', otherCompanyId).eq('name', foreignFixture).select('id');
       const deleteRows = rowCount(remove);
-      const deleteDenied = Boolean(remove.error && [401, 403].includes(remove.error.status));
+      const deleteDenied = isPermissionDenied(remove.error);
       add(checks, 'REST DELETE do cliente fictício alheio', { deletedRows: deleteRows, error: safeError(remove.error) }, 'Zero linhas excluídas ou acesso negado.', !remove.error && deleteRows === 0 || deleteDenied);
 
       setResults(checks);
