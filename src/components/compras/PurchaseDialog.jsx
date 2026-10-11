@@ -18,6 +18,7 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
   const [expectedDate, setExpectedDate] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     if (!open || !company) return;
@@ -61,6 +62,7 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
     e.preventDefault();
     if (items.length === 0 || !supplier || submitting) return;
     setSubmitting(true);
+    setSubmitError('');
     try {
       await purchasesService.create(company.id, {
         supplier_id: supplierId,
@@ -72,6 +74,9 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
       setItems([]); setSupplierId(''); setExpectedDate(''); setNotes('');
       onDone?.();
       onClose();
+    } catch (error) {
+      const code = String(error?.code ?? error?.status ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+      setSubmitError(code ? `Não foi possível salvar o pedido (código ${code}).` : 'Não foi possível salvar o pedido. Revise os dados e tente novamente.');
     } finally { setSubmitting(false); }
   };
 
@@ -140,6 +145,8 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
           <div className="rounded-lg bg-slate-50 p-3 text-sm">
             <div className="flex justify-between text-base font-semibold text-slate-900"><span>Total da compra</span><span>{fmtMoney(total)}</span></div>
           </div>
+
+          {submitError && <p role="alert" className="text-sm text-rose-600">{submitError}</p>}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
