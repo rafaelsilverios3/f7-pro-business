@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { ArrowRight, BarChart3, Bot, ChevronRight, Cloud, Clock3, FileText, LockKeyhole, Mail, Menu, Package, Search, ShieldCheck, Sparkles, Store, Target, Users, WalletCards, X, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { billingService } from '@/services/billingService';
+import { resolvePublicAppUrl } from '@/lib/publicAppUrl';
 
-const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || '/login';
+const appUrl = resolvePublicAppUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.hostname);
 const trialPath = '/register?returnTo=' + encodeURIComponent('/checkout?plan=pro');
 const contactEmail = import.meta.env.VITE_PUBLIC_CONTACT_EMAIL || '';
 const commercialCodes = new Set(['pro', 'business', 'premium']);
