@@ -25,6 +25,7 @@ test('Edge Function CORS fails closed without APP_ORIGIN and rejects non-HTTPS r
   assert.match(core, /origin\.protocol !== 'https:' && !loopbackHttp/);
   assert.match(core, /origin\.pathname !== '\/'/);
   assert.match(core, /Access-Control-Allow-Origin":configuredCorsOrigin\(\)/);
+  assert.match(core, /Access-Control-Allow-Methods":"GET, POST, OPTIONS"/);
   assert.doesNotMatch(core, /Deno\.env\.get\('APP_ORIGIN'\)\s*\|\|\s*['"]\*['"]/);
 });
 

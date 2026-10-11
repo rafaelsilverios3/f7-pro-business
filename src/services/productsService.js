@@ -58,6 +58,7 @@ export const productsService = {
   create: (companyId, data) => {
     const normalizedData = {
       ...data,
+      duration_minutes: data.duration_minutes == null || data.duration_minutes === '' ? undefined : Number(data.duration_minutes),
       price: monetaryField(data.price ?? data.sale_price, 'Preço de venda'),
       cost: monetaryField(data.cost ?? data.cost_price, 'Preço de custo'),
       sku: data.sku?.trim() || undefined,
