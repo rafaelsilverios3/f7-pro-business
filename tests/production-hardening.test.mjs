@@ -24,6 +24,7 @@ test('master directive documentation set is complete', () => {
 test('production scripts reject unsafe migration and frontend patterns', () => {
   const migrations = fs.readFileSync('scripts/validate-migrations.mjs', 'utf8');
   const secrets = fs.readFileSync('scripts/validate-frontend-secrets.mjs', 'utf8');
+  assert.match(migrations, /\\d\{14\}/, 'migration validator must support the canonical timestamp version recorded by Supabase');
   assert.match(migrations, /Duplicate migration number/);
   assert.match(migrations, /RLS cannot be disabled/);
   assert.match(migrations, /broad browser grant/);

@@ -38,7 +38,7 @@ test('sales page labels drafts, excludes them from KPIs and hides unsafe cancell
 });
 
 test('draft cancellation migration returns before any stock or commercial-ledger reversal', () => {
-  const migration = fs.readFileSync('supabase/migrations/0088_cancel_draft_sale_without_stock_reversal.sql', 'utf8');
+  const migration = fs.readFileSync('supabase/migrations/20261011224414_0088_cancel_draft_sale_without_stock_reversal.sql', 'utf8');
   const draftBranch = migration.indexOf("if result.status = 'draft' then");
   const stockLoop = migration.indexOf('for item in select * from jsonb_array_elements(result.items) loop');
   assert.ok(draftBranch >= 0 && stockLoop > draftBranch, 'draft branch must precede reversal loop');
