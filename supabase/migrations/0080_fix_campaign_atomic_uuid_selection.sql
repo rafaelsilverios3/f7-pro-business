@@ -40,3 +40,7 @@ begin
   end if;
 end;
 $$;
+-- Conceptual rollback: restore the exact import_commercial_campaign_atomic
+-- definition from 0079 (or the immediately pre-0080 database definition), not
+-- a guessed textual reverse. This changes function behavior only; imports
+-- already committed are not undone and require data-level reconciliation.

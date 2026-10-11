@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, ShieldCheck, UploadCloud } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { useOutletContext } from 'react-router-dom';
@@ -11,6 +11,8 @@ const money = (value) => value == null ? '—' : Number(value).toLocaleString('p
 export default function Campanhas() {
   const { company } = useOutletContext();
   const [preview, setPreview] = useState(null);
+  const [parsedWorkbook, setParsedWorkbook] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,6 +23,8 @@ export default function Campanhas() {
   const [importing, setImporting] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [importState, setImportState] = useState('preview');
+  const parseControllerRef = useRef(null);
+  const previewRequestRef = useRef(0);
 
   const loadPersisted = async () => {
     if (!company?.id) return;
@@ -43,18 +47,35 @@ export default function Campanhas() {
     } catch (cause) { setError(cause?.message || 'Não foi possível carregar a campanha persistida.'); }
   };
 
-  useEffect(() => { loadPersisted(); }, [company?.id]);
+  useEffect(() => {
+    setPreview(null); setParsedWorkbook(null); setSelectedFile(null); setFileName(''); setError('');
+    loadPersisted();
+    return () => {
+      previewRequestRef.current += 1;
+      parseControllerRef.current?.abort();
+    };
+  }, [company?.id]);
 
   const loadPreview = async (file) => {
     if (!file || !company?.id) return;
+    parseControllerRef.current?.abort();
+    const controller = new AbortController();
+    parseControllerRef.current = controller;
+    const requestId = ++previewRequestRef.current;
+    setSelectedFile(file); setParsedWorkbook(null); setPreview(null);
     setLoading(true); setError(''); setImportState('preview'); setFileName(file.name); setReviewedCustomers({}); setReviewedProducts({});
     try {
-      const workbook = await parseCampaignWorkbook(file);
+      const workbook = await parseCampaignWorkbook(file, { signal: controller.signal });
+      if (requestId !== previewRequestRef.current) return;
+      setParsedWorkbook(workbook);
       const result = await buildFullCampaignPreview({ companyId: company.id, workbook });
+      if (requestId !== previewRequestRef.current) return;
       setPreview(result);
     } catch (cause) {
-      setPreview(null); setError(cause?.message || 'Não foi possível gerar a prévia da planilha.');
-    } finally { setLoading(false); }
+      if (requestId === previewRequestRef.current && cause?.name !== 'AbortError') {
+        setParsedWorkbook(null); setPreview(null); setError(cause?.message || 'Não foi possível gerar a prévia da planilha.');
+      }
+    } finally { if (requestId === previewRequestRef.current) setLoading(false); }
   };
 
   const rows = useMemo(() => (preview?.action?.preview?.facts || []).filter((fact) => {
@@ -69,15 +90,12 @@ export default function Campanhas() {
     setter((current) => ({ ...current, [key]: decision }));
   };
   const confirmImport = async () => {
-    if (!company?.id || !fileName || !preview) return;
+    if (!company?.id || !fileName || !preview || !parsedWorkbook || !selectedFile) return;
     const phrase = window.prompt('Para importar dados reais, digite: AUTORIZO IMPORTAÇÃO REAL NO F7 TESTE BETA');
     if (phrase !== 'AUTORIZO IMPORTAÇÃO REAL NO F7 TESTE BETA') return;
-    const input = document.querySelector('input[type="file"]');
-    const file = input?.files?.[0];
-    if (!file) return;
     setImporting(true); setImportState('importing'); setError('');
     try {
-      const result = await importCommercialCampaign({ company, file });
+      const result = await importCommercialCampaign({ company, file: selectedFile, workbook: parsedWorkbook });
       await loadPersisted();
       if (!result?.importId) throw new Error('A importação não retornou um batch confirmado.');
       if (result.status === 'already_imported') setImportState('partial');
@@ -88,14 +106,12 @@ export default function Campanhas() {
 
   const resumeImport = async () => {
     if (!company?.id || !persisted?.partial) return;
-    const input = document.querySelector('input[type="file"]');
-    const file = input?.files?.[0];
-    if (!file) { setError('Selecione novamente o mesmo XLSX usado no batch parcial antes de concluir.'); return; }
+    if (!selectedFile || !parsedWorkbook) { setError('Selecione novamente o mesmo XLSX usado no batch parcial antes de concluir.'); return; }
     const phrase = window.prompt('Para concluir o batch parcial, digite: CONCLUIR IMPORTAÇÃO PENDENTE');
     if (phrase !== 'CONCLUIR IMPORTAÇÃO PENDENTE') return;
     setResuming(true); setImportState('importing'); setError('');
     try {
-      const result = await resumeCommercialCampaignImport({ company, file, importRecord: persisted.importRecord });
+      const result = await resumeCommercialCampaignImport({ company, file: selectedFile, workbook: parsedWorkbook, importRecord: persisted.importRecord });
       if (!result?.importId) throw new Error('A continuação não retornou um batch confirmado.');
       await loadPersisted();
     } catch (cause) { setImportState('error'); setError(cause?.message || 'Não foi possível concluir a campanha pendente.'); }

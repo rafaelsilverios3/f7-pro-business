@@ -54,6 +54,7 @@ import SubscriptionBilling from './pages/SubscriptionBilling.jsx';
 import TrialExpired from './pages/TrialExpired.jsx';
 import FeatureLocked from './pages/FeatureLocked.jsx';
 import PublicSite from './pages/PublicSite.jsx';
+import Commerce from './pages/Commerce.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
 import { can } from '@/lib/permissions';
@@ -185,6 +186,7 @@ const AuthenticatedApp = () => {
           <Route path="/supplier-intelligence" element={<RoleGuard permission="supplier_intelligence.view"><SupplierIntelligence /></RoleGuard>} />
           <Route path="/market-intelligence" element={<RoleGuard permission="market_intelligence.view"><MarketIntelligence /></RoleGuard>} />
           <Route path="/sales-hub" element={<RoleGuard permission="sales_channels.view"><SalesHub /></RoleGuard>} />
+          <Route path="/f7-commerce" element={<RoleGuard permission="sales_channels.view"><Commerce /></RoleGuard>} />
           <Route path="/ai-sales" element={<RoleGuard permission="ai_sales.view"><AiSalesAssistant /></RoleGuard>} />
           <Route path="/opportunity-radar" element={<RoleGuard permission="opportunity_radar.view"><OpportunityRadar /></RoleGuard>} />
           <Route path="/ai-observability" element={<RoleGuard permission="ai_observability.view"><AIObservability /></RoleGuard>} />

@@ -37,7 +37,7 @@ function matchesCustomer(customer, filters, sales, periodContext) {
   const first = customerSales.map(rowDate).filter(Boolean).sort()[0];
   if (filters.status === 'new') return Boolean(first && matchesPeriod(first, periodContext));
   if (filters.status === 'recurring') return current > 0 && Boolean(first && !matchesPeriod(first, periodContext));
-  if (filters.status === 'inactive') { const last = customerSales.map(rowDate).filter(Boolean).sort().at(-1); const end = periodContext?.end_date || new Date().toISOString().slice(0, 10); return !last || Math.floor((new Date(`${end}T12:00:00Z`) - new Date(`${last.slice(0, 10)}T12:00:00Z`)) / 86_400_000) >= 90; }
+  if (filters.status === 'inactive') { const last = customerSales.map(rowDate).filter(Boolean).sort().at(-1); const end = periodContext?.end_date || new Date().toISOString().slice(0, 10); return !last || Math.floor((new Date(`${end}T12:00:00Z`).getTime() - new Date(`${last.slice(0, 10)}T12:00:00Z`).getTime()) / 86_400_000) >= 90; }
   return customer.status === filters.status;
 }
 
@@ -45,7 +45,7 @@ export function stockStatus(product) { const stock = safeNumber(product.stock); 
 
 function salesRows(companyId, data, periodContext, filters) {
   const customers = customerNameMap(scoped(data.customers, companyId));
-  return scoped(data.sales, companyId).filter((row) => within(row, periodContext)).filter((row) => matchesSale(row, filters)).map((sale) => ({ date: sale.sale_date || sale.created_at, id: sale.id, customer: sale.customer_name || customers.get(sale.customer_id) || 'Sem cliente', seller: sale.seller || 'Sem vendedor', status: sale.status || 'unknown', payment: sale.payment_method || 'Não informado', value: safeNumber(sale.total), profit: safeNumber(sale.profit) }));
+  return scoped(data.sales, companyId).filter((row) => within(row, periodContext)).filter((row) => matchesSale(row, filters)).map((sale) => ({ date: sale.sale_date || sale.created_at, id: sale.id, customer: sale.customer_name || customers.get(sale.customer_id) || 'Sem cliente', seller: sale.seller || 'Sem vendedor', status: sale.status || 'unknown', cancelled: ['cancelled', 'canceled', 'void', 'failed'].includes(String(sale.status || '').toLowerCase()), payment: sale.payment_method || 'Não informado', value: safeNumber(sale.total), profit: safeNumber(sale.profit) }));
 }
 
 function buildRows(companyId, data, periodContext, report, filters) {

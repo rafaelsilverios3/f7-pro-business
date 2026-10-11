@@ -46,3 +46,7 @@ end; $$;
 
 
 grant execute on function public.save_production_recipe(jsonb) to authenticated;
+-- Conceptual rollback: restore the prior save_production_recipe body from 0056
+-- (or the exact pre-change database definition) after reversing later function
+-- replacements. Recipe saves and product-cost updates already performed are
+-- persistent data changes and require backup/reconciliation, not function DDL.

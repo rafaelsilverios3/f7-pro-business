@@ -403,6 +403,29 @@ body.light-theme .app-shell [data-executive-summary] [class~="text-indigo-600"] 
   background: linear-gradient(135deg, #0b1b35 0%, #153d70 100%) !important;
   border-color: #2b5b95 !important;
 }
+
+/* F7 Commerce keeps its information panel and muted labels legible in both themes. */
+.app-shell [data-commerce] .commerce-marketplace-section {
+  background: linear-gradient(135deg, #0b1b35 0%, #102b4c 100%);
+  border-color: #2b5b95;
+}
+.app-shell [data-commerce] .commerce-status {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+.app-shell [data-commerce] .commerce-muted-icon { color: #cbd5e1; }
+body.light-theme .app-shell [data-commerce] .commerce-marketplace-section {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+}
+body.light-theme .app-shell [data-commerce] .commerce-marketplace-section .text-slate-900 { color: #0b1b35 !important; }
+body.light-theme .app-shell [data-commerce] .commerce-marketplace-section .text-slate-600,
+body.light-theme .app-shell [data-commerce] .commerce-marketplace-section .text-slate-500 { color: #475569 !important; }
+body.light-theme .app-shell [data-commerce] .commerce-status {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+}
+body.light-theme .app-shell [data-commerce] .commerce-muted-icon { color: #475569 !important; }
 .app-shell [data-executive-summary] > div:first-child h2,
 .app-shell [data-executive-summary] > div:first-child [class~="text-slate-800"],
 .app-shell [data-executive-summary] > div:first-child [class~="text-slate-900"] {

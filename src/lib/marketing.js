@@ -1,5 +1,12 @@
 import { matchesPeriod, previousPeriodContext } from './metrics.js';
 
+/** @typedef {import('../types/f7Domain').Customer} Customer */
+/** @typedef {import('../types/f7Domain').Sale} Sale */
+/** @typedef {import('../types/f7Domain').Product} Product */
+/** @typedef {import('../types/f7Domain').Opportunity} Opportunity */
+/** @typedef {import('../types/f7Domain').PeriodContext} PeriodContext */
+/** @typedef {Customer & { purchase_count: number, current_purchase_count: number, historical_revenue: number, current_revenue: number, previous_revenue: number, average_ticket: number, first_purchase: string | null, last_purchase: string | null, inactive_days: number | null, variation_percent: number | null, product_ids: string[], categories: string[], opportunity: boolean, is_active?: boolean, is_new?: boolean, is_recurring?: boolean, is_inactive?: boolean, is_falling?: boolean, is_high_value?: boolean }} MarketingProfile */
+
 const DAY_MS = 86_400_000;
 const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const dateValue = (value) => { const parsed = value ? new Date(value).getTime() : NaN; return Number.isFinite(parsed) ? parsed : null; };
@@ -42,6 +49,7 @@ function asOf(periodContext, now, sales, customers) {
   return new Date(known.length ? Math.max(...known) : new Date(now).getTime()).toISOString();
 }
 
+/** @param {{companyId?: string, customers?: Customer[], sales?: Sale[], products?: Product[], opportunities?: Opportunity[], periodContext?: PeriodContext | null, now?: Date}} [options] */
 export function buildMarketingModel({ companyId, customers = [], sales = [], products = [], opportunities = [], periodContext, now = new Date() } = {}) {
   if (!companyId) throw new Error('company_id é obrigatório para Marketing.');
   const customerRows = scoped(customers, companyId);
@@ -56,6 +64,7 @@ export function buildMarketingModel({ companyId, customers = [], sales = [], pro
   const productBuyers = new Map();
   saleRows.forEach((sale) => saleItems(sale).forEach((item) => { const productId = productIdForItem(item, productByName); if (productId && sale.customer_id) productBuyers.set(productId, new Set([...(productBuyers.get(productId) || []), sale.customer_id])); }));
   const opportunityCustomerIds = new Set(opportunityRows.map((item) => item.metadata?.entity_type === 'customer' ? item.metadata?.entity_id : item.customer_id).filter(Boolean));
+  /** @type {MarketingProfile[]} */
   const profiles = customerRows.map((customer) => {
     const history = (salesByCustomer.get(customer.id) || []).slice().sort((a, b) => (dateValue(rowDate(a)) || 0) - (dateValue(rowDate(b)) || 0));
     const currentSales = periodContext ? history.filter((sale) => matchesPeriod(rowDate(sale), periodContext)) : history;

@@ -237,3 +237,9 @@ revoke all on function public.quote_items_normalize(jsonb, uuid) from public, an
 revoke all on function public.finalize_sale_from_quote(jsonb) from public, anon, authenticated;
 grant execute on function public.approve_quote(uuid) to authenticated;
 grant execute on function public.convert_quote_to_sale(uuid) to authenticated;
+-- Conceptual rollback: restore the prior quotes policies/grants and function,
+-- trigger, and view definitions, then drop this migration's added columns and
+-- indexes only after dependent code is disabled. Added quote snapshots, approval
+-- states, and conversion timestamps are not recoverable from DDL rollback;
+-- back up affected quotes first. Sales already created from quotes are separate
+-- business records and must be reconciled, never deleted as an assumed inverse.

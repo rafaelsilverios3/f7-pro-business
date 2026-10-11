@@ -62,3 +62,7 @@ revoke all on function public.is_platform_admin() from public, anon;
 grant execute on function public.is_platform_admin() to authenticated, service_role;
 
 comment on table public.platform_admins is 'Explicit platform-level administrators. Never use email as authorization.';
+-- Conceptual rollback: remove this migration's policies, helper function,
+-- grants, indexes, and tables in dependency order only after disabling dependent
+-- application paths. Dropping tables destroys platform-admin, warning, and
+-- audit records; export/backup and retain them before any destructive rollback.

@@ -4,6 +4,12 @@
  */
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** @typedef {import('../types/f7Domain').PeriodOptions} PeriodOptions */
+/** @typedef {import('../types/f7Domain').PeriodContext} PeriodContext */
+/** @typedef {import('../types/f7Domain').Customer} Customer */
+/** @typedef {import('../types/f7Domain').Opportunity} Opportunity */
+/** @typedef {import('../types/f7Domain').Sale} Sale */
+
 const pad = (value) => String(value).padStart(2, '0');
 const isoDate = (year, month, day) => `${year}-${pad(month)}-${pad(day)}`;
 
@@ -40,6 +46,7 @@ export function resolveTimezone(timezone) {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
 }
 
+/** @param {PeriodOptions} [options] @returns {PeriodContext} */
 export function createPeriodContext({ companyId, periodKey = 'month', timezone, now = new Date(), startDate, endDate } = {}) {
   if (!companyId) throw new Error('company_id é obrigatório para métricas.');
   const tz = resolveTimezone(timezone);
@@ -63,12 +70,13 @@ export function createPeriodContext({ companyId, periodKey = 'month', timezone, 
 }
 
 /** Return the immediately preceding comparable period, or null for snapshots/all-time. */
+/** @param {PeriodContext | null | undefined} periodContext @returns {PeriodContext | null} */
 export function previousPeriodContext(periodContext) {
   if (!periodContext?.company_id || periodContext.period_key === 'all' || !periodContext.start_date || !periodContext.end_date) return null;
   const start = new Date(`${periodContext.start_date}T12:00:00Z`);
   const end = new Date(`${periodContext.end_date}T12:00:00Z`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-  const days = Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
   const previousEnd = shiftDays(periodContext.start_date, -1);
   const previousStart = shiftDays(previousEnd, -days + 1);
   return Object.freeze({
@@ -90,12 +98,14 @@ export function compareMetric(current, previous) {
   return { current: currentValue, previous: previousValue, delta, delta_percent: (delta / Math.abs(previousValue)) * 100, state: delta === 0 ? 'neutral' : delta > 0 ? 'positive' : 'negative' };
 }
 
+/** @param {import('../types/f7Domain').DateValue} value @param {PeriodContext | null | undefined} periodContext */
 export function matchesPeriod(value, periodContext) {
   if (!periodContext || periodContext.period_key === 'all') return true;
   const date = dateOnly(value, periodContext.timezone);
   return Boolean(date && periodContext.start_date && periodContext.end_date && date >= periodContext.start_date && date <= periodContext.end_date);
 }
 
+/** @param {Array<Record<string, import('../types/f7Domain').DateValue>>} rows @param {string} field @param {PeriodContext | null | undefined} periodContext */
 export function filterByPeriod(rows = [], field, periodContext) {
   if (!periodContext || periodContext.period_key === 'all') return [...rows];
   return rows.filter((row) => matchesPeriod(row?.[field], periodContext));
@@ -118,13 +128,14 @@ export function projectionForPeriod(value, periodContext, now = new Date()) {
   const today = dateOnly(now, periodContext.timezone);
   const current = new Date(`${today}T12:00:00Z`);
   const start = new Date(`${periodContext.start_date}T12:00:00Z`);
-  const elapsed = Math.max(1, Math.floor((current - start) / 86_400_000) + 1);
-  const totalDays = Math.max(1, Math.floor((new Date(`${periodContext.end_date}T12:00:00Z`) - start) / 86_400_000) + 1);
+  const elapsed = Math.max(1, Math.floor((current.getTime() - start.getTime()) / 86_400_000) + 1);
+  const totalDays = Math.max(1, Math.floor((new Date(`${periodContext.end_date}T12:00:00Z`).getTime() - start.getTime()) / 86_400_000) + 1);
   const multiplier = key === 'month' || key === 'quarter' || key === 'year' ? totalDays / elapsed : 1;
   const labels = { month: 'Projeção do mês', quarter: 'Projeção do trimestre', year: 'Projeção do ano', '7d': 'Total dos 7 dias', '30d': 'Total dos 30 dias', custom: 'Projeção do período' };
   return { value: amount * multiplier, label: labels[key] || 'Total do período', semantic_type: multiplier === 1 ? 'period_total' : 'projection' };
 }
 
+/** @param {{customers?: Customer[], opportunities?: Opportunity[], sales?: Sale[], companyId?: string, periodContext?: PeriodContext | null}} [options] */
 export function buildCrmFunnel({ customers = [], opportunities = [], sales = [], companyId, periodContext } = {}) {
   const scoped = (row) => !companyId || row?.company_id === companyId;
   const customerRows = customers.filter(scoped);
@@ -139,6 +150,7 @@ export function buildCrmFunnel({ customers = [], opportunities = [], sales = [],
   };
 }
 
+/** @param {Sale[]} sales @param {PeriodContext | null} periodContext @param {Date} [now] */
 export function buildEvolution(sales = [], periodContext, now = new Date()) {
   const valid = sales.filter((row) => row?.status !== 'cancelled');
   const key = periodContext?.period_key || 'month';

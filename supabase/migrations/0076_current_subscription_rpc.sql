@@ -37,3 +37,6 @@ $$;
 
 revoke all on function public.get_current_subscription(uuid) from public, anon;
 grant execute on function public.get_current_subscription(uuid) to authenticated;
+-- Conceptual rollback: revoke EXECUTE from authenticated, then drop this RPC.
+-- It is an additive read-only function and stores no data; retain/restore it if
+-- the deployed UI calls it, since removal would break the subscription header.
