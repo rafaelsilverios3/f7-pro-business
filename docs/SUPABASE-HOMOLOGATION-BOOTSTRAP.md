@@ -64,11 +64,13 @@ Fixtures criadas apenas no banco local: três usuários Auth fictícios, duas em
 
 ### Antes de vincular ou aplicar migrations
 
-1. No Dashboard, confirmar por fonte independente o nome `f7-pro-business-homolog`, o project ref, a região e a versão PostgreSQL 15. Confirmar também que o projeto está vazio ou registrar e revisar qualquer dado/schema existente.
-2. Comparar o project ref copiado do Dashboard com o valor digitado no comando. Não confiar no nome visível sozinho.
-3. Confirmar que nenhuma sessão/comando Supabase está vinculado ao projeto de produção. Não incluir `SUPABASE_ACCESS_TOKEN`, database password ou chave `service_role` em comandos salvos, arquivos, logs ou variáveis `VITE_*`.
-4. Revisar no Dashboard os serviços padrão Auth e Storage e os papéis `anon`, `authenticated` e `service_role`. Não desabilitar RLS nem reduzir grants para acomodar migrations.
-5. Fazer backup do estado inicial mesmo que o projeto pareça vazio; guardar o backup fora do Git e de produção.
+1. No Dashboard, confirmar por fonte independente o nome `f7-pro-business-homolog`, o project ref, a região e a versão PostgreSQL. Na verificação somente de leitura desta etapa, o nome/ref conferidos foram `f7-pro-business-homolog` / `vwylnjmapixtzhryiutt`, a região `us-east-1` e o PostgreSQL remoto `17.11.0.003`. O painel também mostra a branch `main PRODUCTION`; o nome e ref atuais correspondem ao projeto homolog solicitado, mas devem ser reconferidos antes de qualquer comando remoto.
+2. A leitura do schema `public` mostrou zero tabelas, e a página Migrations mostrou “Run your first migration”; não há histórico de migrations exibido. A lista Auth mostrou o estado “No users”, mas também um total estimado de 10 usuários. Essa inconsistência impede certificar que Auth esteja vazio; resolva-a antes de instalação ou testes com dados.
+3. A configuração consultada mostrou Auth `2.197.0`, PostgREST `14.18` e PostgreSQL `17.11.0.003`. O bootstrap local validado nesta etapa usou PostgreSQL `15.19.0.004` (configuração `db.major_version = 15`), portanto a compatibilidade do bootstrap com o major remoto 17 não foi comprovada. Reproduza o reset limpo local com PostgreSQL major 17 antes de considerar o destino pronto para instalação.
+4. A tela de Database Settings não exibiu o estado SSL em leitura, e a página de URLs/Auth não exibiu os valores de Site URL/redirect allowlist. A revisão desses ajustes permanece pendente; não inferir configuração a partir dos campos não carregados.
+5. Confirmar que nenhuma sessão/comando Supabase está vinculada ao projeto de produção. Não incluir `SUPABASE_ACCESS_TOKEN`, database password ou chave `service_role` em comandos salvos, arquivos, logs ou variáveis `VITE_*`.
+6. Revisar no Dashboard os serviços padrão Auth e Storage e os papéis `anon`, `authenticated` e `service_role`. Não desabilitar RLS nem reduzir grants para acomodar migrations.
+7. Fazer backup do estado inicial mesmo que o projeto pareça vazio; guardar o backup fora do Git e de produção.
 
 ### Aplicação remota, depois da autorização
 
@@ -83,7 +85,7 @@ npx --yes supabase@2.120.0 migration list --linked
 npx --yes supabase@2.120.0 db push --linked --dry-run
 ```
 
-**PARE após o `--dry-run`: não execute SQL nem continue automaticamente.** Registre o project ref e o plano apresentado, confirme que o alvo é o projeto homolog, que não há versões remotas desconhecidas e que o plano lista exatamente as migrations locais esperadas. Uma divergência, qualquer migration já registrada ou qualquer dado/schema encontrado exige revisão. Solicite autorização explícita separada para a aplicação remota; somente em uma etapa posterior autorizada, aplique sem `--include-all` e sem `--yes`, para manter a confirmação interativa do CLI:
+**PARE após o `--dry-run`: não execute SQL nem continue automaticamente.** Registre o project ref e o plano apresentado, confirme que o alvo é o projeto homolog, que não há versões remotas desconhecidas e que o plano lista exatamente as migrations locais esperadas. Uma divergência, qualquer migration já registrada ou qualquer dado/schema encontrado exige revisão. Não prossiga enquanto o Auth não for verificado como vazio, o estado das URLs/SSL não estiver confirmado e o bootstrap local não tiver sido validado em PostgreSQL major 17. Solicite autorização explícita separada para a aplicação remota; somente em uma etapa posterior autorizada, aplique sem `--include-all` e sem `--yes`, para manter a confirmação interativa do CLI:
 
 ```powershell
 npx --yes supabase@2.120.0 db push --linked
