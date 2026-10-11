@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, Trash2, Trophy, Target, TrendingUp } from 'lucide-react';
 import { fmtMoney } from '@/lib/business';
 import { createPeriodContext, matchesPeriod } from '@/lib/metrics';
+import { isRevenueSale } from '@/lib/saleStatus';
 import { getCommissionSummary } from '@/lib/commissions';
 import { commissionsService } from '@/services/commissionsService';
 import { goalsService } from '@/services/goalsService';
@@ -58,7 +59,7 @@ export default function Metas() {
     if (!goals) return [];
     return goals.map((g) => {
       const periodContext = goalPeriodContext(company.id, g);
-      const periodSales = sales.filter((s) => s.status !== 'cancelled' && matchesPeriod(s.sale_date || s.created_at, periodContext));
+      const periodSales = sales.filter((s) => isRevenueSale(s) && matchesPeriod(s.sale_date || s.created_at, periodContext));
       let achieved = 0;
       let available = true;
       if (g.scope === 'company') achieved = periodSales.reduce((sum, s) => sum + (Number(s.total) || 0), 0);

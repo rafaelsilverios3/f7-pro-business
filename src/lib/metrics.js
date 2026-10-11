@@ -2,6 +2,7 @@
  * Shared period and metric primitives.  Date-only records are interpreted in
  * the supplied timezone; persisted timestamps remain untouched.
  */
+import { isRevenueSale } from './saleStatus.js';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** @typedef {import('../types/f7Domain').PeriodOptions} PeriodOptions */
@@ -140,7 +141,7 @@ export function buildCrmFunnel({ customers = [], opportunities = [], sales = [],
   const scoped = (row) => !companyId || row?.company_id === companyId;
   const customerRows = customers.filter(scoped);
   const opportunityRows = opportunities.filter(scoped).filter((row) => !periodContext || periodContext.period_key === 'all' || matchesPeriod(row.created_date || row.created_at, periodContext));
-  const saleRows = sales.filter(scoped).filter((row) => row.status !== 'cancelled' && matchesPeriod(row.sale_date || row.created_at, periodContext));
+  const saleRows = sales.filter(scoped).filter((row) => isRevenueSale(row) && matchesPeriod(row.sale_date || row.created_at, periodContext));
   return {
     leads: customerRows.filter((row) => row.status === 'lead' && matchesPeriod(row.created_date || row.created_at, periodContext)).length,
     ativos: customerRows.filter((row) => row.status === 'active' && matchesPeriod(row.created_date || row.created_at, periodContext)).length,
@@ -152,7 +153,7 @@ export function buildCrmFunnel({ customers = [], opportunities = [], sales = [],
 
 /** @param {Sale[]} sales @param {PeriodContext | null} periodContext @param {Date} [now] */
 export function buildEvolution(sales = [], periodContext, now = new Date()) {
-  const valid = sales.filter((row) => row?.status !== 'cancelled');
+  const valid = sales.filter(isRevenueSale);
   const key = periodContext?.period_key || 'month';
   const bucket = (row) => dateOnly(row.sale_date || row.created_at, periodContext?.timezone || resolveTimezone());
   const groups = new Map();
@@ -188,7 +189,7 @@ function bucketLabel(value, periodContext) {
 
 function aggregateRevenueRows(rows, periodContext) {
   const groups = new Map();
-  rows.filter((row) => row?.company_id === periodContext?.company_id && row?.status !== 'cancelled' && matchesPeriod(row.sale_date || row.created_at, periodContext)).forEach((row) => {
+  rows.filter((row) => row?.company_id === periodContext?.company_id && isRevenueSale(row) && matchesPeriod(row.sale_date || row.created_at, periodContext)).forEach((row) => {
     const label = bucketLabel(row.sale_date || row.created_at, periodContext);
     if (!label) return;
     const current = groups.get(label) || { label, faturamento: 0, lucro: 0, vendas: 0, ticket_medio: 0 };
@@ -220,7 +221,7 @@ export function buildRevenueSeries(sales = [], periodContext) {
 
 export function buildAbcRows(sales = [], periodContext) {
   const productTotals = new Map();
-  sales.filter((row) => row?.status !== 'cancelled' && matchesPeriod(row.sale_date || row.created_at, periodContext)).forEach((sale) => {
+  sales.filter((row) => isRevenueSale(row) && matchesPeriod(row.sale_date || row.created_at, periodContext)).forEach((sale) => {
     (sale.items || []).forEach((item) => productTotals.set(item.name, (productTotals.get(item.name) || 0) + (Number(item.total) || 0)));
   });
   const sorted = [...productTotals.entries()].sort((a, b) => b[1] - a[1]);

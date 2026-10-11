@@ -1,7 +1,8 @@
 import { buildCrmFunnel, buildRevenueSeries, createPeriodContext, filterByPeriod, metricMeta, matchesPeriod, previousPeriodContext, projectionForPeriod, safeMargin, compareMetric } from '../lib/metrics.js';
+import { isRevenueSale } from '../lib/saleStatus.js';
 
 const scoped = (rows, companyId) => rows.filter((row) => row?.company_id === companyId);
-const validSales = (rows) => rows.filter((row) => row?.status !== 'cancelled');
+const validSales = (rows) => rows.filter(isRevenueSale);
 const sum = (rows, field) => rows.reduce((total, row) => total + (Number(row?.[field]) || 0), 0);
 const openOpportunity = (row) => {
   const state = String(row?.metadata?.radar_state || row?.stage || row?.status || '').trim().toLocaleLowerCase('pt-BR');

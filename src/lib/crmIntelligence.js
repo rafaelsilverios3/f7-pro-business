@@ -1,3 +1,5 @@
+import { isRevenueSale } from './saleStatus.js';
+
 const DAY_MS = 86_400_000;
 
 const dateValue = (value) => {
@@ -10,7 +12,7 @@ export function buildCrmIntelligence(input = {}) {
   const { companyId, customers = [], sales = [], now = new Date() } = input;
   if (!companyId) throw new Error('company_id é obrigatório.');
   const nowMs = new Date(now).getTime();
-  const validSales = sales.filter((sale) => sale?.company_id === companyId && sale?.status !== 'cancelled');
+  const validSales = sales.filter((sale) => sale?.company_id === companyId && isRevenueSale(sale));
   const salesByCustomer = new Map();
   for (const sale of validSales) {
     if (!sale.customer_id) continue;

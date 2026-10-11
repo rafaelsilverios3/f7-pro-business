@@ -1,4 +1,5 @@
 import { matchesPeriod, previousPeriodContext } from './metrics.js';
+import { isRevenueSale } from './saleStatus.js';
 
 /** @typedef {import('../types/f7Domain').Customer} Customer */
 /** @typedef {import('../types/f7Domain').Sale} Sale */
@@ -14,7 +15,7 @@ const dateOnly = (value) => { const parsed = dateValue(value); return parsed ===
 const rowDate = (row) => row?.sale_date || row?.created_at || row?.created_date || null;
 const text = (value, max = 160) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const scoped = (rows = [], companyId) => rows.filter((row) => row?.company_id === companyId);
-const validSales = (rows = []) => rows.filter((row) => row?.status !== 'cancelled');
+const validSales = (rows = []) => rows.filter(isRevenueSale);
 const saleItems = (sale) => Array.isArray(sale?.items) ? sale.items : [];
 const itemQuantity = (item) => safeNumber(item?.qty ?? item?.quantity);
 const itemRevenue = (item) => Number.isFinite(Number(item?.total)) ? Number(item.total) : itemQuantity(item) * safeNumber(item?.price);

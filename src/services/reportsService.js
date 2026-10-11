@@ -8,6 +8,7 @@ import { suppliersRepository } from '@/data/repositories/suppliersRepository';
 import { opportunitiesService } from '@/services/opportunitiesService';
 import { buildAbcRows, createPeriodContext, matchesPeriod, previousPeriodContext } from '@/lib/metrics';
 import { getDashboardMetrics } from '@/services/metricsService';
+import { isRevenueSale } from '@/lib/saleStatus';
 
 export const REPORT_TABS = Object.freeze([
   { id: 'overview', label: 'Visão geral' }, { id: 'sales', label: 'Vendas' }, { id: 'profit', label: 'Lucro e margem' }, { id: 'customers', label: 'Clientes' }, { id: 'abc', label: 'Curva ABC' },
@@ -16,7 +17,7 @@ export const REPORT_TABS = Object.freeze([
 
 const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const rowDate = (row) => row?.sale_date || row?.created_at || row?.created_date || null;
-const validSales = (rows = []) => rows.filter((row) => row?.status !== 'cancelled');
+const validSales = (rows = []) => rows.filter(isRevenueSale);
 const includesText = (value, query) => !query || String(value || '').toLocaleLowerCase('pt-BR').includes(String(query).toLocaleLowerCase('pt-BR'));
 const itemText = (sale) => (Array.isArray(sale?.items) ? sale.items : []).map((item) => `${item?.name || ''} ${item?.product_name || ''} ${item?.sku || ''}`).join(' ');
 const within = (row, periodContext, field = rowDate) => matchesPeriod(field(row), periodContext);

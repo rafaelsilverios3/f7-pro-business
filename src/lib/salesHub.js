@@ -1,6 +1,7 @@
 import { matchesPeriod, previousPeriodContext } from '@/lib/metrics';
 import { activitySummary, deriveNextAction, isDueToday, isOverdue, isPending } from '@/lib/crmActivities';
 import { buildCustomerRelationshipIndex } from '@/lib/customerRelationship';
+import { isRevenueSale } from './saleStatus.js';
 
 /** @typedef {import('../types/f7Domain').Customer} Customer */
 /** @typedef {import('../types/f7Domain').Product} Product */
@@ -17,7 +18,7 @@ import { buildCustomerRelationshipIndex } from '@/lib/customerRelationship';
 const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const dateOf = (row) => row?.sale_date || row?.created_at || row?.created_date || null;
 const dateTime = (value) => value ? new Date(value).getTime() : NaN;
-const valid = (row) => row?.status !== 'cancelled';
+const valid = isRevenueSale;
 const scoped = (rows = [], companyId) => rows.filter((row) => !companyId || row?.company_id === companyId);
 const labelPriority = (value) => {
   const normalized = String(value || '').toLowerCase();

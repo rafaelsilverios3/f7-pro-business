@@ -4,6 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Plus, Eye, Ban } from 'lucide-react';
 import { salesRepository } from '@/data/repositories/salesRepository';
 import { fmtMoney, fmtDate } from '@/lib/business';
+import { isRevenueSale, saleItemTotal } from '@/lib/saleStatus';
 import { salesService } from '@/services/salesService';
 import PageHeader from '@/components/layout/PageHeader';
 import SaleDialog from '@/components/vendas/SaleDialog';
@@ -13,11 +14,12 @@ import {
 } from '@/components/ui/dialog';
 
 const STATUS_STYLE = {
+  draft: 'bg-slate-100 text-slate-700',
   paid: 'bg-emerald-100 text-emerald-700',
   pending: 'bg-amber-100 text-amber-700',
   cancelled: 'bg-rose-100 text-rose-700',
 };
-const STATUS_LABEL = { paid: 'Pago', pending: 'Pendente', cancelled: 'Cancelada' };
+const STATUS_LABEL = { draft: 'Rascunho', paid: 'Pago', pending: 'Pendente', completed: 'Concluída', cancelled: 'Cancelada', canceled: 'Cancelada' };
 
 export default function Vendas() {
   const { company } = useOutletContext();
@@ -33,7 +35,7 @@ export default function Vendas() {
 
   const stats = useMemo(() => {
     if (!items) return { count: 0, total: 0, profit: 0 };
-    const valid = items.filter((s) => s.status !== 'cancelled');
+    const valid = items.filter(isRevenueSale);
     return {
       count: valid.length,
       total: valid.reduce((s, x) => s + (x.total || 0), 0),
@@ -94,19 +96,19 @@ export default function Vendas() {
               </thead>
               <tbody>
                 {items.map((s) => (
-                  <tr key={s.id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${s.status === 'cancelled' ? 'opacity-50' : ''}`}>
+                  <tr key={s.id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${s.status === 'cancelled' || s.status === 'canceled' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3 font-medium text-slate-800">{s.customer_name}</td>
                     <td className="px-4 py-3 text-slate-500">{fmtDate(s.sale_date)}</td>
                     <td className="px-4 py-3 text-slate-500">{s.seller || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{s.payment_method || '—'}</td>
                     <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(s.total)}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[s.status]}`}>{STATUS_LABEL[s.status]}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[s.status] || 'bg-slate-100 text-slate-600'}`}>{STATUS_LABEL[s.status] || s.status}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
                         <button onClick={() => setViewing(s)} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Eye className="h-4 w-4" /></button>
-                        {s.status !== 'cancelled' && (
+                        {s.status !== 'cancelled' && s.status !== 'canceled' && s.status !== 'draft' && (
                           <button onClick={() => handleCancel(s)} className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Ban className="h-4 w-4" /></button>
                         )}
                       </div>
@@ -135,7 +137,7 @@ export default function Vendas() {
                   <thead><tr className="border-b border-slate-100 text-xs text-slate-500"><th className="px-3 py-2 text-left font-medium">Produto</th><th className="px-3 py-2 text-center font-medium">Qtd</th><th className="px-3 py-2 text-right font-medium">Total</th></tr></thead>
                   <tbody>
                     {(viewing.items || []).map((i, idx) => (
-                      <tr key={idx} className="border-b border-slate-50"><td className="px-3 py-2">{i.name}</td><td className="px-3 py-2 text-center">{i.qty}</td><td className="px-3 py-2 text-right">{fmtMoney(i.total)}</td></tr>
+                      <tr key={idx} className="border-b border-slate-50"><td className="px-3 py-2">{i.name}</td><td className="px-3 py-2 text-center">{i.qty ?? i.quantity}</td><td className="px-3 py-2 text-right">{fmtMoney(saleItemTotal(i))}</td></tr>
                     ))}
                   </tbody>
                 </table>

@@ -1,3 +1,5 @@
+import { isRevenueSale } from './saleStatus.js';
+
 const DAY_MS = 86_400_000;
 export const INACTIVITY_DAYS = 90;
 export const RECENT_PURCHASE_DAYS = 30;
@@ -15,7 +17,7 @@ const dateOnly = (value) => {
   return parsed === null ? null : new Date(parsed).toISOString().slice(0, 10);
 };
 const saleDate = (sale) => sale?.sale_date || sale?.created_at || sale?.created_date || null;
-const validSale = (sale) => sale?.status !== 'cancelled';
+const validSale = isRevenueSale;
 const daysSince = (value, nowMs) => {
   const from = dateMs(value);
   return from === null ? null : Math.max(0, Math.floor((nowMs - from) / DAY_MS));

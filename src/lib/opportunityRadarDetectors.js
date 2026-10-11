@@ -1,3 +1,5 @@
+import { isRevenueSale } from './saleStatus.js';
+
 const DAY_MS = 86_400_000;
 
 const dateMs = (value) => {
@@ -19,7 +21,7 @@ const number = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const validSales = (companyId, sales) => (sales || []).filter((sale) => sale?.company_id === companyId && sale.status !== 'cancelled');
+const validSales = (companyId, sales) => (sales || []).filter((sale) => sale?.company_id === companyId && isRevenueSale(sale));
 const saleDate = (sale) => sale?.sale_date || sale?.created_at || sale?.created_date;
 
 /**

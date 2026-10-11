@@ -16,7 +16,7 @@ test('Sales Hub reutiliza rota existente e não cria armazenamento paralelo', ()
 
 test('modelo comercial mantém isolamento por company_id e exclui vendas canceladas', () => {
   assert.match(model, /row\?\.company_id === companyId/);
-  assert.match(model, /row\?\.status !== 'cancelled'/);
+  assert.match(model, /isRevenueSale/);
   assert.match(model, /companyId, customers = \[\], products = \[\], sales = \[\], opportunities = \[\]/);
   assert.match(service, /customersRepository\.list\(companyId\)/);
   assert.match(service, /salesRepository\.list\(companyId/);
