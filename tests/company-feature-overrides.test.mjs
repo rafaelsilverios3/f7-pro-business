@@ -17,6 +17,11 @@ test('company feature overrides remain scoped and do not change the global plan'
   assert.match(assistant, /feature: 'ai'/);
 });
 
+test('feature override RPC preserves the existing named PostgREST argument', () => {
+  assert.match(sql, /company_has_feature\(target_company uuid, feature text\)/i);
+  assert.match(sql, /feature_override\.feature = lower\(trim\(\$2\)\)/i);
+});
+
 test('test-company enablement is an explicit manual SQL operation', () => {
   assert.doesNotMatch(sql, /62835558-c5af-4897-9457-d89684c7702f/);
   assert.doesNotMatch(sql, /insert into .*company_feature_overrides/i);
