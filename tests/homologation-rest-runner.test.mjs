@@ -34,10 +34,44 @@ test('runner accepts only the three homolog identities and expected tenant roles
   assert.match(runner, /memberships\[0\]\.role === expected\.role/);
 });
 
-test('runner uses existing Supabase session and contains read-only API calls', () => {
+test('runner uses existing Supabase session for read-only checks and never handles credentials', () => {
   assert.match(runner, /supabase\.auth\.getUser\(\)/);
   assert.match(runner, /select\('id', \{ count: 'exact', head: true \}\)/);
   assert.match(runner, /company_has_feature/);
-  assert.doesNotMatch(runner, /\.\s*(insert|update|delete|upsert)\s*\(/i);
   assert.doesNotMatch(runner, /service_role|signInWithPassword|password\s*:/i);
+  assert.match(runner, /function validateOperationSession/);
+  assert.match(runner, /memberships\[0\]\.company_id !== ownCompany\.id/);
+});
+
+test('writes are opt-in, constrained to uniquely marked customer fixtures, and revalidate real tenant membership', () => {
+  assert.match(runner, /F7_HOMOLOG_REST_/);
+  assert.match(runner, /Create fixture fictícia própria|Criar fixture fictícia própria/);
+  assert.match(runner, /validateOperationSession\(supabase, \['admin'\]\)/);
+  assert.match(runner, /company_id: guard\.ownCompany\.id, name: marker/);
+  assert.match(runner, /cross-tenant fixture read/);
+  assert.match(runner, /\.insert\(\{ company_id: other\.id, name: attackMarker \}\)/);
+  assert.match(runner, /\.eq\('id', id\)\.eq\('company_id', other\.id\)\.eq\('name', marker\)/);
+  assert.match(runner, /if \(stop\) return;/);
+  assert.match(runner, /\.delete\(\)\s*\.eq\('id', id\)\.eq\('company_id', other\.id\)\.eq\('name', marker\)/);
+});
+
+test('seller administrative checks exercise REST grants and admin-only RPC authorization without sending invitations', () => {
+  assert.match(runner, /runSellerAdministrativeChecks/);
+  assert.match(runner, /update\(\{ role: 'admin' \}\)/);
+  assert.match(runner, /update_company_member_role/);
+  assert.match(runner, /somente administradores podem alterar papéis/i);
+  assert.match(runner, /create_company_invite/);
+  assert.match(runner, /example\.invalid/);
+  assert.doesNotMatch(runner, /fetch\([^)]*(?:invite|email|whatsapp)/i);
+});
+
+test('cancel idempotency checks identify one exact cancelled homolog fixture and compare ledgers around both RPC calls', () => {
+  assert.match(runner, /Produto fictício F7 A - teste de rascunho 0087/);
+  assert.match(runner, /sales\.length !== 1/);
+  assert.match(runner, /stock_movements/);
+  assert.match(runner, /financial_entries/);
+  assert.match(runner, /commissions/);
+  assert.match(runner, /supabase\.rpc\('cancel_sale', \{ target_sale: sale\.id \}\)/);
+  assert.match(runner, /JSON\.stringify\(after\) === JSON\.stringify\(before\)/);
+  assert.match(runner, /for \(let attempt = 1; attempt <= 2; attempt \+= 1\)/);
 });
