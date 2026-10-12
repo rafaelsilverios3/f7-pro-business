@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { useAuth } from '@/lib/AuthContext';
 
-const EMPTY_MEMBERSHIP = { role: '', active: false, loading: true, error: null };
+const EMPTY_MEMBERSHIP = { role: '', active: false, loading: true, error: null, companyId: null };
 
 /**
  * Resolves the current user's membership for exactly one company.
@@ -21,16 +21,17 @@ export function useCompanyMembership(companyId) {
         active: Boolean(user?.id),
         loading: false,
         error: null,
+        companyId: companyId || null,
       });
       return () => { cancelled = true; };
     }
 
     if (!companyId || !user?.id) {
-      setMembership({ ...EMPTY_MEMBERSHIP, loading: Boolean(companyId) });
+      setMembership({ ...EMPTY_MEMBERSHIP, loading: Boolean(companyId), companyId: null });
       return () => { cancelled = true; };
     }
 
-    setMembership(EMPTY_MEMBERSHIP);
+    setMembership({ ...EMPTY_MEMBERSHIP, companyId });
     getSupabaseClient()
       .from('company_users')
       .select('role, active')
@@ -44,10 +45,11 @@ export function useCompanyMembership(companyId) {
           active: data?.active === true,
           loading: false,
           error: error || null,
+          companyId,
         });
       })
       .catch((error) => {
-        if (!cancelled) setMembership({ role: '', active: false, loading: false, error });
+        if (!cancelled) setMembership({ role: '', active: false, loading: false, error, companyId });
       });
 
     return () => { cancelled = true; };
