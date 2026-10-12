@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { productSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
+import { productSearchTerm, supplierOfferProductSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
 import { buildAiSalesHistory } from '../src/lib/aiSalesHistory.js';
 import { aiSalesStatusPresentation } from '../src/lib/aiSalesStatus.js';
 
@@ -117,7 +117,7 @@ test('análise Supplier Offers reusa cálculo Pricing e restringe consulta ao pr
 
 test('busca de ofertas reconhece um SKU precedido pelo rótulo SKU sem perder o código', () => {
   assert.equal(productSearchTerm('SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
-  assert.equal(productSearchTerm('Compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011'), 'Compare ofertas HOMOLOG-A-QA-20261011');
+  assert.equal(supplierOfferProductSearchTerm('26 unidades, compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
 });
 
 test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {

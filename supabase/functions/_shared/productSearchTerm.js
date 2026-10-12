@@ -19,3 +19,11 @@ export function productSearchTerm(message) {
     .join(' ')
     .slice(0, 120);
 }
+
+export function supplierOfferProductSearchTerm(message) {
+  const query = String(message || '')
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:un(?:idades?)?|unid(?:ades)?|peças?|pecas)\b/gi, ' ')
+    .replace(/\b(?:quantidade|solicito|preciso|quero)\s*(?:de\s*)?\d+(?:[.,]\d+)?\b/gi, ' ')
+    .replace(/(?<![a-z0-9_-])(?:compare|comparar|comparacao|comparação|ofertas?|fornecedores?|custos?|rentabilidade|margem|viabilidade|simule|simular|simulacao|simulação|aprovadas?|verificadas?|e|as?)(?![a-z0-9_-])/gi, ' ');
+  return productSearchTerm(query);
+}

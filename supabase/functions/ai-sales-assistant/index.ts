@@ -2,7 +2,7 @@ import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 import { reserveAIBudget } from '../_shared/aiObservability.ts';
 import { permissionsForTool, providerConfiguration, roleHasAiSalesPermissions, sanitizeAiSalesProviderData } from '../_shared/aiSalesAccess.js';
-import { productSearchTerm } from '../_shared/productSearchTerm.js';
+import { productSearchTerm, supplierOfferProductSearchTerm } from '../_shared/productSearchTerm.js';
 import { assessDeclaredSupplierAvailability, buildSupplierOfferPricingScenario, canPresentSupplierOfferScenario, classifySupplierOffersForPricing, parseRequestedSupplierQuantity, SUPPLIER_AVAILABILITY_MAX_AGE_DAYS } from '../../../src/lib/supplierOfferPricing.js';
 
 const MAX_MESSAGE = 600;
@@ -62,13 +62,6 @@ async function loadVariants(sb: any, companyId: string, productId: string) {
   const { data, error } = await sb.from('product_variants').select('id,product_id,name,sku,barcode,attributes,stock,price,active').eq('company_id', companyId).eq('product_id', productId).eq('active', true).order('name');
   if (error) throw new Error('DATA_LOOKUP_FAILED');
   return (data || []).map((row: any) => ({ id: row.id, product_id: row.product_id, name: clean(row.name, 120), sku: clean(row.sku, 80) || null, barcode: clean(row.barcode, 80) || null, attributes: row.attributes || {}, stock: Number(row.stock || 0), price: Number(row.price ?? 0) }));
-}
-function supplierOfferProductSearchTerm(message: string) {
-  const query = message
-    .replace(/\b\d+(?:[.,]\d+)?\s*(?:un(?:idades?)?|unid(?:ades)?|peças?|pecas)\b/gi, ' ')
-    .replace(/\b(?:quantidade|solicito|preciso|quero)\s*(?:de\s*)?\d+(?:[.,]\d+)?\b/gi, ' ')
-    .replace(/\b(compare|comparar|comparacao|comparação|ofertas?|fornecedores?|custos?|rentabilidade|margem|viabilidade|simule|simular|simulacao|simulação|aprovadas?|verificadas?|e|as?)\b/gi, ' ');
-  return productSearchTerm(query);
 }
 function scenarioSummary(scenario: any, feeSource: string | null = null) {
   return {
