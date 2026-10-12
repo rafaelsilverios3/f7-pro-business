@@ -13,7 +13,7 @@ test('Sales Assistant usa gate da empresa e membership server-side', () => {
   assert.match(fn, /company_has_feature/);
   assert.match(fn, /feature: 'ai_sales'/);
   assert.match(fn, /company_users/);
-  assert.match(fn, /ROLES/);
+  assert.match(fn, /roleHasAiSalesPermissions/);
   assert.match(gate, /ai_sales/);
 });
 
@@ -46,14 +46,53 @@ test('rascunho exige confirmação e passa por RPC autenticada sem DML direto', 
   assert.match(draftRpc, /'draft'/);
   assert.match(draftRpc, /revoke all on function public\.create_draft_sale\(jsonb\) from public, anon, service_role/i);
   assert.match(page, /idempotency_key: crypto\.randomUUID\(\)/);
-  assert.match(page, /idempotency_key: pendingDraft\.idempotency_key/);
+  assert.match(page, /idempotency_key: visiblePendingDraft\.idempotency_key/);
 });
 
-test('UI ativa conversa, fallback factual e confirmação humana', () => {
-  assert.match(page, /Assistente ativo/);
+test('UI só habilita conversa depois de confirmar status no backend e distingue fallback factual', () => {
+  assert.match(page, /aiSalesService\.status\(company\.id\)/);
+  assert.match(page, /provider_connection_verified: false|provider_configured_unverified/);
+  assert.match(page, /Resposta factual do sistema · não gerada por IA/);
+  assert.doesNotMatch(page, /Assistente ativo para/);
   assert.match(page, /aiSalesService\.chat/);
   assert.match(page, /Confirmar criação do rascunho/);
   assert.match(page, /open_supplier_intelligence/);
+});
+
+test('backend valida a permissão específica antes de consultar cada ferramenta', () => {
+  assert.match(fn, /roleHasAiSalesPermissions\(member\.role\)/);
+  assert.match(fn, /permissionsForTool\(intent\)/);
+  assert.match(fn, /TOOL_PERMISSION_DENIED/);
+  assert.match(fn, /target_metric: metric/);
+  assert.match(fn, /reserveAIBudget/);
+  assert.match(fn, /feature: 'ai_sales'/);
+  assert.match(fn, /consumeRateLimit\(sb, companyId, userData\.user\.id, 'ai-sales-status', 30\)/);
+  assert.match(fn, /const rateLimit = await consumeRateLimit\(sb, companyId, userData\.user\.id\)/);
+});
+
+test('respostas de cliente e fornecedor não selecionam documentos, telefone ou e-mail', () => {
+  assert.doesNotMatch(fn, /select\('id,company_id,name,email,phone,document,created_at'\)/);
+  assert.match(fn, /Encontrei \$\{result\.length\} cliente\(s\) correspondente/);
+  assert.match(fn, /Encontrei \$\{result\.length\} perfil\(is\) de Supplier Intelligence/);
+  assert.match(fn, /sanitizeAiSalesProviderData/);
+  assert.match(fn, /providerData, factualAnswer/);
+  assert.doesNotMatch(fn, /generateStructured\('openai_compatible', \{ message, tool, result, factualAnswer, history, context \}\)/);
+});
+
+test('análise Supplier Offers reusa cálculo Pricing e restringe consulta ao produto e à empresa ativa', () => {
+  assert.match(fn, /classifySupplierOffersForPricing/);
+  assert.match(fn, /buildSupplierOfferPricingScenario/);
+  assert.match(fn, /supplierOfferProductSearchTerm\(message\)/);
+  assert.match(fn, /from\('supplier_offers'\)/);
+  assert.match(fn, /\.eq\('company_id', companyId\)\.eq\('product_id', product\.id\)/);
+  assert.match(fn, /status: offer\.status/);
+  assert.match(fn, /select\('channel_id,fee_rate,status'\)/);
+  assert.match(fn, /não validada pelo marketplace/);
+  assert.match(fn, /supplier_quantity_note: 'quantidade declarada pelo fornecedor; não é estoque próprio nem disponibilidade confirmada'/);
+  assert.match(fn, /generation_mode: generationMode/);
+  assert.match(fn, /from\('supplier_intelligence_profiles'\)/);
+  assert.match(fn, /from\('sales_channels'\)/);
+  assert.doesNotMatch(fn, /from\('company_integrations'\)|from\('suppliers'\)/);
 });
 
 test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {
