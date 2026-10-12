@@ -115,6 +115,11 @@ test('análise Supplier Offers reusa cálculo Pricing e restringe consulta ao pr
   assert.doesNotMatch(fn, /from\('company_integrations'\)|from\('suppliers'\)/);
 });
 
+test('busca de ofertas reconhece um SKU precedido pelo rótulo SKU sem perder o código', () => {
+  assert.equal(productSearchTerm('SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011'), 'Compare ofertas HOMOLOG-A-QA-20261011');
+});
+
 test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {
   assert.match(fn, /previousProduct/);
   assert.match(fn, /previousCustomer/);

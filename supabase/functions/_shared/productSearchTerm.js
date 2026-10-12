@@ -2,7 +2,7 @@ const STOP_WORDS = new Set([
   'temos', 'tem', 'tenho', 'quanto', 'custa', 'preco', 'valor', 'estoque', 'unidades',
   'disponivel', 'produto', 'produtos', 'qual', 'quais', 'variacao', 'tamanho', 'cor',
   'monte', 'crie', 'pedido', 'rascunho', 'para', 'com', 'do', 'da', 'de', 'o', 'a',
-  'um', 'uma', 'cliente', 'fornecedor', 'em',
+  'um', 'uma', 'cliente', 'fornecedor', 'em', 'sku',
 ]);
 
 function normalizeToken(value) {
