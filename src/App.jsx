@@ -63,6 +63,23 @@ import { trialActive, trialExpired, TRIAL_ALLOWED_PATHS, FEATURE_REQUIREMENTS } 
 import { canUseFeature } from '@/services/planService';
 import { resolveSubscriptionGate } from '@/lib/subscriptionGate';
 
+const HOMOLOGATION_SUPABASE_URL = 'https://vwylnjmapixtzhryiutt.supabase.co';
+const HOMOLOGATION_VERCEL_BRANCH = 'codex/harden-multi-tenant-isolation';
+const HomologationRestRunner = import.meta.env.VERCEL_ENV === 'preview'
+  && import.meta.env.VERCEL_GIT_COMMIT_REF === HOMOLOGATION_VERCEL_BRANCH
+  ? React.lazy(() => import('./pages/HomologationRestRunner.jsx'))
+  : null;
+const isHomologationRestRunnerEnabled = () => {
+  if (import.meta.env.VERCEL_ENV !== 'preview') return false;
+  if (import.meta.env.VERCEL_GIT_COMMIT_REF !== HOMOLOGATION_VERCEL_BRANCH) return false;
+  if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return false;
+  try {
+    return new URL(import.meta.env.VITE_SUPABASE_URL).origin === HOMOLOGATION_SUPABASE_URL;
+  } catch {
+    return false;
+  }
+};
+
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
   const layoutContext = useOutletContext() || {};
@@ -146,6 +163,13 @@ const AuthenticatedApp = () => {
   }
 
   if (!authChecked || !isAuthenticated) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+
+  // A read-only security probe is available only when this build targets the
+  // explicitly approved homologation project. It reuses the existing browser
+  // session and is never routed in Production.
+  if (location.pathname === '/__homologation/rest-check' && isHomologationRestRunnerEnabled()) {
+    return <React.Suspense fallback={<div className="p-8">Carregando verificação...</div>}><HomologationRestRunner /></React.Suspense>;
+  }
 
   if (location.pathname === '/administracao-f7' || location.pathname.startsWith('/administracao-f7/')) {
     return <Routes><Route path="/administracao-f7" element={<PlatformAdmin />} /><Route path="/administracao-f7/empresas/:companyId" element={<PlatformAdmin />} /></Routes>;

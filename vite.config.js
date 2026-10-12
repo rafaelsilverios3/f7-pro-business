@@ -16,5 +16,15 @@ export default defineConfig(({ mode }) => {
       analyticsTracker: true,
       visualEditAgent: true
     })];
-  return { resolve: { alias: { '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'src') } }, plugins: [...base44Plugins, react()] };
+  return {
+    resolve: { alias: { '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'src') } },
+    plugins: [...base44Plugins, react()],
+    define: {
+      // These Vercel system variables are public build metadata, not secrets.
+      // The homologation-only route requires both the Preview environment and
+      // its explicitly authorized Git branch; local/non-Vercel builds fail closed.
+      'import.meta.env.VERCEL_ENV': JSON.stringify(process.env.VERCEL_ENV || ''),
+      'import.meta.env.VERCEL_GIT_COMMIT_REF': JSON.stringify(process.env.VERCEL_GIT_COMMIT_REF || ''),
+    },
+  };
 });
