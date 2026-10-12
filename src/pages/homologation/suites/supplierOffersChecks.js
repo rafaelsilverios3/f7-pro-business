@@ -7,6 +7,9 @@ import {
 } from '../runnerConfig';
 
 const OFFER_MARKER = /^F7_HOMOLOG_OFFER_A_[A-F0-9]{32}$/;
+const TEST_SUPPLIER_NAME = 'Fornecedor Fictício Homolog A QA 20261011';
+const TEST_PRODUCT_NAME = 'Produto fictício F7 A - teste de rascunho 0087';
+const TEST_PRODUCT_SKU = 'HOMOLOG-A-QA-20261011';
 
 function blocked(identity, company, operation, detail) {
   return result(identity, company, 'supplier_offers', operation, 'precondições verificadas', 'BLOCKED', null, detail);
@@ -76,8 +79,8 @@ export async function prepareSupplierOfferFixture(supabase) {
   }
 
   const [supplierResult, productResult] = await Promise.all([
-    supabase.from('suppliers').select('id').eq('company_id', COMPANIES.A.id).order('created_at').limit(1).maybeSingle(),
-    supabase.from('products').select('id').eq('company_id', COMPANIES.A.id).order('created_at').limit(1).maybeSingle(),
+    supabase.from('suppliers').select('id').eq('company_id', COMPANIES.A.id).eq('name', TEST_SUPPLIER_NAME).maybeSingle(),
+    supabase.from('products').select('id').eq('company_id', COMPANIES.A.id).eq('name', TEST_PRODUCT_NAME).eq('sku', TEST_PRODUCT_SKU).maybeSingle(),
   ]);
   if (supplierResult.error || productResult.error || !supplierResult.data?.id || !productResult.data?.id) {
     return { rows: [blocked('Admin A', 'A', 'fixture prerequisites', 'não foi possível validar fornecedor e produto próprios; nenhuma oferta criada')] };
@@ -167,8 +170,8 @@ export async function runSellerSupplierOfferChecks(supabase, { fixtureId, marker
   checks.push(result('Vendedor A', 'A', 'supplier_offers', 'REST HEAD own-tenant', 'zero ofertas visíveis', 'PASS', ownReadStatus ?? 200, 'nenhuma oferta da Empresa A visível ao vendedor'));
 
   const [supplierResult, productResult] = await Promise.all([
-    supabase.from('suppliers').select('id').eq('company_id', guard.ownCompany.id).order('created_at').limit(1).maybeSingle(),
-    supabase.from('products').select('id').eq('company_id', guard.ownCompany.id).order('created_at').limit(1).maybeSingle(),
+    supabase.from('suppliers').select('id').eq('company_id', guard.ownCompany.id).eq('name', TEST_SUPPLIER_NAME).maybeSingle(),
+    supabase.from('products').select('id').eq('company_id', guard.ownCompany.id).eq('name', TEST_PRODUCT_NAME).eq('sku', TEST_PRODUCT_SKU).maybeSingle(),
   ]);
   if (supplierResult.error || productResult.error || !supplierResult.data?.id || !productResult.data?.id) {
     checks.push(blocked('Vendedor A', 'A', 'write-test prerequisites', 'não foi possível validar IDs fictícios próprios; nenhuma tentativa de escrita realizada'));

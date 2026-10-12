@@ -101,6 +101,8 @@ test('Supplier Offers suite identifies each real Auth session and verifies Admin
 test('Supplier Offers write probes require human confirmation, use one disposable RPC fixture, and stop on accepted operations', () => {
   assert.match(supplierOffersSuite, /window\.confirm\(/);
   assert.match(supplierOffersChecks, /create_supplier_offer/);
+  assert.match(supplierOffersChecks, /Fornecedor Fictício Homolog A QA 20261011/);
+  assert.match(supplierOffersChecks, /HOMOLOG-A-QA-20261011/);
   assert.match(supplierOffersChecks, /REST INSERT own-tenant/);
   assert.match(supplierOffersChecks, /REST PATCH disposable fixture/);
   assert.match(supplierOffersChecks, /REST DELETE disposable fixture/);
