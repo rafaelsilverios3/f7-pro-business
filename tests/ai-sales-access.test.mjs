@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { permissionsForTool, providerConfiguration, roleHasAiSalesPermissions, sanitizeAiSalesProviderData } from '../supabase/functions/_shared/aiSalesAccess.js';
-import { assessSupplierOfferForPricing, buildSupplierOfferPricingScenario } from '../src/lib/supplierOfferPricing.js';
+import { assessDeclaredSupplierAvailability, assessSupplierOfferForPricing, buildSupplierOfferPricingScenario, canPresentSupplierOfferScenario, parseRequestedSupplierQuantity } from '../src/lib/supplierOfferPricing.js';
 
 test('permissões do servidor são por ferramenta e fail closed para papéis desconhecidos', () => {
   assert.equal(roleHasAiSalesPermissions('atendimento'), true);
@@ -51,6 +51,30 @@ test('Supplier Offers só fornece simulação quando aprovação, verificação,
   ]) assert.equal(assessSupplierOfferForPricing({ ...offer, ...changes }, { companyId: 'company-a', productId: 'product-a', today }).eligible, false);
 });
 
+test('quantidade declarada compara abaixo, igual e acima da demanda, sem tratar declaração como estoque próprio', () => {
+  const offer = { supplier_quantity: 25, observed_at: '2026-10-12' };
+  assert.equal(assessDeclaredSupplierAvailability(offer, { quantity: 20, today: '2026-10-12' }).status, 'sufficient_declared');
+  assert.equal(assessDeclaredSupplierAvailability(offer, { quantity: 25, today: '2026-10-12' }).status, 'sufficient_declared');
+  assert.deepEqual(assessDeclaredSupplierAvailability(offer, { quantity: 26, today: '2026-10-12' }), {
+    status: 'insufficient', requested_quantity: 26, declared_quantity: 25, observed_at: '2026-10-12', age_days: 0, shortfall: 1,
+  });
+  assert.equal(assessDeclaredSupplierAvailability(offer, { quantity: 2, today: '2026-10-19' }).status, 'sufficient_declared');
+  assert.equal(assessDeclaredSupplierAvailability(offer, { quantity: 2, today: '2026-10-20' }).status, 'stale');
+});
+
+test('disponibilidade ausente, inválida, futura ou desatualizada nunca é presumida', () => {
+  assert.equal(assessDeclaredSupplierAvailability({ supplier_quantity: null, observed_at: '2026-10-12' }, { quantity: 2, today: '2026-10-12' }).status, 'unknown');
+  assert.equal(assessDeclaredSupplierAvailability({ supplier_quantity: 10, observed_at: null }, { quantity: 2, today: '2026-10-12' }).status, 'unknown');
+  assert.equal(assessDeclaredSupplierAvailability({ supplier_quantity: 10, observed_at: '2026-10-13' }, { quantity: 2, today: '2026-10-12' }).status, 'unknown');
+  assert.equal(assessDeclaredSupplierAvailability({ supplier_quantity: 10, observed_at: '2026-10-04' }, { quantity: 2, today: '2026-10-12' }).status, 'stale');
+});
+
+test('quantidade é extraída pelo contexto/unidade e não dos dígitos de um SKU', () => {
+  assert.equal(parseRequestedSupplierQuantity('HOMOLOG-A-QA-20261011'), null);
+  assert.equal(parseRequestedSupplierQuantity('26 unidades para o SKU HOMOLOG-A-QA-20261011'), 26);
+  assert.equal(parseRequestedSupplierQuantity('quantidade 5,5 para o produto'), 5.5);
+});
+
 test('cenário reusa cálculos Pricing, deixa custos ausentes explícitos e não altera a oferta', () => {
   const offer = { company_id: 'company-a', product_id: 'product-a', status: 'approved', verified_at: '2026-10-12', verified_by: 'user-a', approved_at: '2026-10-12', approved_by: 'user-a', valid_until: '2026-10-20', currency: 'BRL', unit_cost: 42.5, minimum_order_quantity: 10 };
   const before = structuredClone(offer);
@@ -60,4 +84,15 @@ test('cenário reusa cálculos Pricing, deixa custos ausentes explícitos e não
   assert.ok(scenario.missing.includes('freightPerUnit'));
   assert.ok(scenario.missing.includes('channelFeePct'));
   assert.deepEqual(offer, before);
+});
+
+test('MOQ abaixo da quantidade torna o cenário inviável e não produz resumo de margem', () => {
+  const offer = { company_id: 'company-a', product_id: 'product-a', status: 'approved', verified_at: '2026-10-12', verified_by: 'user-a', approved_at: '2026-10-12', approved_by: 'user-a', valid_until: '2026-10-20', currency: 'BRL', unit_cost: 42.5, minimum_order_quantity: 5 };
+  const scenario = buildSupplierOfferPricingScenario(offer, { companyId: 'company-a', productId: 'product-a', today: '2026-10-12', quantity: 4, costs: {}, confidence: {}, price: 100, targetMargin: 30 });
+  assert.equal(scenario.feasible, false);
+  assert.equal(scenario.summary, null);
+  assert.ok(scenario.reasons.some((reason) => reason.includes('pedido mínimo')));
+  assert.equal(canPresentSupplierOfferScenario({ availability: { status: 'sufficient_declared' }, scenario }), false);
+  assert.equal(canPresentSupplierOfferScenario({ availability: { status: 'insufficient' }, scenario: { feasible: true } }), false);
+  assert.equal(canPresentSupplierOfferScenario({ availability: { status: 'sufficient_declared' }, scenario: { feasible: true } }), true);
 });

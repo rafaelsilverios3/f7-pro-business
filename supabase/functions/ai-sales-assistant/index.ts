@@ -3,7 +3,7 @@ import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 import { reserveAIBudget } from '../_shared/aiObservability.ts';
 import { permissionsForTool, providerConfiguration, roleHasAiSalesPermissions, sanitizeAiSalesProviderData } from '../_shared/aiSalesAccess.js';
 import { productSearchTerm } from '../_shared/productSearchTerm.js';
-import { buildSupplierOfferPricingScenario, classifySupplierOffersForPricing } from '../../../src/lib/supplierOfferPricing.js';
+import { assessDeclaredSupplierAvailability, buildSupplierOfferPricingScenario, canPresentSupplierOfferScenario, classifySupplierOffersForPricing, parseRequestedSupplierQuantity, SUPPLIER_AVAILABILITY_MAX_AGE_DAYS } from '../../../src/lib/supplierOfferPricing.js';
 
 const MAX_MESSAGE = 600;
 const MAX_PROVIDER_CONTEXT_CHARS = 12000;
@@ -63,13 +63,11 @@ async function loadVariants(sb: any, companyId: string, productId: string) {
   if (error) throw new Error('DATA_LOOKUP_FAILED');
   return (data || []).map((row: any) => ({ id: row.id, product_id: row.product_id, name: clean(row.name, 120), sku: clean(row.sku, 80) || null, barcode: clean(row.barcode, 80) || null, attributes: row.attributes || {}, stock: Number(row.stock || 0), price: Number(row.price ?? 0) }));
 }
-function requestedQuantity(message: string) {
-  const match = message.match(/\b(\d+(?:[.,]\d+)?)\s*(?:un|unid|unidades|peças|pecas)?\b/i);
-  const value = Number((match?.[1] || '').replace(',', '.'));
-  return match && Number.isFinite(value) && value > 0 ? value : null;
-}
 function supplierOfferProductSearchTerm(message: string) {
-  const query = message.replace(/\b(compare|comparar|comparacao|comparação|ofertas?|fornecedores?|custos?|rentabilidade|margem|viabilidade|simule|simular|simulacao|simulação|aprovadas?|verificadas?|e|as?)\b/gi, ' ');
+  const query = message
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:un(?:idades?)?|unid(?:ades)?|peças?|pecas)\b/gi, ' ')
+    .replace(/\b(?:quantidade|solicito|preciso|quero)\s*(?:de\s*)?\d+(?:[.,]\d+)?\b/gi, ' ')
+    .replace(/\b(compare|comparar|comparacao|comparação|ofertas?|fornecedores?|custos?|rentabilidade|margem|viabilidade|simule|simular|simulacao|simulação|aprovadas?|verificadas?|e|as?)\b/gi, ' ');
   return productSearchTerm(query);
 }
 function scenarioSummary(scenario: any, feeSource: string | null = null) {
@@ -87,7 +85,7 @@ function scenarioSummary(scenario: any, feeSource: string | null = null) {
 }
 async function analyzeSupplierOffers(client: any, companyId: string, product: any, message: string, includeChannelFees: boolean) {
   const { data: offers, error: offersError } = await client.from('supplier_offers')
-    .select('id,company_id,supplier_id,product_id,unit_cost,currency,supplier_quantity,minimum_order_quantity,lead_time_days,status,valid_until,verified_at,verified_by,approved_at,approved_by')
+    .select('id,company_id,supplier_id,product_id,unit_cost,currency,supplier_quantity,minimum_order_quantity,lead_time_days,status,valid_until,observed_at,verified_at,verified_by,approved_at,approved_by')
     .eq('company_id', companyId).eq('product_id', product.id).order('updated_at', { ascending: false }).limit(50);
   if (offersError) throw new Error('SUPPLIER_OFFERS_UNAVAILABLE');
 
@@ -114,10 +112,46 @@ async function analyzeSupplierOffers(client: any, companyId: string, product: an
     }
   }
 
-  const explicitQuantity = requestedQuantity(message);
-  const eligibleOffers = classified.filter((item: any) => item.eligible).slice(0, 20).map(({ offer }: any) => {
+  const explicitQuantity = parseRequestedSupplierQuantity(message);
+  const eligibleOffers: any[] = [];
+  const contextualOffers: any[] = classified.filter((item: any) => !item.eligible).slice(0, 20).map(({ offer, reasons }: any) => ({
+    currency: offer.currency || null,
+    status: offer.status,
+    reasons,
+    quantity_status: 'not_eligible',
+    supplier_quantity: offer.supplier_quantity == null ? null : Number(offer.supplier_quantity),
+    observed_at: offer.observed_at || null,
+    minimum_order_quantity: Number(offer.minimum_order_quantity),
+  }));
+
+  for (const { offer } of classified.filter((item: any) => item.eligible).slice(0, 20) as any[]) {
     const quantity = explicitQuantity ?? Number(offer.minimum_order_quantity);
+    const availability = assessDeclaredSupplierAvailability(offer, { quantity, today: scope.today });
     const base = buildSupplierOfferPricingScenario(offer, { ...scope, quantity, costs: {}, confidence: {}, price: Number(product.price || 0), targetMargin: 30, channelFeePct: 0 });
+
+    if (!canPresentSupplierOfferScenario({ availability, scenario: base })) {
+      const reason = availability.status === 'insufficient'
+        ? 'Quantidade declarada pelo fornecedor insuficiente para o pedido informado; a declaração não é estoque próprio nem confirmação de atendimento.'
+        : availability.status === 'stale'
+          ? `Disponibilidade declarada desatualizada (observada há ${availability.age_days} dias; limite de frescor ${SUPPLIER_AVAILABILITY_MAX_AGE_DAYS} dias).`
+          : availability.status === 'unknown'
+            ? 'Disponibilidade declarada ausente, inválida ou sem data confiável; atendimento não confirmado.'
+            : null;
+      contextualOffers.push({
+        currency: offer.currency || null,
+        status: offer.status,
+        quantity_status: availability.status,
+        requested_quantity: availability.requested_quantity,
+        supplier_quantity: availability.declared_quantity,
+        observed_at: availability.observed_at,
+        availability_age_days: availability.age_days ?? null,
+        shortfall: availability.shortfall,
+        minimum_order_quantity: Number(offer.minimum_order_quantity),
+        reasons: [...(reason ? [reason] : []), ...base.reasons],
+      });
+      continue;
+    }
+
     const baseSummary = scenarioSummary(base);
     if (!(Number(product.price) > 0)) {
       baseSummary.margin_estimate_percent = null;
@@ -134,17 +168,20 @@ async function analyzeSupplierOffers(client: any, companyId: string, product: an
       }
       return { name: channel.name, fee_rate: channel.fee_rate, status: channel.status, fee_source: 'internal_configuration_unverified_by_marketplace', fee_source_note: 'Taxa configurada internamente; não validada pelo marketplace.', ...summary };
     });
-    return {
+    eligibleOffers.push({
       unit_cost: Number(offer.unit_cost), currency: offer.currency, status: offer.status,
       valid_until: offer.valid_until, eligibility: 'aprovada, verificada, vigente e compatível com produto/empresa/moeda',
       quantity, quantity_basis: explicitQuantity == null ? 'MOQ usado como cenário porque a pergunta não informou quantidade' : 'quantidade mencionada pelo usuário',
       minimum_order_quantity: Number(offer.minimum_order_quantity), supplier_quantity: offer.supplier_quantity == null ? null : Number(offer.supplier_quantity),
+      availability_status: availability.status,
+      availability_observed_at: availability.observed_at,
+      availability_age_days: availability.age_days,
+      request_covered_by_declaration: true,
       supplier_quantity_note: 'quantidade declarada pelo fornecedor; não é estoque próprio nem disponibilidade confirmada',
       lead_time_days: offer.lead_time_days == null ? null : Number(offer.lead_time_days),
       ...baseSummary, channels: configuredChannels,
-    };
-  });
-  const contextualOffers = classified.filter((item: any) => !item.eligible).slice(0, 20).map(({ offer, reasons }: any) => ({ currency: offer.currency || null, status: offer.status, unit_cost: Number(offer.unit_cost), reasons }));
+    });
+  }
   return {
     product_name: clean(product.name, 160), currency: 'BRL', current_catalog_price: Number(product.price || 0),
     quantity_basis: explicitQuantity == null ? 'MOQ usado como cenário porque a pergunta não informou quantidade' : 'quantidade mencionada pelo usuário',
@@ -170,13 +207,26 @@ function factual(tool: string, result: any, context: any = {}) {
   if (tool === 'supplier_external') return 'Para encontrar novos fornecedores, abra a pesquisa externa do Supplier Intelligence. O Sales Assistant não simula fontes externas.';
   if (tool === 'draft') return `Preparei uma prévia de ${context.quantity} x ${context.product.name}, total estimado de R$ ${(context.quantity * context.unitPrice).toFixed(2).replace('.', ',')}. Confirme para criar somente o rascunho.`;
   if (tool === 'analisar_ofertas_fornecedor') {
-    if (!result.offers?.length) return result.contextual_offers?.length ? 'Há ofertas para análise contextual, mas nenhuma pode alimentar uma simulação comercial em BRL. Confira os motivos e as moedas no módulo Compras.' : 'Não há ofertas aprovadas, verificadas e vigentes para este produto.';
+    const contextual = (result.contextual_offers || []).map((offer: any, index: number) => {
+      if (offer.quantity_status === 'insufficient') return `Oferta contextual ${index + 1}: o fornecedor declarou ${Number(offer.supplier_quantity).toLocaleString('pt-BR')} un., abaixo das ${Number(offer.requested_quantity).toLocaleString('pt-BR')} un. solicitadas; faltam ${Number(offer.shortfall).toLocaleString('pt-BR')} un. (declaração observada em ${offer.observed_at || 'data desconhecida'}). Não atende integralmente e não calculei margem nem investimento para esse pedido.`;
+      if (offer.quantity_status === 'stale') {
+        const comparison = offer.requested_quantity != null && offer.supplier_quantity != null
+          ? ` Na observação, havia ${Number(offer.supplier_quantity).toLocaleString('pt-BR')} un. para um pedido de ${Number(offer.requested_quantity).toLocaleString('pt-BR')} un.${offer.shortfall > 0 ? `, diferença declarada de ${Number(offer.shortfall).toLocaleString('pt-BR')} un.` : ''}.`
+          : '';
+        return `Oferta contextual ${index + 1}: a última declaração foi ${offer.supplier_quantity == null ? 'sem quantidade conhecida' : `${Number(offer.supplier_quantity).toLocaleString('pt-BR')} un.`}, observada em ${offer.observed_at || 'data desconhecida'} (${offer.availability_age_days} dias atrás).${comparison} Não confirmei atendimento nem calculei margem/investimento para a quantidade solicitada.`;
+      }
+      if (offer.quantity_status === 'unknown') return `Oferta contextual ${index + 1}: disponibilidade do fornecedor desconhecida${offer.observed_at ? ` (observada em ${offer.observed_at})` : ''}${offer.requested_quantity != null ? ` para o pedido de ${Number(offer.requested_quantity).toLocaleString('pt-BR')} un.` : ''}; não presumi estoque nem calculei margem/investimento para a quantidade solicitada.`;
+      const reasons = (offer.reasons || []).join(' ');
+      return `Oferta contextual ${index + 1} (${offer.currency || 'moeda ausente'}, status ${offer.status || 'desconhecido'}): fora da simulação. ${reasons}`;
+    });
+    if (!result.offers?.length) return contextual.length ? `Nenhuma oferta alimentou uma simulação comercial em BRL. ${contextual.join(' ')}` : 'Não há ofertas aprovadas, verificadas e vigentes para este produto.';
     const partial = result.offers.map((offer: any, index: number) => {
       const margin = offer.margin_estimate_percent == null ? 'margem não calculada' : `margem parcial estimada de ${offer.margin_estimate_percent.toFixed(2)}%`;
       const missing = offer.missing?.length ? `; faltam ${offer.missing.join(', ')}` : '';
-      return `Oferta ${index + 1}: custo unitário R$ ${Number(offer.unit_cost).toFixed(2).replace('.', ',')}, mínimo ${offer.minimum_order_quantity} un., ${margin}${missing}`;
+      return `Oferta ${index + 1}: custo unitário R$ ${Number(offer.unit_cost).toFixed(2).replace('.', ',')}, MOQ ${offer.minimum_order_quantity} un., fornecedor declarou ${Number(offer.supplier_quantity).toLocaleString('pt-BR')} un. em ${offer.availability_observed_at}, pedido solicitado ${offer.quantity} un. (declaração recente suficiente, não é garantia nem estoque próprio), ${margin}${missing}`;
     });
-    return `Compare as condições sem selecionar fornecedor automaticamente. ${partial.join(' | ')}. Os cálculos são estimativas consultivas; custos ausentes não foram confirmados.`;
+    const excluded = contextual.length ? ` Ofertas fora da simulação: ${contextual.join(' ')}` : '';
+    return `Compare as condições sem selecionar fornecedor automaticamente. ${partial.join(' | ')}. Os cálculos são estimativas consultivas; custos ausentes não foram confirmados.${excluded}`;
   }
   return 'Consulta concluída com dados da empresa.';
 }

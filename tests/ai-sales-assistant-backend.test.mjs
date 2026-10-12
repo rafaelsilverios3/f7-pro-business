@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import test from 'node:test';
 import { productSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
 import { buildAiSalesHistory } from '../src/lib/aiSalesHistory.js';
+import { aiSalesStatusPresentation } from '../src/lib/aiSalesStatus.js';
 
 const fn = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
 const page = fs.readFileSync('src/pages/AiSalesAssistant.jsx', 'utf8');
+const status = fs.readFileSync('src/lib/aiSalesStatus.js', 'utf8');
 const gate = fs.readFileSync('supabase/migrations/0062_ai_sales_assistant_gate.sql', 'utf8');
 const draftRpc = fs.readFileSync('supabase/migrations/0086_ai_sales_draft_rpc.sql', 'utf8');
 
@@ -51,12 +53,24 @@ test('rascunho exige confirmação e passa por RPC autenticada sem DML direto', 
 
 test('UI só habilita conversa depois de confirmar status no backend e distingue fallback factual', () => {
   assert.match(page, /aiSalesService\.status\(company\.id\)/);
-  assert.match(page, /provider_connection_verified: false|provider_configured_unverified/);
+  assert.match(status, /provider_configured_unverified/);
   assert.match(page, /Resposta factual do sistema · não gerada por IA/);
   assert.doesNotMatch(page, /Assistente ativo para/);
   assert.match(page, /aiSalesService\.chat/);
   assert.match(page, /Confirmar criação do rascunho/);
   assert.match(page, /open_supplier_intelligence/);
+});
+
+test('estado transitório fica no indicador de status e não permanece como mensagem inicial da conversa', () => {
+  const checking = aiSalesStatusPresentation({ state: 'checking' });
+  const ready = aiSalesStatusPresentation({ state: 'ready' });
+  const denied = aiSalesStatusPresentation({ state: 'denied', status_message: 'Plano não habilitado.' });
+  assert.match(checking.message, /Validando acesso/);
+  assert.equal(ready.label, 'Modo factual · sem geração por IA');
+  assert.doesNotMatch(ready.message, /Verificando|Validando/);
+  assert.equal(denied.message, 'Plano não habilitado.');
+  assert.doesNotMatch(page, /Verificando acesso, plano e disponibilidade deste ambiente/);
+  assert.match(page, /const \[messages, setMessages\] = useState\(\[\]\)/);
 });
 
 test('backend valida a permissão específica antes de consultar cada ferramenta', () => {
@@ -81,10 +95,16 @@ test('respostas de cliente e fornecedor não selecionam documentos, telefone ou 
 
 test('análise Supplier Offers reusa cálculo Pricing e restringe consulta ao produto e à empresa ativa', () => {
   assert.match(fn, /classifySupplierOffersForPricing/);
+  assert.match(fn, /assessDeclaredSupplierAvailability/);
+  assert.match(fn, /parseRequestedSupplierQuantity/);
   assert.match(fn, /buildSupplierOfferPricingScenario/);
   assert.match(fn, /supplierOfferProductSearchTerm\(message\)/);
   assert.match(fn, /from\('supplier_offers'\)/);
   assert.match(fn, /\.eq\('company_id', companyId\)\.eq\('product_id', product\.id\)/);
+  assert.match(fn, /supplier_quantity,minimum_order_quantity[^']*observed_at/);
+  assert.match(fn, /canPresentSupplierOfferScenario\(\{ availability, scenario: base \}\)/);
+  assert.match(fn, /parseRequestedSupplierQuantity\(message\)/);
+  assert.match(fn, /Não atende integralmente e não calculei margem nem investimento/);
   assert.match(fn, /status: offer\.status/);
   assert.match(fn, /select\('channel_id,fee_rate,status'\)/);
   assert.match(fn, /não validada pelo marketplace/);

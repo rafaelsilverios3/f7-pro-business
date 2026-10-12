@@ -5,20 +5,11 @@ import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { buildAiSalesHistory } from '@/lib/aiSalesHistory';
+import { aiSalesStatusPresentation } from '@/lib/aiSalesStatus';
 import { AI_TOOL_NAMES } from '@/services/aiSalesTools';
 import { aiSalesService } from '@/services/aiSalesService';
 
 const SUGGESTIONS = ['Quais produtos temos?', 'Quanto temos em estoque?', 'Qual produto está sem estoque?', 'Procure um cliente pelo nome', 'Quais oportunidades comerciais tenho hoje?', 'Compare ofertas de fornecedores'];
-const initialMessage = { role: 'assistant', answer: 'Verificando acesso, plano e disponibilidade deste ambiente…', tool: null };
-
-function statusPresentation(status) {
-  if (status.state === 'checking') return { label: 'Verificando dependências', tone: 'border-slate-200 bg-slate-50 text-slate-700', message: 'Validando acesso no servidor. A conversa ficará indisponível até a verificação terminar.' };
-  if (status.state === 'unavailable') return { label: 'Não verificado', tone: 'border-rose-200 bg-rose-50 text-rose-800', message: 'Não foi possível confirmar a disponibilidade do AI Sales. Tente novamente mais tarde; nenhuma geração por IA será presumida.' };
-  if (status.state === 'denied') return { label: 'Acesso indisponível', tone: 'border-amber-200 bg-amber-50 text-amber-800', message: status.status_message || 'O perfil ou plano atual não habilita o F7 AI Sales.' };
-  if (status.generation_mode === 'provider_configured_unverified') return { label: 'Configuração detectada · conexão não verificada', tone: 'border-amber-200 bg-amber-50 text-amber-800', message: 'Há configuração de provedor, mas esta tela não testa a conexão. Cada resposta pode usar o provedor somente após autorização e orçamento; em falhas, o sistema identifica a resposta factual como fallback.' };
-  return { label: 'Modo factual · sem geração por IA', tone: 'border-sky-200 bg-sky-50 text-sky-800', message: status.status_message || 'As consultas retornam fatos obtidos pelas ferramentas autorizadas. Respostas factuais não são geração por IA.' };
-}
-
 function assistantModeLabel(mode) {
   if (mode === 'ai_generated') return 'Resposta gerada por IA · revise antes de agir';
   if (mode === 'factual_fallback') return 'Resposta factual do sistema · não gerada por IA';
@@ -39,7 +30,7 @@ export default function AiSalesAssistant() {
   const ownerRef = useRef(ownerKey);
   ownerRef.current = ownerKey;
   const [conversationOwner, setConversationOwner] = useState('');
-  const [messages, setMessages] = useState([initialMessage]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -51,17 +42,17 @@ export default function AiSalesAssistant() {
   const currentStatus = aiStatus.companyId === company?.id && aiStatus.userId === user?.id ? aiStatus : { state: 'checking' };
   const canUse = Boolean(user?.id && company?.id && currentStatus.state === 'ready' && currentStatus.can_use === true);
   const ownsConversation = conversationOwner === ownerKey;
-  const visibleMessages = ownsConversation ? messages : [initialMessage];
+  const visibleMessages = ownsConversation ? messages : [];
   const visiblePendingDraft = ownsConversation ? pendingDraft : null;
   const visibleSavedDraft = ownsConversation ? savedDraft : null;
   const history = useMemo(() => buildAiSalesHistory(visibleMessages), [visibleMessages]);
-  const presentation = statusPresentation(currentStatus);
+  const presentation = aiSalesStatusPresentation(currentStatus);
 
   React.useEffect(() => {
     let cancelled = false;
     const nextOwnerKey = `${company?.id || ''}:${user?.id || ''}`;
     setConversationOwner(nextOwnerKey);
-    setMessages([initialMessage]);
+    setMessages([]);
     setInput('');
     setBusy(false);
     setError('');
@@ -100,7 +91,7 @@ export default function AiSalesAssistant() {
     setBusy(true);
     setError('');
     setInput('');
-    setMessages((current) => [...(conversationOwner === ownerKey ? current : [initialMessage]), { role: 'user', answer: message }]);
+    setMessages((current) => [...(conversationOwner === ownerKey ? current : []), { role: 'user', answer: message }]);
     try {
       const response = await aiSalesService.chat(company.id, message, history, routeContext);
       if (ownerRef.current !== ownerKey) return;

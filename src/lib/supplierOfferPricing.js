@@ -2,6 +2,52 @@ import { buildPricingSummary, priceForMargin } from './pricing.js';
 import { roundMoney } from './calculations.js';
 
 export const PRICING_BASE_CURRENCY = 'BRL';
+export const SUPPLIER_AVAILABILITY_MAX_AGE_DAYS = 7;
+
+const quantityUnit = '(?:un(?:idades?)?|unid(?:ades)?|peças?|pecas)';
+
+export function parseRequestedSupplierQuantity(message) {
+  const text = String(message || '');
+  const unitMatch = text.match(new RegExp(`\\b(\\d+(?:[.,]\\d+)?)\\s*${quantityUnit}\\b`, 'i'));
+  const explicitMatch = text.match(/\b(?:quantidade|solicito|preciso|quero)\s*(?:de\s*)?(\d+(?:[.,]\d+)?)(?:\s*(?:un(?:idades?)?|unid(?:ades)?|peças?|pecas))?\b/i);
+  const raw = unitMatch?.[1] ?? explicitMatch?.[1];
+  if (!raw) return null;
+  const value = Number(raw.replace(',', '.'));
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function validIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function assessDeclaredSupplierAvailability(offer, {
+  quantity,
+  today = new Date().toISOString().slice(0, 10),
+  maxAgeDays = SUPPLIER_AVAILABILITY_MAX_AGE_DAYS,
+} = {}) {
+  const requestedQuantity = Number(quantity);
+  const declaredQuantity = offer?.supplier_quantity == null ? null : Number(offer.supplier_quantity);
+  const observedAt = offer?.observed_at ?? null;
+  const validRequest = Number.isFinite(requestedQuantity) && requestedQuantity > 0;
+  const validDeclaration = declaredQuantity !== null && Number.isFinite(declaredQuantity) && declaredQuantity >= 0;
+  const validObservation = validIsoDate(observedAt) && validIsoDate(today);
+
+  if (!validRequest || !validDeclaration || !validObservation) {
+    return { status: 'unknown', requested_quantity: validRequest ? requestedQuantity : null, declared_quantity: validDeclaration ? declaredQuantity : null, observed_at: observedAt, shortfall: null };
+  }
+
+  const ageDays = Math.floor((Date.parse(`${today}T00:00:00.000Z`) - Date.parse(`${observedAt}T00:00:00.000Z`)) / 86400000);
+  if (ageDays < 0) return { status: 'unknown', requested_quantity: requestedQuantity, declared_quantity: declaredQuantity, observed_at: observedAt, shortfall: null };
+  if (ageDays > maxAgeDays) return { status: 'stale', requested_quantity: requestedQuantity, declared_quantity: declaredQuantity, observed_at: observedAt, age_days: ageDays, shortfall: Math.max(0, requestedQuantity - declaredQuantity) };
+  if (declaredQuantity < requestedQuantity) return { status: 'insufficient', requested_quantity: requestedQuantity, declared_quantity: declaredQuantity, observed_at: observedAt, age_days: ageDays, shortfall: roundMoney(requestedQuantity - declaredQuantity) };
+  return { status: 'sufficient_declared', requested_quantity: requestedQuantity, declared_quantity: declaredQuantity, observed_at: observedAt, age_days: ageDays, shortfall: 0 };
+}
+
+export function canPresentSupplierOfferScenario({ availability, scenario } = {}) {
+  return availability?.status === 'sufficient_declared' && scenario?.feasible === true;
+}
 
 const asNumber = (value) => {
   const parsed = Number(value);

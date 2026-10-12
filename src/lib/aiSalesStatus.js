@@ -1,0 +1,7 @@
+export function aiSalesStatusPresentation(status) {
+  if (status.state === 'checking') return { label: 'Verificando dependências', tone: 'border-slate-200 bg-slate-50 text-slate-700', message: 'Validando acesso no servidor. A conversa ficará indisponível até a verificação terminar.' };
+  if (status.state === 'unavailable') return { label: 'Não verificado', tone: 'border-rose-200 bg-rose-50 text-rose-800', message: 'Não foi possível confirmar a disponibilidade do AI Sales. Tente novamente mais tarde; nenhuma geração por IA será presumida.' };
+  if (status.state === 'denied') return { label: 'Acesso indisponível', tone: 'border-amber-200 bg-amber-50 text-amber-800', message: status.status_message || 'O perfil ou plano atual não habilita o F7 AI Sales.' };
+  if (status.generation_mode === 'provider_configured_unverified') return { label: 'Configuração detectada · conexão não verificada', tone: 'border-amber-200 bg-amber-50 text-amber-800', message: 'Há configuração de provedor, mas esta tela não testa a conexão. Cada resposta pode usar o provedor somente após autorização e orçamento; em falhas, o sistema identifica a resposta factual como fallback.' };
+  return { label: 'Modo factual · sem geração por IA', tone: 'border-sky-200 bg-sky-50 text-sky-800', message: status.status_message || 'As consultas retornam fatos obtidos pelas ferramentas autorizadas. Respostas factuais não são geração por IA.' };
+}
