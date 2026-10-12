@@ -102,7 +102,7 @@ export default function PricingDialog({
   }, [selectedOffer]);
 
   const baseInput = selectedOffer
-    ? { ...input, purchaseCost: selectedOffer.unit_cost, freight: quantityNumber > 0 ? (Number(input.freight) || 0) / quantityNumber : 0, channelFeePct }
+    ? { ...input, purchaseCost: selectedOffer.unit_cost, freight: Number(input.freight) || 0, channelFeePct }
     : { ...input, channelFeePct };
   const summary = buildPricingSummary(baseInput, price);
   const selectedScenario = selectedOffer ? buildSupplierOfferPricingScenario(selectedOffer, {
@@ -110,7 +110,7 @@ export default function PricingDialog({
     productId: product?.id,
     quantity,
     costs: {
-      freightTotal: input.freight,
+      freightPerUnit: input.freight,
       packaging: input.packaging,
       otherCosts: input.otherCosts,
       additionalCost: input.additionalCost,
@@ -121,7 +121,7 @@ export default function PricingDialog({
     },
     confidence: {
       ...confidence,
-      freightTotal: confidence.freight,
+      freightPerUnit: confidence.freight,
       channelFeePct: effectiveConfidence.channelFeePct,
     },
     price,
@@ -217,8 +217,8 @@ export default function PricingDialog({
 
         <section><h3 className="mb-2 text-sm font-semibold text-slate-800">Custos fixos</h3><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{FIXED_FIELDS.map(([key, label, manualLabel]) => {
           const isPurchaseOffer = key === 'purchaseCost' && selectedOffer;
-          const displayLabel = key === 'freight' && !selectedOffer ? manualLabel : label;
-          const helper = key === 'purchaseCost' && !selectedOffer && input.purchaseCost !== '' ? 'Origem: custo cadastrado; fonte não identificada' : key === 'freight' && selectedOffer ? 'Rateado pela quantidade desejada' : '';
+          const displayLabel = key === 'freight' ? manualLabel : label;
+          const helper = key === 'purchaseCost' && !selectedOffer && input.purchaseCost !== '' ? 'Origem: custo cadastrado; fonte não identificada' : key === 'freight' && selectedOffer ? 'Custo por unidade; investimento total multiplicado pela quantidade' : '';
           return <CostField key={key} label={displayLabel} value={input[key]} confidence={effectiveConfidence[key]} disabled={Boolean(isPurchaseOffer)} helper={helper} onValueChange={(value) => setValue(key, value)} onConfidenceChange={(value) => setConfidenceValue(key, value)} />;
         })}</div></section>
 

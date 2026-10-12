@@ -26,7 +26,7 @@ export default function SupplierOfferPricingPanel({
   const effectiveFee = channelId && configuredFee != null && useConfiguredChannelFee ? configuredFee : Number(manualChannelFee) || 0;
   const feeConfidence = channelId && configuredFee != null && useConfiguredChannelFee ? 'known' : confidence.channelFeePct || 'missing';
   const scenarioCosts = {
-    freightTotal: inputs.freight,
+    freightPerUnit: inputs.freight,
     packaging: inputs.packaging,
     otherCosts: inputs.otherCosts,
     additionalCost: inputs.additionalCost,
@@ -35,7 +35,7 @@ export default function SupplierOfferPricingPanel({
     commissionPct: inputs.commissionPct,
     channelFeePct: effectiveFee,
   };
-  const scenarioConfidence = { ...confidence, channelFeePct: feeConfidence };
+  const scenarioConfidence = { ...confidence, freightPerUnit: confidence.freight, channelFeePct: feeConfidence };
 
   const reportContext = (next = {}) => onScenarioContext?.({
     quantity,

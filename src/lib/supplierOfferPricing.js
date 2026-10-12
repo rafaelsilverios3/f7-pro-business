@@ -64,8 +64,9 @@ export function buildSupplierOfferPricingScenario(offer, {
   if (!Number.isFinite(unitCost) || unitCost < 0) reasons.push('O custo unitário da oferta é inválido.');
   if (requestedQuantity > 0 && minimumQuantity > 0 && requestedQuantity < minimumQuantity) reasons.push(`Quantidade abaixo do pedido mínimo (${minimumQuantity}).`);
 
-  const freightTotal = asNumber(costs.freightTotal);
-  const freightPerUnit = requestedQuantity > 0 ? freightTotal / requestedQuantity : 0;
+  const normalizedQuantity = Number.isFinite(requestedQuantity) && requestedQuantity > 0 ? requestedQuantity : 0;
+  const freightPerUnit = asNumber(costs.freightPerUnit);
+  const freightTotal = roundMoney(freightPerUnit * normalizedQuantity);
   const calculationInput = {
     purchaseCost: asNumber(unitCost),
     freight: freightPerUnit,
@@ -78,7 +79,7 @@ export function buildSupplierOfferPricingScenario(offer, {
     channelFeePct: asNumber(channelFeePct),
   };
   const confidenceValues = { ...costs, channelFeePct };
-  const completeCostKeys = ['freightTotal', 'packaging', 'otherCosts', 'additionalCost', 'taxPct', 'financialFeePct', 'commissionPct', 'channelFeePct'];
+  const completeCostKeys = ['freightPerUnit', 'packaging', 'otherCosts', 'additionalCost', 'taxPct', 'financialFeePct', 'commissionPct', 'channelFeePct'];
   const missing = completeCostKeys.filter((key) => {
     const raw = confidenceValues[key];
     const hasValue = raw !== null && raw !== undefined && String(raw).trim() !== ''
@@ -86,7 +87,6 @@ export function buildSupplierOfferPricingScenario(offer, {
     return !hasValue || !['known', 'estimated'].includes(confidence[key]);
   });
   const estimated = completeCostKeys.filter((key) => confidence[key] === 'estimated');
-  const normalizedQuantity = Number.isFinite(requestedQuantity) && requestedQuantity > 0 ? requestedQuantity : 0;
   const minimumOrderInvestment = Number.isFinite(minimumQuantity) && minimumQuantity > 0 && Number.isFinite(unitCost)
     ? roundMoney(minimumQuantity * unitCost)
     : null;

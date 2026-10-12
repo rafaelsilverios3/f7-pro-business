@@ -46,7 +46,7 @@ test('classification drops other tenant/product rows before showing context', ()
 });
 
 test('quantity below MOQ has no margin/price result and exposes minimum commitment', () => {
-  const result = buildSupplierOfferPricingScenario(offer, { ...scope, quantity: 2, costs: { freightTotal: 12 }, price: 200, targetMargin: 30 });
+  const result = buildSupplierOfferPricingScenario(offer, { ...scope, quantity: 2, costs: { freightPerUnit: 6 }, price: 200, targetMargin: 30 });
   assert.equal(result.feasible, false);
   assert.equal(result.summary, null);
   assert.equal(result.targetPrice, null);
@@ -59,8 +59,8 @@ test('scenario allocates order freight per unit and reuses the existing Pricing 
   const result = buildSupplierOfferPricingScenario(offer, {
     ...scope,
     quantity: 10,
-    costs: { freightTotal: 50, packaging: 2, otherCosts: 3, additionalCost: 4, taxPct: 10, financialFeePct: 2, commissionPct: 3 },
-    confidence: { freightTotal: 'known', packaging: 'known', otherCosts: 'known', additionalCost: 'known', taxPct: 'estimated', financialFeePct: 'known', commissionPct: 'known', channelFeePct: 'known' },
+    costs: { freightPerUnit: 5, packaging: 2, otherCosts: 3, additionalCost: 4, taxPct: 10, financialFeePct: 2, commissionPct: 3 },
+    confidence: { freightPerUnit: 'known', packaging: 'known', otherCosts: 'known', additionalCost: 'known', taxPct: 'estimated', financialFeePct: 'known', commissionPct: 'known', channelFeePct: 'known' },
     channelFeePct: 5,
     price: 200,
     targetMargin: 30,
@@ -77,9 +77,9 @@ test('scenario allocates order freight per unit and reuses the existing Pricing 
 });
 
 test('missing costs are marked incomplete even though the deterministic formula treats them as zero', () => {
-  const result = buildSupplierOfferPricingScenario(offer, { ...scope, quantity: 5, costs: { freightTotal: '', packaging: '' }, confidence: {}, price: 200 });
+  const result = buildSupplierOfferPricingScenario(offer, { ...scope, quantity: 5, costs: { freightPerUnit: '', packaging: '' }, confidence: {}, price: 200 });
   assert.equal(result.feasible, true);
-  assert.ok(result.missing.includes('freightTotal'));
+  assert.ok(result.missing.includes('freightPerUnit'));
   assert.ok(result.missing.includes('taxPct'));
   assert.equal(result.confidenceLabel, 'Estimativa incompleta');
 });
@@ -97,8 +97,8 @@ test('known zero costs are distinguishable from missing inputs', () => {
   const result = buildSupplierOfferPricingScenario(offer, {
     ...scope,
     quantity: 5,
-    costs: { freightTotal: 0, packaging: 0, otherCosts: 0, additionalCost: 0, taxPct: 0, financialFeePct: 0, commissionPct: 0, channelFeePct: 0 },
-    confidence: { freightTotal: 'known', packaging: 'known', otherCosts: 'known', additionalCost: 'known', taxPct: 'known', financialFeePct: 'known', commissionPct: 'known', channelFeePct: 'known' },
+    costs: { freightPerUnit: 0, packaging: 0, otherCosts: 0, additionalCost: 0, taxPct: 0, financialFeePct: 0, commissionPct: 0, channelFeePct: 0 },
+    confidence: { freightPerUnit: 'known', packaging: 'known', otherCosts: 'known', additionalCost: 'known', taxPct: 'known', financialFeePct: 'known', commissionPct: 'known', channelFeePct: 'known' },
     price: 200,
   });
   assert.equal(result.missing.length, 0);
@@ -109,11 +109,11 @@ test('a blank input cannot be marked known and mislabeled as a complete scenario
   const result = buildSupplierOfferPricingScenario(offer, {
     ...scope,
     quantity: 5,
-    costs: { freightTotal: '', packaging: '' },
-    confidence: { freightTotal: 'known', packaging: 'known' },
+    costs: { freightPerUnit: '', packaging: '' },
+    confidence: { freightPerUnit: 'known', packaging: 'known' },
     price: 200,
   });
-  assert.ok(result.missing.includes('freightTotal'));
+  assert.ok(result.missing.includes('freightPerUnit'));
   assert.ok(result.missing.includes('packaging'));
   assert.equal(result.confidenceLabel, 'Estimativa incompleta');
 });
@@ -122,14 +122,14 @@ test('invalid cost inputs are rejected instead of silently becoming zero', () =>
   const result = buildSupplierOfferPricingScenario(offer, {
     ...scope,
     quantity: 5,
-    costs: { freightTotal: '-12' },
-    confidence: { freightTotal: 'known' },
+    costs: { freightPerUnit: '-12' },
+    confidence: { freightPerUnit: 'known' },
     price: 200,
   });
   assert.equal(result.feasible, false);
   assert.equal(result.summary, null);
   assert.equal(result.targetPrice, null);
-  assert.match(result.reasons.join(' '), /valor informado para freightTotal é inválido/);
+  assert.match(result.reasons.join(' '), /valor informado para freightPerUnit é inválido/);
 });
 
 test('supplier-offer selection stays simulation-only and does not call the catalog write path', async () => {
@@ -139,6 +139,8 @@ test('supplier-offer selection stays simulation-only and does not call the catal
   assert.match(dialog, /if \(selectedOffer\) \{ setError\(/);
   assert.match(dialog, /selectedOffer \? <Button type="button" disabled>/);
   assert.match(dialog, /buildSupplierOfferPricingScenario\(selectedOffer, \{\s*companyId,\s*productId: product\?\.id/);
+  assert.match(dialog, /purchaseCost: selectedOffer\.unit_cost, freight: Number\(input\.freight\) \|\| 0/);
+  assert.match(panel, /freightPerUnit: inputs\.freight/);
   assert.match(panel, /classifySupplierOffersForPricing/);
   assert.match(panel, /onSelectOffer\(selectedOfferId === offer\.id \? null : offer\)/);
   assert.match(page, /supplierOffersService\.list\(requestedCompanyId\)/);
