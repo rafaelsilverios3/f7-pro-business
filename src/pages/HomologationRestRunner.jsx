@@ -432,7 +432,8 @@ export default function HomologationRestRunner() {
         .select('id,company_id,status,items,customer_id').eq('company_id', guard.ownCompany.id)
         .eq('status', 'cancelled').contains('items', [{ name: productMarker }]);
       if (saleError || !Array.isArray(sales) || sales.length !== 1) {
-        checks.push(result(guard.identity.label, 'A', 'sales', 'cancelled fixture identification', 'exatamente uma venda fictícia cancelada', saleError ? 'PENDING' : 'BLOCKED', saleError?.status ?? null, `encontradas=${sales?.length ?? 'indisponível'}; nenhuma RPC chamada`));
+        const safeCode = String(saleError?.code || '');
+        checks.push(result(guard.identity.label, 'A', 'sales', 'cancelled fixture identification', 'exatamente uma venda fictícia cancelada', saleError ? 'PENDING' : 'BLOCKED', Number(saleError?.status) || null, saleError ? `consulta falhou; código=${safeCode || 'indisponível'}; nenhuma RPC chamada` : `encontradas=${sales?.length ?? 'indisponível'}; nenhuma RPC chamada`));
         return;
       }
       const sale = sales[0];
@@ -511,7 +512,7 @@ export default function HomologationRestRunner() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">F7 Business · Homologação</p>
         <h1 className="mt-3 text-2xl font-bold">Verificação REST de isolamento</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-300">
-          Usa a sessão Supabase já autenticada neste navegador. Executa somente leituras REST e a RPC estável de consulta; não cria, altera ou exclui dados.
+          Usa a sessão Supabase já autenticada neste navegador. As leituras são seguras; as escritas só ocorrem ao acionar os testes controlados abaixo e ficam limitadas a fixtures identificadas na homologação.
         </p>
 
         <div className="mt-5 rounded-xl border border-slate-700 bg-slate-950/60 p-4 text-sm">
