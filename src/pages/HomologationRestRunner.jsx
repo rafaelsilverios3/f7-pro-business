@@ -1,39 +1,15 @@
 import React, { useCallback, useState } from 'react';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { useAuth } from '@/lib/AuthContext';
+import { HOMOLOGATION_URL, COMPANIES, IDENTITIES, PROBE_PATH, isExactHomologationBuild, result, validateOperationSession, safeApiFailure, isUuid, testMarker } from './homologation/runnerConfig';
+import { HOMOLOGATION_SUITES } from './homologation/suites/registry';
+import SupplierOffersSuite from './homologation/suites/SupplierOffersSuite';
 
-const HOMOLOGATION_URL = 'https://vwylnjmapixtzhryiutt.supabase.co';
-const HOMOLOGATION_VERCEL_BRANCH = 'codex/harden-multi-tenant-isolation';
-const PROBE_PATH = '/__homologation/rest-check';
-const COMPANIES = {
-  A: { id: '65fcb6d2-444a-416a-9185-0614ad2c8cbe', name: 'Empresa Homolog A' },
-  B: { id: '00810923-89d7-435b-bf14-af8db490b65f', name: 'Empresa Homolog B' },
-};
-const IDENTITIES = {
-  'f7group7@gmail.com': { company: 'A', role: 'admin', label: 'Admin A' },
-  'rafaelsilverio.s3@gmail.com': { company: 'B', role: 'admin', label: 'Admin B' },
-  'f7group7+vendedor@gmail.com': { company: 'A', role: 'vendedor', label: 'Vendedor A' },
-};
 const READ_RESOURCES = [
   'customers', 'products', 'sales', 'sale_items', 'stock_movements',
   'purchases', 'purchase_items', 'financial_entries', 'company_users',
   'company_invites', 'company_subscriptions', 'audit_logs', 'quotes', 'commissions',
 ];
-
-function isExactHomologationBuild() {
-  if (import.meta.env.VERCEL_ENV !== 'preview') return false;
-  if (import.meta.env.VERCEL_GIT_COMMIT_REF !== HOMOLOGATION_VERCEL_BRANCH) return false;
-  if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return false;
-  try {
-    return new URL(import.meta.env.VITE_SUPABASE_URL).origin === HOMOLOGATION_URL;
-  } catch {
-    return false;
-  }
-}
-
-function result(identity, company, resource, operation, expected, state, status = null, detail = '') {
-  return { identity, company, resource, operation, expected, state, status, detail };
-}
 
 function classifyCrossRead({ identity, company, table, status, count, error }) {
   if (error && [401, 403].includes(status)) {
@@ -46,45 +22,6 @@ function classifyCrossRead({ identity, company, table, status, count, error }) {
     return result(identity, company, table, 'REST HEAD cross-tenant', 'zero linhas visíveis', 'PASS', status, 'nenhuma linha do outro tenant');
   }
   return result(identity, company, table, 'REST HEAD cross-tenant', 'zero linhas visíveis', 'FAIL', status, 'a API informou ao menos uma linha do outro tenant');
-}
-
-async function validateOperationSession(supabase, allowedRoles) {
-  if (!isExactHomologationBuild() || window.location.pathname !== PROBE_PATH) {
-    return { error: 'Destino/ambiente fora do escopo autorizado.' };
-  }
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const user = userData?.user;
-  if (userError || !user?.id || !user?.email) return { error: 'Sessão Auth inválida ou expirada.' };
-  const identity = IDENTITIES[String(user.email).trim().toLowerCase()];
-  if (!identity || !allowedRoles.includes(identity.role)) return { error: 'Identidade ou papel fora do escopo da operação.' };
-  const ownCompany = COMPANIES[identity.company];
-  const otherCompany = COMPANIES[identity.company === 'A' ? 'B' : 'A'];
-  const { data: memberships, error: membershipError, status } = await supabase
-    .from('company_users')
-    .select('company_id, role, active')
-    .eq('user_id', user.id)
-    .eq('active', true);
-  if (membershipError || !Array.isArray(memberships) || memberships.length !== 1
-    || memberships[0].company_id !== ownCompany.id || memberships[0].role !== identity.role
-    || memberships[0].active !== true) {
-    return { error: 'Vínculo ativo e papel não conferem.', status: status ?? null };
-  }
-  return { user, identity, ownCompany, otherCompany };
-}
-
-function safeApiFailure(error) {
-  const status = Number(error?.status) || null;
-  const code = String(error?.code || '');
-  const denied = [401, 403].includes(status) || code === '42501';
-  return { status, code, denied };
-}
-
-function isUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
-}
-
-function testMarker(company, nonce) {
-  return `F7_HOMOLOG_REST_${company}_${nonce}`;
 }
 
 export default function HomologationRestRunner() {
@@ -521,30 +458,29 @@ export default function HomologationRestRunner() {
           {identity && <div className="mt-2">Sessão: <strong>{identity.label}</strong> · {identity.email} · Empresa {identity.company} · papel <strong>{identity.role}</strong></div>}
         </div>
 
-        <button type="button" onClick={runReadOnlyChecks} disabled={running || !exactProject || !isAuthenticated} className="mt-5 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-          {running ? 'Verificando sessão e API...' : 'Executar verificações somente leitura'}
-        </button>
-
-        <section className="mt-7 border-t border-slate-700 pt-6">
-          <h2 className="text-lg font-semibold">Escritas controladas · somente homologação</h2>
-          <p className="mt-2 text-sm text-amber-200">Ações manuais, sequenciais e registradas nesta página. Somente admins podem criar fixtures e tentar escritas cruzadas; qualquer retorno com linha afetada interrompe a sequência.</p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button type="button" onClick={createOwnFixture} disabled={writeRunning || !exactProject || !isAuthenticated} className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">{writeRunning ? 'Aguarde...' : '1. Criar fixture fictícia própria'}</button>
-            <button type="button" onClick={verifyOwnFixture} disabled={writeRunning || !fixture || !exactProject || !isAuthenticated} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Verificar fixture própria após teste cruzado</button>
-          </div>
-          {fixture && <p className="mt-3 break-all text-xs text-cyan-200">Fixture local: tenant {fixture.company} · ID {fixture.id} · marcador {fixture.marker}. Compartilhe apenas esses identificadores fictícios com o outro admin.</p>}
-          <label className="mt-4 block text-sm">Fixture do outro admin (ID e marcador fictícios)
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <input value={targetFixture.id} onChange={(event) => setTargetFixture((value) => ({ ...value, id: event.target.value }))} placeholder="UUID da fixture do outro tenant" className="rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-xs" />
-              <input value={targetFixture.marker} onChange={(event) => setTargetFixture((value) => ({ ...value, marker: event.target.value }))} placeholder="F7_HOMOLOG_REST_A/B_..." className="rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-xs" />
-            </div>
-          </label>
-          <button type="button" onClick={runCrossTenantWrites} disabled={writeRunning || !exactProject || !isAuthenticated} className="mt-3 rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">2. Testar INSERT, PATCH e DELETE cruzados</button>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button type="button" onClick={runSellerAdministrativeChecks} disabled={writeRunning || identity?.role !== 'vendedor' || !exactProject} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Testar negação de APIs administrativas (Vendedor A)</button>
-            <button type="button" onClick={runCancelledSaleIdempotency} disabled={writeRunning || identity?.label !== 'Admin A' || !exactProject} className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Testar idempotência da venda fictícia cancelada</button>
-          </div>
-        </section>
+        <div className="mt-7 space-y-4 border-t border-slate-700 pt-6">
+          {HOMOLOGATION_SUITES.map((suite) => <section key={suite.id} className="space-y-3">
+            <div><h2 className="text-lg font-semibold">{suite.title}</h2><p className="mt-1 text-sm text-slate-300">{suite.description}</p></div>
+            {suite.id === 'core' ? <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+              <p className="text-xs text-amber-200">Ações manuais e sequenciais. Testes de escrita só iniciam com clique explícito; a sequência para diante de qualquer resultado inesperado.</p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button type="button" onClick={runReadOnlyChecks} disabled={running || !exactProject || !isAuthenticated} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">{running ? 'Verificando…' : 'Executar verificações gerais somente leitura'}</button>
+                <button type="button" onClick={() => window.confirm('Criar uma fixture fictícia de cliente na empresa autenticada? O marcador será único e o registro permanecerá até eventual limpeza por procedimento autorizado.') && createOwnFixture()} disabled={writeRunning || !exactProject || !isAuthenticated} className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Criar fixture fictícia de clientes</button>
+                <button type="button" onClick={verifyOwnFixture} disabled={writeRunning || !fixture || !exactProject || !isAuthenticated} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Verificar fixture própria após teste cruzado</button>
+                <button type="button" onClick={() => window.confirm('Executar INSERT, PATCH e DELETE cruzados usando apenas a fixture identificada do outro tenant? A sequência será interrompida se alguma escrita for aceita.') && runCrossTenantWrites()} disabled={writeRunning || !exactProject || !isAuthenticated} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Testar INSERT, PATCH e DELETE cruzados</button>
+                <button type="button" onClick={() => window.confirm('Executar pelo JWT real do vendedor as chamadas REST e RPC administrativas de teste? Nenhum convite será enviado; a sequência para diante de aceitação inesperada.') && runSellerAdministrativeChecks()} disabled={writeRunning || identity?.role !== 'vendedor' || !exactProject} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Testar negação de APIs administrativas</button>
+                <button type="button" onClick={() => window.confirm('Repetir duas vezes a RPC oficial de cancelamento somente na venda fictícia já cancelada, comparando estoque e ledger antes/depois?') && runCancelledSaleIdempotency()} disabled={writeRunning || identity?.label !== 'Admin A' || !exactProject} className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold disabled:opacity-50">Testar idempotência da venda cancelada</button>
+              </div>
+              {fixture && <p className="mt-3 break-all text-xs text-cyan-200">Fixture clientes: tenant {fixture.company} · ID {fixture.id} · marcador {fixture.marker}.</p>}
+              <label className="mt-4 block text-sm">Fixture de clientes do outro admin (ID e marcador fictícios)
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <input value={targetFixture.id} onChange={(event) => setTargetFixture((value) => ({ ...value, id: event.target.value }))} placeholder="UUID da fixture do outro tenant" className="rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-xs" />
+                  <input value={targetFixture.marker} onChange={(event) => setTargetFixture((value) => ({ ...value, marker: event.target.value }))} placeholder="F7_HOMOLOG_REST_A/B_..." className="rounded border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-xs" />
+                </div>
+              </label>
+            </div> : <SupplierOffersSuite isAuthenticated={isAuthenticated} onResults={appendWriteResults} />}
+          </section>)}
+        </div>
 
         {finished && <p className="mt-4 text-sm text-slate-300">Resumo: {counts.PASS || 0} aprovados · {counts.FAIL || 0} reprovados · {counts.PENDING || 0} pendentes · {counts.BLOCKED || 0} bloqueados. Resultados mantidos apenas nesta página.</p>}
 

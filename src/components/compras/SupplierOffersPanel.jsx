@@ -4,6 +4,19 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { compareSupplierOffers, getSupplierOfferDisplayStatus, prepareSupplierOfferInput, SUPPLIER_OFFER_SOURCE_TYPES, SUPPLIER_OFFER_STATUS_LABELS } from '@/lib/supplierOffers';
 import { supplierOffersService } from '@/services/supplierOffersService';
+import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { isExactHomologationBuild } from '@/pages/homologation/runnerConfig';
+
+const HOMOLOGATION_OFFERS_ERROR_PARAM = '__homologation_offers_error';
+
+function consumeOffersErrorProbe() {
+  if (!isExactHomologationBuild() || typeof window === 'undefined') return false;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get(HOMOLOGATION_OFFERS_ERROR_PARAM) !== '1') return false;
+  url.searchParams.delete(HOMOLOGATION_OFFERS_ERROR_PARAM);
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  return true;
+}
 
 const SOURCE_LABELS = {
   manual: 'Cadastro manual',
@@ -158,6 +171,14 @@ export default function SupplierOffersPanel({ company, canManage }) {
     setLoading(true);
     setError('');
     try {
+      if (consumeOffersErrorProbe()) {
+        const { error: probeError, status } = await getSupabaseClient().from('supplier_offers')
+          .select('id,__f7_homologation_missing_column__')
+          .eq('company_id', company.id)
+          .limit(1);
+        if (!probeError) throw new Error('Teste controlado inconclusivo: a API não rejeitou a coluna de prova inexistente.');
+        throw new Error(`Falha controlada de carregamento: API respondeu HTTP ${status || probeError.status || 400}. Nenhuma gravação foi executada.`);
+      }
       const [rows, options] = await Promise.all([
         supplierOffersService.list(company.id),
         supplierOffersService.getFormOptions(company.id),

@@ -13,10 +13,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAuth } from '@/lib/AuthContext';
 import { usePermissions } from '@/lib/permissions';
 import { useCompanyMembership } from '@/hooks/useCompanyMembership';
+import { isExactHomologationBuild } from '@/pages/homologation/runnerConfig';
 
 const PO_STATUS_STYLE = { draft: 'bg-slate-100 text-slate-700', pending: 'bg-amber-100 text-amber-700', partial: 'bg-blue-100 text-blue-700', approved: 'bg-indigo-100 text-indigo-700', sent: 'bg-violet-100 text-violet-700', received: 'bg-emerald-100 text-emerald-700', cancelled: 'bg-rose-100 text-rose-700' };
 const PO_STATUS_LABEL = { draft: 'Rascunho', pending: 'Pendente', partial: 'Parcial', approved: 'Aprovado', sent: 'Enviado', received: 'Recebido', cancelled: 'Cancelado' };
 const PAGE_SIZE = 12;
+const HOMOLOGATION_OFFERS_ERROR_PARAM = '__homologation_offers_error';
+
+function shouldOpenOffersErrorProbe() {
+  return isExactHomologationBuild()
+    && new URLSearchParams(window.location.search).get(HOMOLOGATION_OFFERS_ERROR_PARAM) === '1';
+}
 
 function PriorityBadge({ value }) {
   const tone = value === 'Alta' ? 'bg-rose-100 text-rose-700' : value === 'Média' ? 'bg-amber-100 text-amber-700' : value === 'Baixa' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700';
@@ -46,7 +53,7 @@ export default function Compras() {
   const canManage = can('purchases.manage');
   const canUseSupplierSearch = can('supplier_intelligence.view');
   const canUseIntelligence = can('intelligence.view');
-  const [tab, setTab] = useState('replenishment');
+  const [tab, setTab] = useState(() => shouldOpenOffersErrorProbe() ? 'offers' : 'replenishment');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
