@@ -67,6 +67,7 @@ test('seller administrative checks exercise REST grants and admin-only RPC autho
 
 test('cancel idempotency checks identify one exact cancelled homolog fixture and compare ledgers around both RPC calls', () => {
   assert.match(runner, /Produto fictício F7 A - teste de rascunho 0087/);
+  assert.match(runner, /eq\('items->0->>name', productMarker\)/);
   assert.match(runner, /sales\.length !== 1/);
   assert.match(runner, /stock_movements/);
   assert.match(runner, /financial_entries/);

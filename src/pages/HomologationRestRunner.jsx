@@ -430,7 +430,7 @@ export default function HomologationRestRunner() {
       }
       const { data: sales, error: saleError } = await supabase.from('sales')
         .select('id,company_id,status,items,customer_id').eq('company_id', guard.ownCompany.id)
-        .eq('status', 'cancelled').contains('items', [{ name: productMarker }]);
+        .eq('status', 'cancelled').eq('items->0->>name', productMarker);
       if (saleError || !Array.isArray(sales) || sales.length !== 1) {
         const safeCode = String(saleError?.code || '');
         checks.push(result(guard.identity.label, 'A', 'sales', 'cancelled fixture identification', 'exatamente uma venda fictícia cancelada', saleError ? 'PENDING' : 'BLOCKED', Number(saleError?.status) || null, saleError ? `consulta falhou; código=${safeCode || 'indisponível'}; nenhuma RPC chamada` : `encontradas=${sales?.length ?? 'indisponível'}; nenhuma RPC chamada`));
