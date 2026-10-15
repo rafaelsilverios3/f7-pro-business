@@ -20,6 +20,9 @@ Deno.serve(async (req) => {
     }
     const { data: allowed } = await viewer.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
+    if ((Deno.env.get('WHATSAPP_PROVIDER_ENABLED') || '').trim().toLowerCase() !== 'true') {
+      return json({ code: 'WHATSAPP_PROVIDER_DISABLED' }, 503);
+    }
     stage = 'meta_validation';
     const meta = await graphRequest(`${phoneId}?fields=id,display_phone_number,verified_name,quality_rating`);
     if (!phoneValidation(meta.data, phoneId)) {

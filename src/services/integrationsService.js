@@ -102,6 +102,8 @@ function createIntegrationError(rawDetail, httpStatus) {
   const safeStage = typeof detail?.stage === 'string' ? detail.stage.slice(0, 80) : null;
   const safeInternalCode = typeof detail?.internal_error_code === 'string' ? detail.internal_error_code.slice(0, 80) : null;
   const assistantMessages = {
+    WHATSAPP_PROVIDER_DISABLED: 'A validação da Meta está desabilitada neste ambiente.',
+    OUTBOUND_DISABLED: 'O envio de mensagens está desabilitado neste ambiente.',
     AI_DISABLED: 'A IA está desativada neste ambiente.',
     AI_PROVIDER_NOT_CONFIGURED: 'O provedor de IA ainda não está configurado.',
     AI_PROVIDER_CONFIG_INVALID: 'A configuração do provedor de IA é inválida.',
@@ -122,7 +124,26 @@ function createIntegrationError(rawDetail, httpStatus) {
     SUPPLIER_SAVE_FAILED: 'Falha ao salvar fornecedor.',
     PLAN_PRICE_NOT_CONFIGURED: 'O preço deste plano ainda não foi definido.',
     MERCADO_PAGO_NOT_CONFIGURED: 'O checkout ainda não está disponível: o provedor de pagamentos não foi configurado.',
-    CARD_CHECKOUT_REQUIRES_TOKENIZATION: 'O pagamento por cartão será liberado após a configuração segura da tokenização.',
+    CARD_TOKEN_REQUIRED: 'O token seguro do cartão não foi recebido. Confira os dados no formulário do Mercado Pago.',
+    MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED: 'O ambiente de pagamentos ainda não foi configurado.',
+    MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED: 'O checkout está protegido: este ambiente exige credenciais de sandbox.',
+    MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED: 'O checkout está bloqueado até a configuração do webhook seguro.',
+    PRODUCTION_PAYMENTS_DISABLED: 'Pagamentos reais estão desativados neste ambiente.',
+    CARD_CHECKOUT_REQUIRES_TOKENIZATION: 'O checkout seguro de cartão ainda não está configurado neste ambiente.',
+    CHECKOUT_STATE_RETRYABLE: 'A autorização foi iniciada, mas a confirmação local está pendente. Aguarde e tente atualizar o status.',
+    MERCADO_PAGO_RESULT_UNCERTAIN: 'O provedor ainda está confirmando o resultado. Não repita o pagamento agora; atualize o status em instantes.',
+    MERCADO_PAGO_RESPONSE_INCOMPLETE: 'O provedor não confirmou todos os dados do checkout. A assinatura não foi ativada.',
+    MERCADO_PAGO_RESPONSE_MISMATCH: 'Os dados confirmados pelo provedor não correspondem ao plano selecionado.',
+    PLAN_PRICE_INVALID: 'O preço ou a moeda do plano precisa ser revisado antes do checkout.',
+    BILLING_PERIOD_UNSUPPORTED: 'A periodicidade deste plano não é compatível com o checkout recorrente.',
+    PAYER_EMAIL_REQUIRED: 'Confirme um e-mail válido na conta antes de contratar o plano.',
+    CHECKOUT_PRICE_CHANGED: 'O preço do plano mudou. Atualize a página para iniciar um novo checkout.',
+    SUBSCRIPTION_ACTION_NOT_ALLOWED: 'Esta ação não está disponível para o estado atual da assinatura.',
+    SUBSCRIPTION_CONTROL_IN_PROGRESS: 'Outra atualização da assinatura está em andamento. Aguarde alguns instantes.',
+    SUBSCRIPTION_RESULT_UNCERTAIN: 'O provedor ainda está confirmando a alteração. Atualize o status antes de tentar novamente.',
+    SUBSCRIPTION_STATE_RETRYABLE: 'A alteração foi enviada, mas a confirmação local está pendente. Atualize o status em instantes.',
+    SUBSCRIPTION_PROVIDER_REJECTED: 'O Mercado Pago não aceitou a alteração da assinatura.',
+    SUBSCRIPTION_PROVIDER_RESPONSE_MISMATCH: 'O Mercado Pago retornou um estado diferente do solicitado. O acesso não foi alterado localmente.',
     FREE_PLAN_NO_PAYMENT_REQUIRED: 'O plano gratuito não exige pagamento.',
   };
   const message = safeDetail.code === 'SUPPLIER_SAVE_FAILED' && safeDetail.detail

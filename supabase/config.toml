@@ -8,3 +8,24 @@ enabled = true
 
 [functions.billing-webhook]
 verify_jwt = false
+
+[functions.billing-subscription-manage]
+verify_jwt = true
+
+[functions.whatsapp-connect]
+verify_jwt = true
+
+[functions.whatsapp-disconnect]
+verify_jwt = true
+
+[functions.whatsapp-send]
+verify_jwt = true
+
+[functions.whatsapp-test]
+verify_jwt = true
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.integration-health]
+verify_jwt = true

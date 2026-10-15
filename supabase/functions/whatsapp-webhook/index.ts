@@ -147,12 +147,13 @@ async function processMessage(sb: any, value: any, message: any) {
   if (!existing.data && inserted.data?.id) await enqueueSupervisedIntelligence(sb, { companyId, conversationId: conversation.id, messageId: inserted.data.id, providerMessageId: message.id, occurredAt: timestamp(message.timestamp) });
 }
 
-Deno.serve(async (req) => {
+export async function handleWhatsAppWebhookRequest(req: Request, dependencies: { adminClient?: any } = {}) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method === 'GET') { const challenge = getWhatsAppWebhookChallenge(new URL(req.url), Deno.env.get('WHATSAPP_VERIFY_TOKEN')); if (challenge !== null) return new Response(challenge, { status: 200 }); return json({ error: 'verification failed' }, 403); }
+  if ((Deno.env.get('WHATSAPP_RECEIVE_ENABLED') || '').trim().toLowerCase() !== 'true') return json({ error: 'WHATSAPP_RECEIVE_DISABLED' }, 503);
   try {
-    const raw = await req.text(); if (raw.length > 2_000_000) return json({ error: 'PAYLOAD_TOO_LARGE' }, 413); if (!(await validSignature(req, raw))) return json({ error: 'INVALID_SIGNATURE' }, 401);
-    const payload = JSON.parse(raw); const sb = admin();
+    const raw = await req.text(); if (new TextEncoder().encode(raw).byteLength > 2_000_000) return json({ error: 'PAYLOAD_TOO_LARGE' }, 413); if (!(await validSignature(req, raw))) return json({ error: 'INVALID_SIGNATURE' }, 401);
+    const payload = JSON.parse(raw); const sb = dependencies.adminClient || admin();
     for (const value of webhookItems(payload)) {
       const companyLookup = await sb.from('company_integrations').select('company_id').eq('provider', 'whatsapp').eq('external_phone_id', value.metadata?.phone_number_id || '').eq('status', 'connected').maybeSingle();
       const companyId = companyLookup.data?.company_id || null;
@@ -174,5 +175,7 @@ Deno.serve(async (req) => {
     }
     return json({ ok: true });
   } catch { return json({ error: 'INVALID_WEBHOOK' }, 400); }
-});
+}
+
+if (import.meta.main) Deno.serve((req) => handleWhatsAppWebhookRequest(req));
 

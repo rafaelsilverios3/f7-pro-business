@@ -39,6 +39,19 @@ export async function sendWhatsAppText(input: {
     if (previous.data) return { ok: true, message: previous.data, provider_status: 200, deduplicated: true };
   }
 
+  // Outbound sending remains explicitly disabled until a sandbox/consent gate
+  // is enabled by the environment owner. A token alone must never turn a code
+  // deploy into permission to send real WhatsApp messages.
+  if ((Deno.env.get('WHATSAPP_SEND_ENABLED') || '').trim().toLowerCase() !== 'true') {
+    return failure(sb, companyId, requestId, 'OUTBOUND_DISABLED', 'provider_configuration', 503);
+  }
+
+  // Fail before reading/changing the outbox or marking a provider call as
+  // started. In particular, never issue a Graph request with `Bearer
+  // undefined` when this function is deployed before WhatsApp is configured.
+  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN')?.trim() || '';
+  if (!accessToken) return failure(sb, companyId, requestId, 'PROVIDER_NOT_CONFIGURED', 'provider_configuration', 503);
+
   if (input.client_request_id) {
     const outbox = await sb.from('whatsapp_outbox').select('id,status,provider_message_id,message_id,conversation_id,content,sender_type,sender_user_id,attempts,lease_expires_at,provider_call_started_at').eq('company_id', companyId).eq('client_request_id', input.client_request_id).maybeSingle();
     if (outbox.error) return failure(sb, companyId, requestId, 'INTERNAL_PROVIDER_ERROR', 'outbox_lookup', 500, safeCode(outbox.error));
@@ -111,7 +124,7 @@ export async function sendWhatsAppText(input: {
   try {
     response = await fetch(`https://graph.facebook.com/${version}/${integration.external_phone_id}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('WHATSAPP_ACCESS_TOKEN')}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body: content } }),
     });
   } catch (error) {
