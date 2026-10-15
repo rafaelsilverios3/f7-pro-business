@@ -37,7 +37,8 @@ Deno.serve(async (req) => {
     stage = 'complete';
     return json({ integration, provider: { status: 'ok', phone: 'configured', api_reachable: true } });
   } catch (error) {
-    const internalCode = typeof error?.code === 'string' && error.code.length <= 80 ? error.code : null;
+    const candidate = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+    const internalCode = typeof candidate.code === 'string' && candidate.code.length <= 80 ? candidate.code : null;
     return json({ code: 'INTERNAL_PROVIDER_ERROR', provider_status: 'unavailable', stage, internal_code: internalCode }, 500);
   }
 });

@@ -115,8 +115,9 @@ export async function sendWhatsAppText(input: {
       body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body: content } }),
     });
   } catch (error) {
-    if (outboxId) await sb.from('whatsapp_outbox').update({ status: 'delivery_unknown', lease_expires_at: null, last_error_code: error?.name === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_RESPONSE_UNKNOWN', updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'sending').eq('attempt_token', requestId);
-    return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, error?.name === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_RESPONSE_UNKNOWN');
+    const errorName = error && typeof error === 'object' && 'name' in error ? String(error.name) : '';
+    if (outboxId) await sb.from('whatsapp_outbox').update({ status: 'delivery_unknown', lease_expires_at: null, last_error_code: errorName === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_RESPONSE_UNKNOWN', updated_at: new Date().toISOString() }).eq('id', outboxId).eq('company_id', companyId).eq('status', 'sending').eq('attempt_token', requestId);
+    return failure(sb, companyId, requestId, 'OUTBOUND_RECONCILIATION_REQUIRED', 'outbox_reconciliation', 409, errorName === 'AbortError' ? 'PROVIDER_TIMEOUT' : 'PROVIDER_RESPONSE_UNKNOWN');
   }
   const providerPayload = await response.json().catch(() => ({}));
   if (!response.ok) {

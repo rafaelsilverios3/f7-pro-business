@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   const emit = async (companyId: string, stage: string, status = 'success', counts: Record<string, unknown> = {}) => { try { await sb.from('ai_run_events').insert({ company_id: companyId, trace_id: tickId, stage, status, counts }); } catch { /* observabilidade não pode impedir o despacho */ } };
   const claimed = await sb.rpc('claim_due_automations', { batch_size: 50 });
   if (claimed.error) return json({ code: 'SCHEDULER_CLAIM_FAILED' }, 500);
-  const companies = [...new Set((claimed.data || []).map((row: any) => row.company_id))];
+  const companies: string[] = [...new Set<string>((claimed.data || []).map((row: any) => String(row.company_id)).filter(Boolean))];
   await Promise.all(companies.map((companyId) => emit(companyId, 'SCHEDULER_TICK_STARTED')));
   const results: any[] = [];
   for (const automation of claimed.data || []) {

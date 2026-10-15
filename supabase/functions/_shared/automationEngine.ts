@@ -33,7 +33,11 @@ export function buildAutomationPlan(rule: any, input: { company_id: string; trig
   if (!input.company_id || !input.event_id || input.event_id.length > 160) throw new Error('INVALID_AUTOMATION_EVENT');
   if (rule?.company_id !== input.company_id || rule?.active !== true || rule?.trigger_type !== input.trigger_type) return { status: 'ignored', reason: 'rule_not_applicable', actions: [] };
   if (!matchesAutomationConditions(input.event_data || {}, rule.conditions)) return { status: 'skipped', reason: 'conditions_not_met', actions: [] };
-  const actions = Array.isArray(rule.actions) ? rule.actions.slice(0, 10) : [];
-  const planned = actions.map((action: AutomationAction) => ({ type: String(action?.type || '').slice(0, 80), params: action?.params && typeof action.params === 'object' && !Array.isArray(action.params) ? action.params : {}, execution: READ_ONLY_ACTIONS.has(action?.type) ? 'allowed' : SENSITIVE_ACTIONS.has(action?.type) ? 'requires_explicit_authorization' : 'unsupported' }));
+  const actions: unknown[] = Array.isArray(rule.actions) ? rule.actions.slice(0, 10) : [];
+  const planned = actions.map((raw) => {
+    const action = raw && typeof raw === 'object' ? raw as AutomationAction : { type: '' };
+    const type = String(action.type || '').slice(0, 80);
+    return { type, params: action.params && typeof action.params === 'object' && !Array.isArray(action.params) ? action.params : {}, execution: READ_ONLY_ACTIONS.has(type) ? 'allowed' as const : SENSITIVE_ACTIONS.has(type) ? 'requires_explicit_authorization' as const : 'unsupported' as const };
+  });
   return { status: planned.some((action) => action.execution === 'allowed') ? 'ready' : 'blocked', reason: planned.some((action) => action.execution === 'allowed') ? 'policy_passed' : 'no_authorized_action', actions: planned };
 }

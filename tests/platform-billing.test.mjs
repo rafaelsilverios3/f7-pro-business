@@ -125,7 +125,7 @@ test('Orders API normalizer requires accredited evidence and keeps legacy paymen
   assert.match(webhook, /trial_used: true/);
   assert.match(webhook, /legacyEventNeedsReconciliation/);
 
-  const helperSource = webhook.match(/const normalizeOrdersPaymentStatus[\s\S]*?\nconst periodEnd/)?.[0].replace(/\nconst periodEnd[\s\S]*$/, '');
+  const helperSource = webhook.match(/const normalizeOrdersPaymentStatus[\s\S]*?\nconst periodEnd/)?.[0].replace(/\nconst periodEnd[\s\S]*$/, '').replace('(input: { orderStatus?: unknown; orderStatusDetail?: unknown; transactionStatus?: unknown; transactionStatusDetail?: unknown })', '(input)');
   assert.ok(helperSource, 'Orders normalizer must remain isolated and testable');
   const context = {};
   vm.runInNewContext(`${helperSource}; this.normalize = normalizeOrdersPaymentStatus;`, context);

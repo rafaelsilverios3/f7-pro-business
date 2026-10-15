@@ -1,6 +1,7 @@
 import { corsHeaders, json, admin } from '../_shared/core.ts';
 import { normalizePhone } from '../_shared/phone.ts';
 import { messageContent, mediaDetails, webhookItems, timestamp } from '../_shared/webhook.ts';
+import { getWhatsAppWebhookChallenge, verifyWhatsAppWebhookSignature } from '../_shared/whatsappWebhookSecurity.ts';
 
 const MEDIA_LIMIT = 10 * 1024 * 1024;
 const MEDIA_TYPES = new Set(['image/jpeg','image/png','image/webp','video/mp4','audio/ogg','audio/mpeg','audio/mp4','application/pdf']);
@@ -26,12 +27,7 @@ async function downloadMedia(sb: any, companyId: string, conversationId: string,
 }
 
 async function validSignature(req: Request, body: string) {
-  const signature = req.headers.get('x-hub-signature-256') || '';
-  if (!signature.startsWith('sha256=')) return false;
-  const secret = Deno.env.get('WHATSAPP_APP_SECRET') || '';
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-  const bytes = Uint8Array.from((signature.slice(7).match(/.{2}/g) || []).map((x) => parseInt(x, 16)));
-  return crypto.subtle.verify('HMAC', key, bytes, new TextEncoder().encode(body));
+  return verifyWhatsAppWebhookSignature(req.headers.get('x-hub-signature-256'), body, Deno.env.get('WHATSAPP_APP_SECRET'));
 }
 
 type SafeWebhookError = { stage: string; code: string | null; message: string };
@@ -153,7 +149,7 @@ async function processMessage(sb: any, value: any, message: any) {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  if (req.method === 'GET') { const url = new URL(req.url); if (url.searchParams.get('hub.mode') === 'subscribe' && url.searchParams.get('hub.verify_token') === Deno.env.get('WHATSAPP_VERIFY_TOKEN')) return new Response(url.searchParams.get('hub.challenge') || '', { status: 200 }); return json({ error: 'verification failed' }, 403); }
+  if (req.method === 'GET') { const challenge = getWhatsAppWebhookChallenge(new URL(req.url), Deno.env.get('WHATSAPP_VERIFY_TOKEN')); if (challenge !== null) return new Response(challenge, { status: 200 }); return json({ error: 'verification failed' }, 403); }
   try {
     const raw = await req.text(); if (raw.length > 2_000_000) return json({ error: 'PAYLOAD_TOO_LARGE' }, 413); if (!(await validSignature(req, raw))) return json({ error: 'INVALID_SIGNATURE' }, 401);
     const payload = JSON.parse(raw); const sb = admin();

@@ -60,7 +60,8 @@ const normalizeLegacyPaymentStatus = (status: unknown) => {
   return { status: result, activationEligible: result === 'approved', reason: result === 'approved' ? null : `legacy_${normalized || 'unknown'}` };
 };
 
-const normalizeOrdersPaymentStatus = ({ orderStatus, orderStatusDetail, transactionStatus, transactionStatusDetail }) => {
+const normalizeOrdersPaymentStatus = (input: { orderStatus?: unknown; orderStatusDetail?: unknown; transactionStatus?: unknown; transactionStatusDetail?: unknown }) => {
+  const { orderStatus, orderStatusDetail, transactionStatus, transactionStatusDetail } = input;
   const order = String(orderStatus || '').toLowerCase();
   const orderDetail = String(orderStatusDetail || '').toLowerCase();
   const transaction = String(transactionStatus || '').toLowerCase();

@@ -26,7 +26,7 @@ export async function runRadarDetector(sb: any, companyId: string, triggerType: 
   }
   let created = 0; let updated = 0;
   const { data: existing } = await sb.from('product_opportunities').select('id,metadata,status').eq('company_id', companyId);
-  const byKey = new Map((existing || []).map((row: any) => [row.metadata?.radar_key, row]));
+  const byKey = new Map<string, any>((existing || []).map((row: any) => [String(row.metadata?.radar_key || ''), row]));
   for (const signal of signals) {
     const current = byKey.get(signal.radar_key); const metadata = { ...(current?.metadata || {}), radar_key: signal.radar_key, entity_type: signal.entity_type, entity_id: signal.entity_id, signal_type: signal.signal_type, evidence: signal.evidence, radar_state: current?.metadata?.radar_state || 'NOVA', last_seen_at: now.toISOString() };
     const payload = { title: signal.title, description: signal.description, status: current?.status || 'descoberta', source: 'internal_business_data', source_type: 'INTERNA', confidence_level: 'ALTA', opportunity_score: 70, supplier_score: 0, trust_score: 80, channel_score: 0, metadata, collected_at: now.toISOString() };
