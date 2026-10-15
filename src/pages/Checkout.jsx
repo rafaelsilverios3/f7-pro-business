@@ -1,19 +1,87 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Copy, Loader2, ShieldCheck } from 'lucide-react';
 import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { billingService } from '@/services/billingService';
+import MercadoPagoCardTokenBrick from '@/components/billing/MercadoPagoCardTokenBrick';
+import { useAuth } from '@/lib/AuthContext';
 
 const money = (minor, currency = 'BRL') => minor == null ? 'Preço a definir' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(minor) / 100);
+// Recurring-card checkout depends on the pending billing migrations and the
+// matching Edge Function versions. Keep it disabled until that coordinated
+// remote rollout has been completed and verified.
+const recurringBillingEnabled = false;
 
 export default function Checkout() {
-  const { company } = useOutletContext(); const navigate = useNavigate(); const [params] = useSearchParams(); const [plans, setPlans] = useState([]); const [method, setMethod] = useState('pix'); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [result, setResult] = useState(null);
-  const code = params.get('plan') || 'pro'; const plan = plans.find((item) => item.code === code);
+  const { company } = useOutletContext();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [plans, setPlans] = useState([]);
+  const [method, setMethod] = useState('pix');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const code = params.get('plan') || 'pro';
+  const plan = plans.find((item) => item.code === code);
+
   useEffect(() => { billingService.listPlans().then(setPlans); }, []);
-  const start = async () => { if (!plan || plan.price_minor == null || !company?.id) return; setLoading(true); setError(''); try { setResult(await billingService.createCheckout(company.id, plan.code, method)); } catch (cause) { setError(cause.message || 'Não foi possível iniciar o checkout.'); } finally { setLoading(false); } };
+
+  const startPix = async () => {
+    if (!plan || plan.price_minor == null || !company?.id) return;
+    setLoading(true); setError('');
+    try { setResult(await billingService.createCheckout(company.id, plan.code, 'pix')); }
+    catch (cause) { setError(cause.message || 'Não foi possível iniciar o checkout.'); }
+    finally { setLoading(false); }
+  };
+
+  const submitCardToken = useCallback(async (cardTokenId) => {
+    if (!plan || !company?.id) throw new Error('Não foi possível vincular o plano à empresa atual.');
+    setLoading(true); setError('');
+    try {
+      // The one-use token is passed directly to the backend and never kept in
+      // React state, local storage, analytics, or URL parameters.
+      const response = await billingService.createCheckout(company.id, plan.code, 'card', cardTokenId);
+      setResult(response);
+      return response;
+    } catch (cause) { setError(cause.message || 'Não foi possível iniciar a assinatura.'); throw cause; }
+    finally { setLoading(false); }
+  }, [company?.id, plan]);
+
+  const onCardError = useCallback((cause) => setError(cause?.message || 'O formulário seguro de cartão não está disponível.'), []);
   const copy = async () => { if (result?.pix?.qr_code) await navigator.clipboard?.writeText(result.pix.qr_code); };
+
   if (!plan) return <div className="mx-auto max-w-3xl px-5 py-10"><p>Plano não encontrado.</p><Button className="mt-4" onClick={() => navigate('/planos')}>Voltar aos planos</Button></div>;
   if (!company?.id) return <div className="mx-auto max-w-3xl px-5 py-10"><PageHeader title="Prepare sua empresa" subtitle="Antes do checkout, precisamos criar o espaço seguro da sua empresa." /><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm leading-6 text-slate-600">Você escolheu o plano <strong>{plan.name}</strong>. Crie sua empresa para manter a contratação vinculada ao tenant correto.</p><Button className="mt-5 w-full" onClick={() => navigate(`/onboarding?returnTo=${encodeURIComponent(`/checkout?plan=${plan.code}`)}`)}>Criar empresa e continuar</Button><Button variant="ghost" className="mt-2 w-full" onClick={() => navigate('/planos')}>Voltar aos planos</Button></section></div>;
-  return <div className="mx-auto max-w-3xl px-5 py-8"><PageHeader title="Checkout F7 Business" subtitle="Pagamento seguro; o plano só é ativado após confirmação server-side." /><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-wide text-indigo-600">Plano selecionado</p><h2 className="mt-1 text-2xl font-bold">{plan.name}</h2><p className="mt-2 text-sm text-slate-500">{plan.description}</p><p className="mt-5 text-3xl font-bold text-slate-900">{money(plan.price_minor, plan.currency)} <span className="text-sm font-normal text-slate-500">/ {plan.billing_period === 'year' ? 'ano' : 'mês'}</span></p>{plan.code === 'free' ? <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">O plano FREE não gera cobrança. Você pode começar sem pagamento.</p> : plan.price_minor == null ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">O preço deste plano ainda não foi definido. O checkout ficará disponível após a configuração comercial.</p> : result?.pix ? <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><p className="font-semibold text-indigo-900">Pagamento via PIX</p>{result.pix.qr_code_base64 && <img src={`data:image/png;base64,${result.pix.qr_code_base64}`} alt="QR Code PIX" className="mx-auto my-4 h-48 w-48 rounded bg-white p-2" />}{result.pix.qr_code && <div className="flex gap-2"><input readOnly value={result.pix.qr_code} className="min-w-0 flex-1 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs" /><Button type="button" variant="outline" onClick={copy}><Copy className="h-4 w-4" /></Button></div>}<p className="mt-3 text-xs text-indigo-800">Status: aguardando pagamento. A assinatura será ativada somente pelo webhook do Mercado Pago.</p></div> : <><div className="mt-5 flex gap-2"><Button type="button" variant={method === 'pix' ? 'default' : 'outline'} onClick={() => setMethod('pix')}>PIX</Button><Button type="button" variant={method === 'card' ? 'default' : 'outline'} onClick={() => setMethod('card')}>Cartão</Button></div><Button className="mt-5 w-full" onClick={start} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Continuar pagamento</Button></>}{error && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}<p className="mt-5 flex items-center gap-2 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-600" /> Dados de cartão não são armazenados pela F7.</p></section></div>;
+
+  return <div className="mx-auto max-w-3xl px-5 py-8">
+    <PageHeader title="Checkout F7 Business" subtitle="O plano só é liberado após confirmação server-side do pagamento." />
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs uppercase tracking-wide text-indigo-600">Plano selecionado</p>
+      <h2 className="mt-1 text-2xl font-bold">{plan.name}</h2>
+      <p className="mt-2 text-sm text-slate-500">{plan.description}</p>
+      <p className="mt-5 text-3xl font-bold text-slate-900">{money(plan.price_minor, plan.currency)} <span className="text-sm font-normal text-slate-500">/ {plan.billing_period === 'year' ? 'ano' : 'mês'}</span></p>
+
+      {plan.code === 'free' ? <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">O plano FREE não gera cobrança. Você pode começar sem pagamento.</p>
+        : plan.price_minor == null ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">O preço deste plano ainda não foi definido. O checkout ficará disponível após a configuração comercial.</p>
+          : result?.pix ? <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+            <p className="font-semibold text-indigo-900">Pagamento via PIX</p>
+            {result.pix.qr_code_base64 && <img src={`data:image/png;base64,${result.pix.qr_code_base64}`} alt="QR Code PIX" className="mx-auto my-4 h-48 w-48 rounded bg-white p-2" />}
+            {result.pix.qr_code && <div className="flex gap-2"><input readOnly value={result.pix.qr_code} className="min-w-0 flex-1 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs" /><Button type="button" variant="outline" onClick={copy}><Copy className="h-4 w-4" /></Button></div>}
+            <p className="mt-3 text-xs text-indigo-800">Aguardando pagamento. O plano só ativa após confirmação do webhook; PIX não renova automaticamente.</p>
+          </div> : result?.subscription ? <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="font-semibold text-emerald-900">Autorização recorrente iniciada</p>
+            <p className="mt-2 text-sm text-emerald-800">Status: {result.subscription.status}. O acesso só será liberado após confirmação server-side do primeiro pagamento.</p>
+            {result.subscription.init_point && <a className="mt-4 inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" href={result.subscription.init_point} target="_blank" rel="noopener noreferrer">Continuar no Mercado Pago</a>}
+          </div> : <>
+            <div className="mt-5 flex gap-2"><Button type="button" variant="default">PIX</Button>{recurringBillingEnabled && <Button type="button" variant="outline" onClick={() => { setMethod('card'); setResult(null); }}>Cartão recorrente</Button>}</div>
+            {method === 'pix' ? <><p className="mt-2 text-xs text-slate-500">PIX é pagamento pontual e não renova automaticamente.</p>{!recurringBillingEnabled && <p role="status" className="mt-2 text-xs text-slate-500">Cartão recorrente ficará disponível após a publicação coordenada do Billing.</p>}<Button className="mt-5 w-full" onClick={startPix} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Gerar PIX</Button></>
+              : <MercadoPagoCardTokenBrick amountMinor={plan.price_minor} email={user?.email} onToken={submitCardToken} onError={onCardError} />}
+          </>}
+
+      {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+      <p className="mt-5 flex items-center gap-2 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-600" /> Dados de cartão são tokenizados pelo Mercado Pago; a F7 não recebe nem armazena número ou CVV.</p>
+    </section>
+  </div>;
 }

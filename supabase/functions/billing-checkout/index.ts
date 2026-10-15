@@ -11,7 +11,7 @@ const logProviderFailure = (details: Record<string, unknown>) => {
   console.error(JSON.stringify({
     event: 'BILLING_PROVIDER_REQUEST_FAILED',
     provider: 'mercado_pago',
-    operation: details.operation === 'create_order' ? 'create_order' : 'unknown',
+    operation: ['create_order', 'create_subscription'].includes(String(details.operation)) ? details.operation : 'unknown',
     http_status: Number.isInteger(httpStatus) ? httpStatus : null,
     request_id_present: Boolean(details.request_id_present),
     timestamp: new Date().toISOString(),
@@ -31,6 +31,12 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     const { data: plan } = await sb.from('plans').select('id,code,name,price_minor,currency,billing_period').eq('code', planCode).eq('active', true).maybeSingle(); if (!plan) return json({ code: 'PLAN_NOT_FOUND' }, 404);
     if (plan.price_minor == null) return json({ code: 'PLAN_PRICE_NOT_CONFIGURED', message: 'O preço deste plano ainda não foi definido.' }, 409);
     if (plan.code === 'free') return json({ code: 'FREE_PLAN_NO_PAYMENT_REQUIRED', plan });
+    const amountMinor = Number(plan.price_minor);
+    const billingPeriod = String(plan.billing_period || '').toLowerCase();
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || String(plan.currency || '').toUpperCase() !== 'BRL') {
+      return json({ code: 'PLAN_PRICE_INVALID' }, 409);
+    }
+    if (!['month', 'year'].includes(billingPeriod)) return json({ code: 'BILLING_PERIOD_UNSUPPORTED' }, 409);
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
     const validEnvironment = environment === 'test' || environment === 'production';
     if (!validEnvironment) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
@@ -44,7 +50,12 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409);
     if (environment === 'test' && !token.startsWith('TEST-')) return json({ code: 'MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED' }, 409);
     if (environment === 'production' && !token.startsWith('APP_USR-')) return json({ code: 'MERCADO_PAGO_LIVE_CREDENTIALS_REQUIRED' }, 409);
-    if (method === 'card') return json({ code: 'CARD_CHECKOUT_REQUIRES_TOKENIZATION', message: 'Cartão exige tokenização oficial do Checkout Bricks.' }, 409);
+    const accountEmail = typeof userData.user.email === 'string' ? userData.user.email.trim().toLowerCase() : '';
+    if (environment === 'production' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) return json({ code: 'PAYER_EMAIL_REQUIRED' }, 409);
+    const cardTokenId = typeof body?.card_token_id === 'string' ? body.card_token_id.trim() : '';
+    if (method === 'card' && (!cardTokenId || cardTokenId.length > 256 || !/^[A-Za-z0-9_-]+$/.test(cardTokenId))) {
+      return json({ code: 'CARD_TOKEN_REQUIRED' }, 422);
+    }
     const { data: checkoutRows, error: checkoutError } = await sb.rpc('get_or_create_billing_checkout', {
       p_company_id: companyId, p_user_id: userData.user.id, p_plan_id: plan.id, p_method: method,
     });
@@ -54,10 +65,71 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     }
     const checkout = Array.isArray(checkoutRows) ? checkoutRows[0] : checkoutRows;
     if (!checkout) throw new Error('CHECKOUT_CREATE_FAILED');
+    if (Number(checkout.amount_minor) !== amountMinor) return json({ code: 'CHECKOUT_PRICE_CHANGED' }, 409);
     const idempotency = `f7-order-${checkout.id}`;
     const isTest = environment === 'test';
     const amount = (Number(checkout.amount_minor) / 100).toFixed(2);
-    const payer = isTest ? { email: 'test_user_br@testuser.com', first_name: 'APRO' } : { email: userData.user.email };
+    const payer = isTest ? { email: 'test_user_br@testuser.com', first_name: 'APRO' } : { email: accountEmail };
+    if (method === 'card') {
+      const subscriptionBody = {
+        reason: `F7 Business ${plan.name}`,
+        external_reference: checkout.id,
+        payer_email: payer.email,
+        card_token_id: cardTokenId,
+        auto_recurring: {
+          // Mercado Pago recurring plans use days/months; represent an annual
+          // plan as 12 months instead of the unsupported `years` unit.
+          frequency: billingPeriod === 'year' ? 12 : 1,
+          frequency_type: 'months',
+          transaction_amount: Number(amount),
+          currency_id: String(plan.currency).toUpperCase(),
+        },
+        status: 'authorized',
+      };
+      let subscriptionResponse: Response;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        try {
+          subscriptionResponse = await providerFetch('https://api.mercadopago.com/preapproval', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Idempotency-Key': `f7-subscription-${checkout.id}` },
+            body: JSON.stringify(subscriptionBody), signal: controller.signal,
+          });
+        } finally { clearTimeout(timeout); }
+      } catch {
+        return json({ code: 'MERCADO_PAGO_RESULT_UNCERTAIN' }, 503);
+      }
+      const rawSubscription = await subscriptionResponse.text();
+      let subscription: any = {};
+      try { subscription = rawSubscription ? JSON.parse(rawSubscription) : {}; } catch { subscription = {}; }
+      if (!subscriptionResponse.ok) {
+        logProviderFailure({ operation: 'create_subscription', http_status: subscriptionResponse.status, request_id_present: Boolean(subscriptionResponse.headers.get('x-request-id')) });
+        if (subscriptionResponse.status < 500 && subscriptionResponse.status !== 429) await sb.from('billing_checkout_sessions').update({ status: 'failed' }).eq('id', checkout.id).eq('company_id', companyId);
+        else return json({ code: 'MERCADO_PAGO_RESULT_UNCERTAIN' }, 503);
+        return json({ code: 'MERCADO_PAGO_ERROR' }, 502);
+      }
+      const providerSubscriptionId = clean(subscription.id, 120);
+      const providerStatus = clean(subscription.status, 80);
+      if (!providerSubscriptionId || !providerStatus) return json({ code: 'MERCADO_PAGO_RESPONSE_INCOMPLETE' }, 503);
+      const initPoint = typeof subscription.init_point === 'string' ? subscription.init_point : '';
+      let safeInitPoint: string | null = null;
+      try {
+        const candidate = new URL(initPoint);
+        if (candidate.protocol === 'https:' && ['mercadopago.com.br', 'www.mercadopago.com.br', 'mercadopago.com', 'www.mercadopago.com'].includes(candidate.hostname)) safeInitPoint = candidate.toString();
+      } catch { /* no redirect target when provider response is incomplete */ }
+      const { data: persisted, error: persistError } = await sb.rpc('persist_billing_subscription', {
+        p_checkout_id: checkout.id, p_company_id: companyId,
+        p_provider_subscription_id: providerSubscriptionId, p_provider_status: providerStatus,
+      });
+      if (persistError || persisted?.code !== 'OK') {
+        console.error(JSON.stringify({ event: 'BILLING_SUBSCRIPTION_STATE_FAILED', database_code: /^[0-9A-Z]{5}$/.test(String(persistError?.code || '')) ? persistError.code : 'UNKNOWN' }));
+        return json({ code: 'CHECKOUT_STATE_RETRYABLE' }, 503);
+      }
+      return json({ code: 'OK', checkout: { id: checkout.id, status: 'pending', amount_minor: checkout.amount_minor, expires_at: checkout.expires_at },
+        subscription: { id: persisted.subscription_id, status: persisted.status, provider_status: providerStatus,
+          init_point: safeInitPoint } });
+    }
     const orderBody = { type: 'online', external_reference: checkout.id, total_amount: amount, processing_mode: 'automatic', payer, transactions: { payments: [{ amount, payment_method: { id: 'pix', type: 'bank_transfer' } }] } };
     let response: Response;
     try {

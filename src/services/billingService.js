@@ -19,7 +19,13 @@ export const billingService = {
       return data.map((plan) => ({ ...plan, features: (features || []).filter((feature) => feature.plan_id === plan.id).map(({ plan_id, ...feature }) => feature) }));
     } catch { return FALLBACK_PLANS; }
   },
-  createCheckout: (companyId, planCode, method = 'pix') => invokeEdgeFunction('billing-checkout', { company_id: companyId, plan_code: planCode, method }),
+  createCheckout: (companyId, planCode, method = 'pix', cardTokenId = undefined) => invokeEdgeFunction('billing-checkout', {
+    company_id: companyId, plan_code: planCode, method,
+    ...(method === 'card' && cardTokenId ? { card_token_id: cardTokenId } : {}),
+  }),
+  manageSubscription: (companyId, subscriptionId, action) => invokeEdgeFunction('billing-subscription-manage', {
+    company_id: companyId, subscription_id: subscriptionId, action,
+  }),
   health: () => invokeEdgeFunction('billing-health', null, { method: 'GET' }),
 };
 

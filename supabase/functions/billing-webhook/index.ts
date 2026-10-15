@@ -151,6 +151,101 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
     }
     return true;
   };
+  const isRecurringSubscription = type === 'subscription_preapproval' || type.startsWith('subscription_preapproval.');
+  const isRecurringInvoice = type === 'subscription_authorized_payment' || type.startsWith('subscription_authorized_payment.');
+  if (isRecurringSubscription || isRecurringInvoice) {
+    if (!eventRecordId || !resourceId) {
+      const saved = await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESOURCE_ID_MISSING' });
+      return saved ? json({ code: 'INVALID_WEBHOOK_EVENT' }, 422) : json({ code: 'WEBHOOK_PERSIST_FAILED' }, 500);
+    }
+    const fetchProviderObject = async (url: string) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const result = await providerFetch(url, { headers: { Authorization: `Bearer ${providerToken}` }, signal: controller.signal });
+        const raw = await result.text();
+        let value: any = {};
+        try { value = raw ? JSON.parse(raw) : {}; } catch { value = {}; }
+        return { response: result, value };
+      } finally { clearTimeout(timeout); }
+    };
+    try {
+      if (isRecurringSubscription) {
+        const { response, value } = await fetchProviderObject(`https://api.mercadopago.com/preapproval/${encodeURIComponent(resourceId)}`);
+        if (!response.ok) {
+          console.error(JSON.stringify({ event: 'BILLING_PROVIDER_REQUEST_FAILED', provider: 'mercado_pago', operation: 'get_subscription', http_status: response.status, request_id_present: Boolean(response.headers.get('x-request-id')) }));
+          await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'SUBSCRIPTION_LOOKUP_FAILED' });
+          return json({ code: 'SUBSCRIPTION_LOOKUP_FAILED' }, 502);
+        }
+        const providerSubscriptionId = clean(value.id, 120);
+        if (!providerSubscriptionId || !value.status) {
+          await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' });
+          return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
+        }
+        const rawCheckoutId = clean(value.external_reference, 80);
+        const checkoutId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawCheckoutId) ? rawCheckoutId : null;
+        const settled = await sb.rpc('settle_billing_recurring_event', {
+          p_event_id: eventRecordId, p_processing_token: processingToken, p_event_kind: 'preapproval',
+          p_checkout_id: checkoutId, p_provider_subscription_id: providerSubscriptionId,
+          p_provider_payment_id: null, p_provider_status: clean(value.status, 80), p_payment_status: null,
+          p_amount_minor: null, p_currency: null, p_paid_at: null,
+        });
+        if (settled.error) return json({ code: 'BILLING_SETTLEMENT_RETRYABLE' }, 503);
+        if (settled.data?.code !== 'OK') return json({ code: clean(settled.data?.code, 80) || 'BILLING_SETTLEMENT_REJECTED' }, 422);
+        return json({ code: 'OK', status: settled.data.status || 'pending', duplicate: Boolean(settled.data.duplicate), ignored: Boolean(settled.data.ignored) });
+      }
+
+      const invoiceResult = await fetchProviderObject(`https://api.mercadopago.com/authorized_payments/${encodeURIComponent(resourceId)}`);
+      if (!invoiceResult.response.ok) {
+        console.error(JSON.stringify({ event: 'BILLING_PROVIDER_REQUEST_FAILED', provider: 'mercado_pago', operation: 'get_subscription_invoice', http_status: invoiceResult.response.status, request_id_present: Boolean(invoiceResult.response.headers.get('x-request-id')) }));
+        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'SUBSCRIPTION_INVOICE_LOOKUP_FAILED' });
+        return json({ code: 'SUBSCRIPTION_INVOICE_LOOKUP_FAILED' }, 502);
+      }
+      const invoice = invoiceResult.value;
+      const invoicePaymentId = clean(invoice.payment?.id, 120);
+      const providerSubscriptionId = clean(invoice.preapproval_id, 120);
+      if (!invoicePaymentId || !providerSubscriptionId) {
+        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' });
+        return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
+      }
+      const paymentResult = await fetchProviderObject(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(invoicePaymentId)}`);
+      if (!paymentResult.response.ok) {
+        console.error(JSON.stringify({ event: 'BILLING_PROVIDER_REQUEST_FAILED', provider: 'mercado_pago', operation: 'get_subscription_payment', http_status: paymentResult.response.status, request_id_present: Boolean(paymentResult.response.headers.get('x-request-id')) }));
+        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'SUBSCRIPTION_PAYMENT_LOOKUP_FAILED' });
+        return json({ code: 'SUBSCRIPTION_PAYMENT_LOOKUP_FAILED' }, 502);
+      }
+      const payment = paymentResult.value;
+      const paymentId = clean(payment.id, 120);
+      const paymentStatus = normalizeLegacyPaymentStatus(payment.status).status;
+      const providerAmount = payment.transaction_amount;
+      const amount = providerAmount === null || providerAmount === undefined || providerAmount === '' ? Number.NaN : Number(providerAmount);
+      const amountMinor = Number.isFinite(amount) ? Math.round(amount * 100) : null;
+      const currency = String(payment.currency_id || invoice.currency_id || '').toUpperCase();
+      if (!paymentId || amountMinor === null || !currency) {
+        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' });
+        return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
+      }
+      const rawCheckoutId = clean(invoice.external_reference, 80);
+      const checkoutId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawCheckoutId) ? rawCheckoutId : null;
+      const paidAtSource = payment.date_approved || invoice.last_modified || payment.date_created;
+      const paidAtParsed = paidAtSource ? new Date(String(paidAtSource)) : new Date();
+      const paidAt = payment.status === 'approved'
+        ? (Number.isFinite(paidAtParsed.getTime()) ? paidAtParsed.toISOString() : new Date().toISOString())
+        : null;
+      const settled = await sb.rpc('settle_billing_recurring_event', {
+        p_event_id: eventRecordId, p_processing_token: processingToken, p_event_kind: 'authorized_payment',
+        p_checkout_id: checkoutId, p_provider_subscription_id: providerSubscriptionId,
+        p_provider_payment_id: paymentId, p_provider_status: clean(payment.status, 80), p_payment_status: paymentStatus,
+        p_amount_minor: amountMinor, p_currency: currency, p_paid_at: paidAt,
+      });
+      if (settled.error) return json({ code: 'BILLING_SETTLEMENT_RETRYABLE' }, 503);
+      if (settled.data?.code !== 'OK') return json({ code: clean(settled.data?.code, 80) || 'BILLING_SETTLEMENT_REJECTED' }, 422);
+      return json({ code: 'OK', status: settled.data.status || paymentStatus, duplicate: Boolean(settled.data.duplicate), access_granted: settled.data.access_granted !== false });
+    } catch {
+      await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_LOOKUP_UNAVAILABLE' });
+      return json({ code: 'SUBSCRIPTION_LOOKUP_FAILED' }, 502);
+    }
+  }
   if ((!isOrder && type !== 'payment') || !resourceId) { const saved = await updateEvent({ status: 'ignored', processed: true, processed_at: new Date().toISOString() }); return saved ? json({ code: 'OK', ignored: true }) : json({ code: 'WEBHOOK_PERSIST_FAILED' }, 500); }
   const token = providerToken;
   const endpoint = isOrder ? `https://api.mercadopago.com/v1/orders/${encodeURIComponent(resourceId)}` : `https://api.mercadopago.com/v1/payments/${encodeURIComponent(resourceId)}`;
