@@ -56,6 +56,15 @@ test('checkout waits for server-backed plans and handles loading errors before r
   assert.match(page, /Tentar novamente/);
 });
 
+test('public plan comparison distinguishes loading, service failure and an empty catalog', () => {
+  const publicPlans = site.match(/function Plans\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(publicPlans, /Carregando planos/);
+  assert.match(publicPlans, /Não foi possível carregar os planos agora/);
+  assert.match(publicPlans, /Os planos não estão disponíveis no momento/);
+  assert.match(publicPlans, /setReloadKey\(\(key\) => key \+ 1\)/);
+  assert.match(publicPlans, /\.catch\(\(\) =>/);
+});
+
 test('checkout resolves amount from the active plan and keeps provider secrets server-side', () => {
   assert.match(checkout, /eq\('code', planCode\)\.eq\('active', true\)/);
   assert.match(checkout, /MERCADO_PAGO_ACCESS_TOKEN/);
