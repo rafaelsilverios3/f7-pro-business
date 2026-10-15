@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import { productSearchTerm, supplierOfferProductSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
 import { buildAiSalesHistory } from '../src/lib/aiSalesHistory.js';
-import { aiSalesStatusPresentation } from '../src/lib/aiSalesStatus.js';
+import { aiSalesStatusFromError, aiSalesStatusPresentation } from '../src/lib/aiSalesStatus.js';
 
 const fn = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
 const page = fs.readFileSync('src/pages/AiSalesAssistant.jsx', 'utf8');
@@ -71,6 +71,28 @@ test('estado transitório fica no indicador de status e não permanece como mens
   assert.equal(denied.message, 'Plano não habilitado.');
   assert.doesNotMatch(page, /Verificando acesso, plano e disponibilidade deste ambiente/);
   assert.match(page, /const \[messages, setMessages\] = useState\(\[\]\)/);
+});
+
+test('UI distingue manutenção e erro de configuração sem expor detalhes internos nem habilitar conversa', () => {
+  const maintenance = aiSalesStatusFromError({ code: 'AI_MAINTENANCE' }, 'company-a', 'admin-a');
+  const maintenanceView = aiSalesStatusPresentation(maintenance);
+  assert.equal(maintenance.state, 'maintenance');
+  assert.equal(maintenance.errorCode, 'AI_MAINTENANCE');
+  assert.equal(maintenanceView.label, 'Em manutenção');
+  assert.match(maintenanceView.message, /Nenhuma consulta comercial ou geração por IA foi iniciada/);
+
+  const invalid = aiSalesStatusFromError({ code: 'AI_MAINTENANCE_CONFIGURATION_INVALID', message: 'secret details' }, 'company-a', 'admin-a');
+  const invalidView = aiSalesStatusPresentation(invalid);
+  assert.equal(invalid.state, 'configuration_error');
+  assert.doesNotMatch(invalidView.message, /secret details/);
+
+  const forbidden = aiSalesStatusFromError({ code: 'FORBIDDEN', message: 'Sem permissão.' }, 'company-a', 'seller-a');
+  assert.equal(forbidden.state, 'denied');
+  assert.equal(forbidden.status_message, 'Sem permissão.');
+
+  const network = aiSalesStatusFromError(new TypeError('Failed to fetch'), 'company-a', 'admin-a');
+  assert.equal(network.state, 'unavailable');
+  assert.equal(aiSalesStatusPresentation(network).label, 'Não verificado');
 });
 
 test('backend valida a permissão específica antes de consultar cada ferramenta', () => {

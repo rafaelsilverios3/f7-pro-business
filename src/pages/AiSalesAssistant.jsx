@@ -1,11 +1,11 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
-import { Bot, CheckCircle2, ExternalLink, Loader2, Send, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, ExternalLink, Loader2, Send, ShieldCheck, Wrench } from 'lucide-react';
 import PageHeader from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { buildAiSalesHistory } from '@/lib/aiSalesHistory';
-import { aiSalesStatusPresentation } from '@/lib/aiSalesStatus';
+import { aiSalesStatusFromError, aiSalesStatusPresentation } from '@/lib/aiSalesStatus';
 import { AI_TOOL_NAMES } from '@/services/aiSalesTools';
 import { aiSalesService } from '@/services/aiSalesService';
 
@@ -14,11 +14,6 @@ function assistantModeLabel(mode) {
   if (mode === 'ai_generated') return 'Resposta gerada por IA · revise antes de agir';
   if (mode === 'factual_fallback') return 'Resposta factual do sistema · não gerada por IA';
   return null;
-}
-
-function statusFailure(cause, companyId, userId) {
-  const denied = ['FEATURE_NOT_AVAILABLE', 'FORBIDDEN', 'AUTH_REQUIRED'].includes(cause?.code);
-  return { state: denied ? 'denied' : 'unavailable', companyId, userId, errorCode: cause?.code || null, status_message: denied ? (cause?.message || 'Seu perfil ou plano não habilita o F7 AI Sales.') : null };
 }
 
 export default function AiSalesAssistant() {
@@ -71,7 +66,7 @@ export default function AiSalesAssistant() {
       setAiStatus({ ...result, state: result?.can_use ? 'ready' : 'denied', companyId: company.id, userId: user.id });
     }).catch((cause) => {
       if (cancelled || ownerRef.current !== nextOwnerKey) return;
-      setAiStatus(statusFailure(cause, company.id, user.id));
+      setAiStatus(aiSalesStatusFromError(cause, company.id, user.id));
     });
     return () => { cancelled = true; };
   }, [company?.id, user?.id]);
@@ -131,7 +126,7 @@ export default function AiSalesAssistant() {
       setAiStatus({ ...result, state: result?.can_use ? 'ready' : 'denied', companyId: company.id, userId: user.id });
     }).catch((cause) => {
       if (ownerRef.current !== ownerKey) return;
-      setAiStatus(statusFailure(cause, company.id, user.id));
+      setAiStatus(aiSalesStatusFromError(cause, company.id, user.id));
     });
   };
 
@@ -151,7 +146,7 @@ export default function AiSalesAssistant() {
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
         <div><h2 className="font-semibold text-slate-800">Conversa comercial</h2><p className="text-xs text-slate-500">As ferramentas são selecionadas pelo servidor após validar a permissão do recurso.</p></div>
         <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${currentStatus.state === 'ready' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>
-          {currentStatus.state === 'ready' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5" />}{presentation.label}
+          {currentStatus.state === 'ready' ? <CheckCircle2 className="h-3.5 w-3.5" /> : currentStatus.state === 'checking' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertCircle className="h-3.5 w-3.5" />}{presentation.label}
         </span>
       </div>
       <div className="max-h-[52vh] space-y-4 overflow-y-auto p-5">
@@ -168,7 +163,7 @@ export default function AiSalesAssistant() {
           <input value={input} onChange={(event) => setInput(event.target.value)} disabled={busy || !canUse} placeholder="Converse com seu assistente comercial..." className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-indigo-500" />
           <Button type="submit" disabled={busy || !input.trim() || !canUse}><Send className="mr-2 h-4 w-4" />Enviar</Button>
         </form>
-        {!canUse && <p className="mt-3 text-xs text-slate-500">A conversa está desabilitada até a autorização e as dependências serem confirmadas pelo servidor.</p>}
+        {!canUse && <p className="mt-3 text-xs text-slate-500">{currentStatus.state === 'maintenance' ? 'A conversa permanece desabilitada durante a manutenção.' : 'A conversa está desabilitada até a autorização e as dependências serem confirmadas pelo servidor.'}</p>}
         {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
       </div>
     </section>
