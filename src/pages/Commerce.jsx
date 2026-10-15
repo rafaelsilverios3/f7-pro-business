@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useCompany } from '@/lib/useCompany';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { getVisibleCommerceWorkspaces } from '@/lib/commerceNavigation';
+import MercadoLivreConnector from '@/components/commerce/MercadoLivreConnector';
 
 const workspaceIcons = { supplier: Truck, catalog: Package, orders: ShoppingCart, opportunities: Target };
 
@@ -42,7 +43,7 @@ function MarketplaceReadinessCard({ name }) {
         </span>
       </div>
       <p className="mt-2 text-xs leading-5 text-slate-500">
-        OAuth, anúncios, sincronização de estoque/preços e importação de pedidos ainda não estão implementados.
+        O conector ainda não está disponível neste ambiente.
       </p>
     </article>
   );
@@ -52,13 +53,17 @@ export default function Commerce() {
   const { user } = useAuth();
   const { company } = useCompany();
   const [memberRole, setMemberRole] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? '' : String(user?.role || '').toLowerCase());
+  const [roleCompanyId, setRoleCompanyId] = React.useState(null);
 
   React.useEffect(() => {
     let cancelled = false;
     if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) {
       setMemberRole(String(user?.role || '').toLowerCase());
+      setRoleCompanyId(company?.id || null);
       return undefined;
     }
+    setMemberRole('');
+    setRoleCompanyId(null);
     getSupabaseClient()
       .from('company_users')
       .select('role')
@@ -67,13 +72,14 @@ export default function Commerce() {
       .eq('active', true)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (!cancelled) setMemberRole(error ? '' : String(data?.role || '').toLowerCase());
+        if (!cancelled) { setMemberRole(error ? '' : String(data?.role || '').toLowerCase()); setRoleCompanyId(company.id); }
       })
-      .catch(() => { if (!cancelled) setMemberRole(''); });
+      .catch(() => { if (!cancelled) { setMemberRole(''); setRoleCompanyId(company.id); } });
     return () => { cancelled = true; };
   }, [company?.id, user?.id, user?.role]);
 
-  const visibleWorkspaces = getVisibleCommerceWorkspaces(memberRole);
+  const currentMemberRole = roleCompanyId === company?.id ? memberRole : '';
+  const visibleWorkspaces = getVisibleCommerceWorkspaces(currentMemberRole);
 
   return (
     <main data-commerce className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-5 sm:py-8">
@@ -91,7 +97,7 @@ export default function Commerce() {
             <div>
               <h2 id="commerce-marketplaces" className="font-semibold text-slate-900">Marketplaces</h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-                Esta etapa não conecta contas externas nem publica anúncios. Os cartões abaixo mostram a disponibilidade real desta fundação, sem simular sincronizações.
+                Conecte canais autorizados e acompanhe a sincronização sob demanda. Operações que alteram anúncios exigem confirmação explícita.
               </p>
             </div>
           </div>
@@ -100,7 +106,7 @@ export default function Commerce() {
           </Link>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <MarketplaceReadinessCard name="Mercado Livre" />
+          <MercadoLivreConnector memberRole={currentMemberRole} />
           <MarketplaceReadinessCard name="Shopee" />
         </div>
         <p className="mt-3 text-xs text-slate-500">
@@ -118,7 +124,7 @@ export default function Commerce() {
             <div>
               <h2 className="font-semibold text-slate-900">Canais e integrações</h2>
               <p className="mt-1 text-sm leading-6 text-slate-500">
-                Use o Sales Hub para consultar canais e os módulos existentes para as operações da empresa. Mercado Livre e Shopee ainda não têm conexão disponível.
+                O Sales Hub mantém os canais e vínculos genéricos; o conector Mercado Livre desta etapa registra e sincroniza a conta autorizada.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link to="/sales-hub" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800">Canais de venda<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>

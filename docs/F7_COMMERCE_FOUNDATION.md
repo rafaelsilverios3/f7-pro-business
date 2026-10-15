@@ -4,7 +4,7 @@
 
 F7 Commerce é uma central de navegação para capacidades comerciais já existentes no F7 PRO BUSINESS. A rota `/f7-commerce` usa o `Layout`, `CompanyGuard` e a permissão existente `sales_channels.view`. Os links de cada módulo usam suas permissões de rota; no provider Supabase, a central lê `company_users` para filtrar os links pelo papel da associação ativa. O painel não cria registros, chama integrações ou altera estoque.
 
-Os cartões Mercado Livre e Shopee são apenas estado informativo: OAuth, anúncios, sincronização de catálogo/estoque/preço, pedidos externos e webhooks não estão implementados nesta etapa.
+O cartão Mercado Livre agora integra o conector descrito em [MERCADOLIVRE-CONNECTOR.md](MERCADOLIVRE-CONNECTOR.md). Ele depende da migration local e da publicação das funções/secrets no Supabase para operar; o frontend informa indisponibilidade sem simular uma conexão. Shopee continua apenas informativo nesta etapa.
 
 ## Capacidades a reutilizar
 
@@ -13,7 +13,8 @@ Os cartões Mercado Livre e Shopee são apenas estado informativo: OAuth, anúnc
 - Vendas e estoque: `Sale`, `StockMovement`, `salesService` e `inventoryService`.
 - Oportunidades: `ProductOpportunity`, `Opportunity`, `opportunityFoundationService`, `MarketIntelligence` e `Opportunity Radar`.
 - Canais: `SalesChannel`, `ProductChannel` e `ChannelMetric` já usados pelo Sales Hub (`salesHubService`). As relações existentes são por `company_id`; o cadastro de canal não implementa OAuth nem sincronização.
-- Supabase e Base44: operações futuras devem manter o `providerSelector`/`repositoryFactory` quando forem compatíveis com ambos os providers, ou declarar claramente uma dependência Supabase no backend.
+- Mercado Livre: backend Supabase server-side, OAuth, tokens cifrados, leitura de anúncios/pedidos, eventos e atualizações explícitas. Não grava vendas/estoque/financeiro.
+- Supabase e Base44: o conector Mercado Livre exige Supabase Edge Functions e autenticação Supabase. O provider Base44 não finge suportar a integração.
 
 ## Limites de segurança para integrações futuras
 

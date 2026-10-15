@@ -29,3 +29,15 @@ verify_jwt = false
 
 [functions.integration-health]
 verify_jwt = true
+
+[functions.mercadolivre-connect]
+verify_jwt = true
+
+[functions.mercadolivre-callback]
+verify_jwt = false
+
+[functions.mercadolivre-api]
+verify_jwt = true
+
+[functions.mercadolivre-webhook]
+verify_jwt = false
