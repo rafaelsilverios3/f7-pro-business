@@ -2,7 +2,8 @@ const STOP_WORDS = new Set([
   'temos', 'tem', 'tenho', 'quanto', 'custa', 'preco', 'valor', 'estoque', 'unidades',
   'disponivel', 'produto', 'produtos', 'qual', 'quais', 'variacao', 'tamanho', 'cor',
   'monte', 'crie', 'pedido', 'rascunho', 'para', 'com', 'do', 'da', 'de', 'o', 'a',
-  'um', 'uma', 'cliente', 'fornecedor', 'em', 'sku',
+  'um', 'uma', 'cliente', 'fornecedor', 'em', 'sku', 'solicito', 'quero',
+  'preciso', 'quantidade',
 ]);
 
 function normalizeToken(value) {
@@ -10,7 +11,10 @@ function normalizeToken(value) {
 }
 
 export function productSearchTerm(message) {
-  const text = String(message || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const text = String(message || '')
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:un(?:idades?)?|unid(?:ades)?|peças?|pecas)\b/gi, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, 120);
   if (/^(?=.*\d)[a-z0-9_-]+$/i.test(text)) return text;
   return text
     .replace(/[?!.,;:]+/g, ' ')

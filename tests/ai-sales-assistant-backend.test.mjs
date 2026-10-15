@@ -32,6 +32,7 @@ test('consultas genéricas de produtos reconhecem o plural e não viram busca li
   assert.equal(productSearchTerm('Qual o estoque do HOMOLOG-A-QA-20261011?'), 'HOMOLOG-A-QA-20261011');
   assert.equal(productSearchTerm('Quanto tem de estoque do HOMOLOG-A-QA-20261011?'), 'HOMOLOG-A-QA-20261011');
   assert.equal(productSearchTerm('Quanto temos em estoque?'), '');
+  assert.equal(productSearchTerm('Crie um rascunho de 2 unidades para o SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
   assert.equal(productSearchTerm('temos o produto F7?'), 'F7');
 });
 
@@ -140,6 +141,7 @@ test('análise Supplier Offers reusa cálculo Pricing e restringe consulta ao pr
 test('busca de ofertas reconhece um SKU precedido pelo rótulo SKU sem perder o código', () => {
   assert.equal(productSearchTerm('SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
   assert.equal(supplierOfferProductSearchTerm('26 unidades, compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(supplierOfferProductSearchTerm('Compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011; solicito 8 unidades'), 'HOMOLOG-A-QA-20261011');
 });
 
 test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {
