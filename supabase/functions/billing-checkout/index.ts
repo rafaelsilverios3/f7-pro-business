@@ -1,5 +1,5 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksLiveBillingInHomologation, blocksRecurringCardInHomologation } from '../_shared/billingEnvironment.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -38,6 +38,7 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
       return json({ code: 'PLAN_PRICE_INVALID' }, 409);
     }
     if (!['month', 'year'].includes(billingPeriod)) return json({ code: 'BILLING_PERIOD_UNSUPPORTED' }, 409);
+    if (blocksRecurringCardInHomologation(method)) return json({ code: 'HOMOLOGATION_RECURRING_CARD_DISABLED' }, 409);
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
     if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
     const validEnvironment = environment === 'test' || environment === 'production';

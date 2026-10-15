@@ -1,7 +1,10 @@
 import { handleBillingCheckoutRequest } from "./index.ts";
 import { handleBillingSubscriptionManageRequest } from "../billing-subscription-manage/index.ts";
 import { handleBillingWebhookRequest } from "../billing-webhook/index.ts";
-import { blocksLiveBillingInHomologation } from "../_shared/billingEnvironment.ts";
+import {
+  blocksLiveBillingInHomologation,
+  blocksRecurringCardInHomologation,
+} from "../_shared/billingEnvironment.ts";
 
 const HOMOLOG_URL = "https://vwylnjmapixtzhryiutt.supabase.co";
 const companyId = "11111111-1111-4111-8111-111111111111";
@@ -137,6 +140,14 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
       !blocksLiveBillingInHomologation("test"),
       "sandbox mode was incorrectly blocked",
     );
+    assert(
+      blocksRecurringCardInHomologation("card"),
+      "homologation did not keep recurring card checkout disabled",
+    );
+    assert(
+      !blocksRecurringCardInHomologation("pix"),
+      "homologation incorrectly blocked PIX along with recurring card",
+    );
     Deno.env.set("SUPABASE_URL", "https://other-project.supabase.co");
     assert(
       !blocksLiveBillingInHomologation("production"),
@@ -237,6 +248,49 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
     assert(
       providerCalls === 0 && client.rpcCalls === 0,
       "webhook reached provider or wrote an event",
+    );
+  });
+});
+
+Deno.test("Billing homologation: recurring card is closed before persistence or provider calls", async () => {
+  await withEnv({
+    SUPABASE_URL: HOMOLOG_URL,
+    MERCADO_PAGO_ENVIRONMENT: "test",
+    MERCADO_PAGO_ACCESS_TOKEN: "TEST-synthetic-only",
+    MERCADO_PAGO_WEBHOOK_SECRET: "local-only-secret",
+  }, async () => {
+    const client = makeAdminClient();
+    let providerCalls = 0;
+    const response = await handleBillingCheckoutRequest(
+      new Request("https://local.invalid/functions/v1/billing-checkout", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer synthetic",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          company_id: companyId,
+          plan_code: "pro",
+          method: "card",
+          card_token_id: "synthetic-card-token",
+        }),
+      }),
+      {
+        adminClient: client,
+        providerFetch: async () => {
+          providerCalls += 1;
+          throw new Error("Provider must not be called.");
+        },
+      },
+    );
+    assert(
+      response.status === 409 &&
+        (await response.json()).code === "HOMOLOGATION_RECURRING_CARD_DISABLED",
+      "recurring card checkout was not blocked in homologation",
+    );
+    assert(
+      providerCalls === 0 && client.rpcCalls === 0,
+      "recurring card checkout reached provider or persisted an intent",
     );
   });
 });
