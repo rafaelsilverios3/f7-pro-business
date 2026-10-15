@@ -150,7 +150,9 @@ async function processMessage(sb: any, value: any, message: any) {
 export async function handleWhatsAppWebhookRequest(req: Request, dependencies: { adminClient?: any } = {}) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method === 'GET') { const challenge = getWhatsAppWebhookChallenge(new URL(req.url), Deno.env.get('WHATSAPP_VERIFY_TOKEN')); if (challenge !== null) return new Response(challenge, { status: 200 }); return json({ error: 'verification failed' }, 403); }
-  if ((Deno.env.get('WHATSAPP_RECEIVE_ENABLED') || '').trim().toLowerCase() !== 'true') return json({ error: 'WHATSAPP_RECEIVE_DISABLED' }, 503);
+  const providerEnabled = (Deno.env.get('WHATSAPP_PROVIDER_ENABLED') || '').trim().toLowerCase() === 'true';
+  const receiveEnabled = (Deno.env.get('WHATSAPP_RECEIVE_ENABLED') || '').trim().toLowerCase() === 'true';
+  if (!providerEnabled || !receiveEnabled) return json({ error: 'WHATSAPP_RECEIVE_DISABLED' }, 503);
   try {
     const raw = await req.text(); if (new TextEncoder().encode(raw).byteLength > 2_000_000) return json({ error: 'PAYLOAD_TOO_LARGE' }, 413); if (!(await validSignature(req, raw))) return json({ error: 'INVALID_SIGNATURE' }, 401);
     const payload = JSON.parse(raw); const sb = dependencies.adminClient || admin();

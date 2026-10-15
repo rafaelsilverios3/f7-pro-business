@@ -28,3 +28,21 @@ Deno.test('WhatsApp webhook preflight remains available while receiving is disab
     if (previous === undefined) Deno.env.delete('WHATSAPP_RECEIVE_ENABLED'); else Deno.env.set('WHATSAPP_RECEIVE_ENABLED', previous);
   }
 });
+
+Deno.test('WhatsApp webhook remains disabled when only the receive flag is enabled', async () => {
+  const previousProviderEnabled = Deno.env.get('WHATSAPP_PROVIDER_ENABLED');
+  const previousReceiveEnabled = Deno.env.get('WHATSAPP_RECEIVE_ENABLED');
+  Deno.env.delete('WHATSAPP_PROVIDER_ENABLED');
+  Deno.env.set('WHATSAPP_RECEIVE_ENABLED', 'true');
+  let databaseTouched = false;
+  try {
+    const response = await handleWhatsAppWebhookRequest(new Request('https://local.invalid/functions/v1/whatsapp-webhook', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    }), { adminClient: { from() { databaseTouched = true; throw new Error('database must remain untouched'); } } });
+    if (response.status !== 503 || (await response.json()).error !== 'WHATSAPP_RECEIVE_DISABLED') throw new Error('global provider gate was bypassed');
+    if (databaseTouched) throw new Error('webhook reached the database while provider gate was disabled');
+  } finally {
+    if (previousProviderEnabled === undefined) Deno.env.delete('WHATSAPP_PROVIDER_ENABLED'); else Deno.env.set('WHATSAPP_PROVIDER_ENABLED', previousProviderEnabled);
+    if (previousReceiveEnabled === undefined) Deno.env.delete('WHATSAPP_RECEIVE_ENABLED'); else Deno.env.set('WHATSAPP_RECEIVE_ENABLED', previousReceiveEnabled);
+  }
+});

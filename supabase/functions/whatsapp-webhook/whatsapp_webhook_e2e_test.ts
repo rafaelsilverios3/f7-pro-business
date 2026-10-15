@@ -12,6 +12,7 @@ if (!local || !['localhost', '127.0.0.1', '[::1]'].includes(local.hostname) || !
 
 const admin = createClient(baseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
 const previousSecret = Deno.env.get('WHATSAPP_APP_SECRET');
+const previousProviderEnabled = Deno.env.get('WHATSAPP_PROVIDER_ENABLED');
 const previousReceiveEnabled = Deno.env.get('WHATSAPP_RECEIVE_ENABLED');
 const createdUsers: string[] = [];
 const createdCompanies: string[] = [];
@@ -34,6 +35,7 @@ function request(raw: string, signature: string) {
 Deno.test('WhatsApp inbound: signature, tenant routing, persistence and deduplication with fictitious local data', async () => {
   const secret = `local-whatsapp-${crypto.randomUUID()}`;
   Deno.env.set('WHATSAPP_APP_SECRET', secret);
+  Deno.env.set('WHATSAPP_PROVIDER_ENABLED', 'true');
   Deno.env.set('WHATSAPP_RECEIVE_ENABLED', 'true');
   const nonce = crypto.randomUUID();
   const email = `whatsapp-${nonce}@example.invalid`;
@@ -81,6 +83,7 @@ Deno.test('WhatsApp inbound: signature, tenant routing, persistence and deduplic
     if (companyId) await localSql(`delete from public.companies where id='${companyId}'`).catch(() => '');
     for (const userId of createdUsers) await admin.auth.admin.deleteUser(userId);
     if (previousSecret === undefined) Deno.env.delete('WHATSAPP_APP_SECRET'); else Deno.env.set('WHATSAPP_APP_SECRET', previousSecret);
+    if (previousProviderEnabled === undefined) Deno.env.delete('WHATSAPP_PROVIDER_ENABLED'); else Deno.env.set('WHATSAPP_PROVIDER_ENABLED', previousProviderEnabled);
     if (previousReceiveEnabled === undefined) Deno.env.delete('WHATSAPP_RECEIVE_ENABLED'); else Deno.env.set('WHATSAPP_RECEIVE_ENABLED', previousReceiveEnabled);
   }
 });

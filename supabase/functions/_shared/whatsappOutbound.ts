@@ -42,6 +42,9 @@ export async function sendWhatsAppText(input: {
   // Outbound sending remains explicitly disabled until a sandbox/consent gate
   // is enabled by the environment owner. A token alone must never turn a code
   // deploy into permission to send real WhatsApp messages.
+  if ((Deno.env.get('WHATSAPP_PROVIDER_ENABLED') || '').trim().toLowerCase() !== 'true') {
+    return failure(sb, companyId, requestId, 'WHATSAPP_PROVIDER_DISABLED', 'provider_configuration', 503);
+  }
   if ((Deno.env.get('WHATSAPP_SEND_ENABLED') || '').trim().toLowerCase() !== 'true') {
     return failure(sb, companyId, requestId, 'OUTBOUND_DISABLED', 'provider_configuration', 503);
   }
