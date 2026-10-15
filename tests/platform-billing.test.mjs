@@ -52,6 +52,17 @@ test('checkout resolves amount from the active plan and keeps provider secrets s
   assert.doesNotMatch(service + page, /MERCADO_PAGO_ACCESS_TOKEN|WEBHOOK_SECRET/);
 });
 
+test('checkout rejects missing provider credentials and unsupported card before persisting an intent', () => {
+  const credentialGate = checkout.indexOf("if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409)");
+  const cardGate = checkout.indexOf("if (method === 'card') return json({ code: 'CARD_CHECKOUT_REQUIRES_TOKENIZATION'");
+  const checkoutRead = checkout.indexOf("from('billing_checkout_sessions').select");
+  const checkoutInsert = checkout.indexOf("from('billing_checkout_sessions').insert");
+  assert.ok(credentialGate >= 0 && credentialGate < checkoutRead, 'missing credentials must be detected before checkout access');
+  assert.ok(cardGate >= 0 && cardGate < checkoutRead, 'unsupported card flow must be rejected before checkout access');
+  assert.ok(credentialGate < checkoutInsert && cardGate < checkoutInsert, 'rejected paths must not persist an intent');
+  assert.doesNotMatch(checkout.slice(credentialGate, checkoutRead), /checkout\s*[,}]/, 'unconfigured response must not include a created checkout');
+});
+
 test('PIX exposes provider evidence and payment activation only comes from webhook', () => {
   assert.match(checkout, /qr_code/);
   assert.match(checkout, /qr_code_base64/);

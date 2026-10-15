@@ -38,12 +38,16 @@ Deno.serve(async (req) => {
     const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
     if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
     if (!Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET')) return json({ code: 'MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED' }, 409);
+    // Reject unavailable payment paths before creating a persistent checkout
+    // intent. In particular, a missing provider credential or unsupported
+    // card flow must not leave an orphan `created` session behind.
+    const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
+    if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409);
+    if (method === 'card') return json({ code: 'CARD_CHECKOUT_REQUIRES_TOKENIZATION', message: 'Cartão exige tokenização oficial do Checkout Bricks.' }, 409);
     const { data: existing } = await sb.from('billing_checkout_sessions').select('id,company_id,plan_id,method,amount_minor,status,expires_at,provider_order_id,provider_payment_id').eq('company_id', companyId).eq('user_id', userData.user.id).eq('plan_id', plan.id).eq('method', method).in('status', ['created', 'pending']).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (existing?.status === 'pending' && (existing.provider_order_id || existing.provider_payment_id)) return json({ code: 'OK', reused: true, checkout: existing, status: 'pending' });
     const checkout = existing || (await sb.from('billing_checkout_sessions').insert({ company_id: companyId, user_id: userData.user.id, plan_id: plan.id, method, amount_minor: plan.price_minor, status: 'created', expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }).select('id,company_id,plan_id,method,amount_minor,status,expires_at,provider_order_id,provider_payment_id').single()).data;
     if (!checkout) throw new Error('CHECKOUT_CREATE_FAILED');
-    const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || ''; if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED', checkout });
-    if (method === 'card') return json({ code: 'CARD_CHECKOUT_REQUIRES_TOKENIZATION', message: 'Cartão exige tokenização oficial do Checkout Bricks.', checkout }, 409);
     const idempotency = `f7-order-${checkout.id}`;
     const isTest = environment === 'test';
     const amount = (Number(plan.price_minor) / 100).toFixed(2);
