@@ -19,6 +19,8 @@ export default function Checkout() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState('');
   const [method, setMethod] = useState('pix');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +28,20 @@ export default function Checkout() {
   const code = params.get('plan') || 'pro';
   const plan = plans.find((item) => item.code === code);
 
-  useEffect(() => { billingService.listPlans().then(setPlans); }, []);
+  const loadPlans = useCallback(async () => {
+    setPlansLoading(true);
+    setPlansError('');
+    try {
+      const availablePlans = await billingService.listPlans();
+      setPlans(Array.isArray(availablePlans) ? availablePlans : []);
+    } catch {
+      setPlansError('Não foi possível carregar os planos agora. Tente novamente.');
+    } finally {
+      setPlansLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadPlans(); }, [loadPlans]);
 
   const startPix = async () => {
     if (!plan || plan.price_minor == null || !company?.id) return;
@@ -52,6 +67,8 @@ export default function Checkout() {
   const onCardError = useCallback((cause) => setError(cause?.message || 'O formulário seguro de cartão não está disponível.'), []);
   const copy = async () => { if (result?.pix?.qr_code) await navigator.clipboard?.writeText(result.pix.qr_code); };
 
+  if (plansLoading) return <div className="mx-auto max-w-3xl px-5 py-10" role="status" aria-live="polite"><p className="flex items-center gap-2 text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Carregando planos…</p></div>;
+  if (plansError) return <div className="mx-auto max-w-3xl px-5 py-10" role="alert"><p>{plansError}</p><div className="mt-4 flex gap-3"><Button onClick={() => void loadPlans()}>Tentar novamente</Button><Button variant="ghost" onClick={() => navigate('/planos')}>Voltar aos planos</Button></div></div>;
   if (!plan) return <div className="mx-auto max-w-3xl px-5 py-10"><p>Plano não encontrado.</p><Button className="mt-4" onClick={() => navigate('/planos')}>Voltar aos planos</Button></div>;
   if (!company?.id) return <div className="mx-auto max-w-3xl px-5 py-10"><PageHeader title="Prepare sua empresa" subtitle="Antes do checkout, precisamos criar o espaço seguro da sua empresa." /><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm leading-6 text-slate-600">Você escolheu o plano <strong>{plan.name}</strong>. Crie sua empresa para manter a contratação vinculada ao tenant correto.</p><Button className="mt-5 w-full" onClick={() => navigate(`/onboarding?returnTo=${encodeURIComponent(`/checkout?plan=${plan.code}`)}`)}>Criar empresa e continuar</Button><Button variant="ghost" className="mt-2 w-full" onClick={() => navigate('/planos')}>Voltar aos planos</Button></section></div>;
 

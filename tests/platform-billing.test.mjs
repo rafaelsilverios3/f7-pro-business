@@ -45,6 +45,17 @@ test('plans are backend-controlled and never require fictitious prices', () => {
   assert.doesNotMatch(plansSection, /R\$\s*\d/);
 });
 
+test('checkout waits for server-backed plans and handles loading errors before reporting a missing plan', () => {
+  const loadingState = page.indexOf('if (plansLoading)');
+  const errorState = page.indexOf('if (plansError)');
+  const missingPlanState = page.indexOf('if (!plan)');
+  assert.ok(loadingState >= 0 && loadingState < errorState && errorState < missingPlanState, 'loading and fetch failures must not be mistaken for an invalid plan');
+  assert.match(page, /setPlansLoading\(true\)/);
+  assert.match(page, /setPlansLoading\(false\)/);
+  assert.match(page, /billingService\.listPlans\(\)/);
+  assert.match(page, /Tentar novamente/);
+});
+
 test('checkout resolves amount from the active plan and keeps provider secrets server-side', () => {
   assert.match(checkout, /eq\('code', planCode\)\.eq\('active', true\)/);
   assert.match(checkout, /MERCADO_PAGO_ACCESS_TOKEN/);
