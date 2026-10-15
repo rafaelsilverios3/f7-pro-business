@@ -1,4 +1,5 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
+import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -37,6 +38,7 @@ export async function handleBillingSubscriptionManageRequest(req: Request, depen
     if (action === 'cancel' && !['pending', 'authorized', 'paused', 'past_due', 'rejected', 'expired'].includes(subscription.status)) return json({ code: 'SUBSCRIPTION_ACTION_NOT_ALLOWED' }, 409);
     if (action !== 'cancel' && subscription.status !== expectedStatus) return json({ code: 'SUBSCRIPTION_ACTION_NOT_ALLOWED' }, 409);
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
+    if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
     const providerToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
     const livePaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
     if (environment === 'test' && !providerToken.startsWith('TEST-')) return json({ code: 'MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED' }, 409);
