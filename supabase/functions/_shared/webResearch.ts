@@ -172,7 +172,7 @@ export class PublicWebSearchProvider implements WebSearchProvider {
         return { title: safeText(row?.title, 240), url: parsed.toString(), domain: parsed.hostname, snippet: safeText(row?.snippet || row?.description || row?.text, MAX_SNIPPET), retrieved_at: new Date().toISOString(), source_type: sourceType(parsed, input.domains) } satisfies WebSearchResult;
       }).filter((row: WebSearchResult | null): row is WebSearchResult => Boolean(row)).slice(0, MAX_RESULTS);
       return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', http_status: response.status, duration_ms: Date.now() - started };
-    } catch (error) { return { results: [], provider: this.name, searched: true, code: error?.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started }; }
+    } catch (error) { return { results: [], provider: this.name, searched: true, code: error instanceof Error && error.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started }; }
     finally { clearTimeout(timeout); }
   }
 }
@@ -201,7 +201,7 @@ export class BraveWebSearchProvider implements WebSearchProvider {
       }
       const results = normalizeBraveResponse(payload, input.domains, new Date().toISOString());
       return { results, provider: this.name, searched: true, code: results.length ? undefined : 'WEB_SEARCH_NO_RESULTS', parameter_names: ['q', 'count'], http_status: response.status, duration_ms: Date.now() - started, queries_executed: 1 };
-    } catch (error) { return { results: [], provider: this.name, searched: true, code: error?.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started, queries_executed: 1 }; }
+    } catch (error) { return { results: [], provider: this.name, searched: true, code: error instanceof Error && error.name === 'AbortError' ? 'WEB_SEARCH_TIMEOUT' : 'WEB_SEARCH_FAILED', duration_ms: Date.now() - started, queries_executed: 1 }; }
     finally { clearTimeout(timeout); }
   }
 }
@@ -247,7 +247,7 @@ export async function fetchPublicPage(url: string, signal?: AbortSignal): Promis
     const text = safeText(await response.text(), MAX_PAGE_BYTES);
     const title = safeText(text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1], 240) || null;
     return { url: parsed.toString(), title, text: text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, MAX_PAGE_BYTES), retrieved_at: new Date().toISOString() };
-  } catch (error) { return { url: parsed.toString(), title: null, text: '', retrieved_at: new Date().toISOString(), code: error?.name === 'AbortError' ? 'WEB_PAGE_TIMEOUT' : 'WEB_PAGE_FETCH_FAILED' }; }
+  } catch (error) { return { url: parsed.toString(), title: null, text: '', retrieved_at: new Date().toISOString(), code: error instanceof Error && error.name === 'AbortError' ? 'WEB_PAGE_TIMEOUT' : 'WEB_PAGE_FETCH_FAILED' }; }
   finally { clearTimeout(timeout); }
 }
 
@@ -346,11 +346,11 @@ export function resolveMachineIdentity(results: WebSearchResult[], input: Techni
   const adapterIdentity = ManufacturerAdapterRegistry.resolveMachineIdentity({ model, evidence: results });
   const manufacturer = adapterIdentity?.manufacturer || safeText(input.manufacturer, 120);
   if (manufacturer) {
-    const sources = adapterIdentity?.sources || results.filter((result) => `${result.title} ${result.snippet}`.toLocaleLowerCase().includes(manufacturer.toLocaleLowerCase())).map((result) => result.url).slice(0, 5);
+    const sources: string[] = (Array.isArray(adapterIdentity?.sources) ? adapterIdentity.sources : results.filter((result) => `${result.title} ${result.snippet}`.toLocaleLowerCase().includes(manufacturer.toLocaleLowerCase())).map((result) => result.url).slice(0, 5)).filter((source: unknown): source is string => typeof source === 'string');
     facts.push({ field: 'manufacturer', value: manufacturer, provenance: input.manufacturer ? 'customer' : adapterIdentity?.provenance || 'public_web', confidence: input.manufacturer ? 'HIGH' : adapterIdentity?.confidence || 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() });
   }
   const equipment = adapterIdentity?.equipment_type || undefined;
-  if (equipment) { const sources = adapterIdentity?.sources || results.slice(0, 5).map((result) => result.url); facts.push({ field: 'equipment_type', value: equipment, provenance: adapterIdentity?.provenance || 'public_web', confidence: adapterIdentity?.confidence || 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() }); }
+  if (equipment) { const sources: string[] = (Array.isArray(adapterIdentity?.sources) ? adapterIdentity.sources : results.slice(0, 5).map((result) => result.url)).filter((source: unknown): source is string => typeof source === 'string'); facts.push({ field: 'equipment_type', value: equipment, provenance: adapterIdentity?.provenance || 'public_web', confidence: adapterIdentity?.confidence || 'MEDIUM', sources, source: sources[0] || null, timestamp: new Date().toISOString() }); }
   return { manufacturer: manufacturer || undefined, model: model || undefined, equipment_type: equipment || undefined, facts };
 }
 
@@ -504,7 +504,7 @@ function boundedInteger(value: unknown, fallback: number, ceiling: number) {
 
 export async function conductWebResearch(input: { sb: any; company_id: string; query: WebSearchInput; ttl_hours?: number; max_pages?: number; limits?: ResearchLimits; onQuery?: (event: 'WEB_SEARCH_QUERY_STARTED' | 'WEB_SEARCH_QUERY_COMPLETED' | 'WEB_SEARCH_QUERY_FAILED', details: ResearchQueryDiagnostic) => Promise<void> | void }) {
   const started = Date.now();
-  const hash = await queryHash({ ...input.query, company_id: input.company_id, strategy_version: RESEARCH_STRATEGY_VERSION });
+  const hash = await queryHash({ ...input.query, company_id: input.company_id, strategy_version: String(RESEARCH_STRATEGY_VERSION) });
   const now = new Date().toISOString();
   try {
     const cached = await input.sb.from('product_research_runs').select('id,status,result,expires_at').eq('company_id', input.company_id).eq('query_hash', hash).eq('status', 'completed').gt('expires_at', now).order('completed_at', { ascending: false }).limit(1).maybeSingle();
@@ -512,7 +512,7 @@ export async function conductWebResearch(input: { sb: any; company_id: string; q
   } catch { /* cache is an optimization; research can continue */ }
   const provider = WebSearchProviderRegistry.create();
   const queryParts = [input.query.query, input.query.manufacturer, input.query.model, input.query.part_number, input.query.application].filter(Boolean).map((part) => safeText(part, 240));
-  const initialInput = { manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, country: input.query.country, market: input.query.market, region: input.query.region, locale: input.query.locale, user_text: queryParts.join(' ') } satisfies TechnicalResearchQueryInput;
+  const initialInput: TechnicalResearchQueryInput = { manufacturer: input.query.manufacturer, model: input.query.model, year: input.query.year, part_description: input.query.application, old_part_number: input.query.part_number, country: input.query.country, market: input.query.market, region: input.query.region, locale: input.query.locale, user_text: queryParts.join(' ') };
   const researchState: ResearchState = { original_request: safeText(input.query.query, MAX_QUERY), current_objective: safeText(input.query.application || input.query.query, MAX_QUERY), known_facts: [], discovered_facts: [], unresolved_facts: [], queries_executed: [], sources: [], candidates: [], conflicts: [], confidence: 0, evidence: [], next_research_step: 'REFINE_SEARCH' };
   if (initialInput.model) researchState.known_facts.push({ field: 'model', value: safeText(initialInput.model, 80), provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: now });
   if (initialInput.manufacturer) researchState.known_facts.push({ field: 'manufacturer', value: safeText(initialInput.manufacturer, 120), provenance: 'customer', confidence: 'HIGH', sources: [], source: null, timestamp: now });

@@ -4,7 +4,9 @@ import { mergeProductIntelligenceCandidates, resolveProductOrPart } from '../_sh
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains, resolveResearchRegion } from '../_shared/webResearch.ts';
 import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from '../_shared/specialists/agriculturalParts.ts';
-import { recordAIStage, reserveAIBudget } from '../_shared/aiObservability.ts';
+import { markAIReservationUncertain, recordAIStage, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation } from '../_shared/aiObservability.ts';
+import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
+import { conservativeInputTokenUpperBound, normalizeRequestKey, readProviderUsage } from '../_shared/aiBudgetPolicy.js';
 import { filterProductsForAssistant, filterSourcesForAssistant, filterSourcesForCustomer } from '../_shared/assistantCapabilities.ts';
 import { resolveCompanyContext } from '../_shared/companyContextResolver.ts';
 import { F7IntelligenceEngine } from '../_shared/f7IntelligenceEngine.ts';
@@ -15,6 +17,7 @@ import { buildResearchQuery, normalizeIntentMessages, resolveConversationIntent 
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
 const MAX_CONTEXT_MESSAGES = 20;
+const MAX_PROVIDER_OUTPUT_TOKENS = 768;
 const MAX_MESSAGE_CONTEXT_CHARS = 8000;
 const MAX_PRODUCTS_CONTEXT = 20;
 const MAX_QUICK_REPLIES_CONTEXT = 20;
@@ -81,7 +84,7 @@ function normalizeCandidateForContext(candidate: any) {
     supporting_sources: supportingSources.slice(0, 10).map((item: unknown) => typeof item === 'string' ? safeText(item, 300) : safeText((item as any)?.url || (item as any)?.source_domain || (item as any)?.source_name, 300)).filter(Boolean),
   };
 }
-function sanitizeProductIntelligence(input: any) {
+function sanitizeProductIntelligence(input: any): Record<string, any> {
   const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
   const rejected = Array.isArray(input?.rejected_candidates) ? input.rejected_candidates : [];
   const web = input?.web_research && typeof input.web_research === 'object' ? input.web_research : {};
@@ -237,7 +240,7 @@ function validatedModelResponse(payload: any) {
   const allowedKeys = ['suggestion', 'requires_human', 'confidence'];
   const keys = parsed && typeof parsed === 'object' ? Object.keys(parsed) : [];
   if (keys.some((key) => !allowedKeys.includes(key)) || keys.length !== allowedKeys.length || typeof parsed?.suggestion !== 'string' || !parsed.suggestion.trim() || parsed.suggestion.length > 2000 || typeof parsed.requires_human !== 'boolean' || !['high', 'medium', 'low'].includes(parsed.confidence)) return { ok: false, code: 'AI_INVALID_RESPONSE' as const };
-  return { ok: true, suggestion: safeText(parsed.suggestion, 2000), requires_human: parsed.requires_human, confidence: parsed.confidence as 'high' | 'medium' | 'low' };
+  return { ok: true, suggestion: safeText(parsed.suggestion, 2000), requires_human: parsed.requires_human, confidence: parsed.confidence as 'high' | 'medium' | 'low', usage: payload?.usage || null };
 }
 
 async function generateWithProvider(input: { settings: Record<string, unknown>; messages: any[]; products: any[]; sources: any[]; knowledge?: any[]; productIntelligence?: any }) {
@@ -293,8 +296,8 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
     let response;
-    try { response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: context }], response_format: ASSISTANT_RESPONSE_FORMAT }), signal: controller.signal }); }
-    catch (error) { clearTimeout(timeout); return { ok: false, code: error?.name === 'AbortError' ? 'AI_PROVIDER_TIMEOUT' as const : 'AI_PROVIDER_UNAVAILABLE' as const }; }
+    try { response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, max_tokens: MAX_PROVIDER_OUTPUT_TOKENS, messages: [{ role: 'system', content: system }, { role: 'user', content: context }], response_format: ASSISTANT_RESPONSE_FORMAT }), signal: controller.signal }); }
+    catch (error) { clearTimeout(timeout); return { ok: false, code: error instanceof Error && error.name === 'AbortError' ? 'AI_PROVIDER_TIMEOUT' as const : 'AI_PROVIDER_UNAVAILABLE' as const }; }
     clearTimeout(timeout);
     const payload = await response.json().catch(() => null);
     const providerError = payload?.error && typeof payload.error === 'object' ? payload.error : {};
@@ -327,6 +330,7 @@ Deno.serve(async (req) => {
   const requestStartedAt = Date.now();
   const traceId = crypto.randomUUID();
   let diagnosticCompanyId: string | null = null;
+  let activeReservation: { id: string; requestKey: string; companyId: string } | null = null;
   try {
     const jwt = auth(req);
     const sb = admin();
@@ -334,8 +338,10 @@ Deno.serve(async (req) => {
     const conversationId = typeof body?.conversation_id === 'string' ? body.conversation_id : '';
     const jobId = typeof body?.job_id === 'string' ? body.job_id : '';
     const internalJobRequest = Boolean(jobId) && jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const requestId = internalJobRequest ? normalizeRequestKey(jobId) : normalizeRequestKey(body?.request_id);
     let user: any = null;
     let intelligenceEvent: any = null;
+    let internalJobScope: any = null;
     if (!internalJobRequest) {
       const authResult = await sb.auth.getUser(jwt);
       user = authResult.data.user;
@@ -344,22 +350,24 @@ Deno.serve(async (req) => {
     stage = internalJobRequest ? 'INTERNAL_AUTH_OK' : 'AUTH_OK';
     if (!conversationId) return json({ code: 'CONVERSATION_REQUIRED' }, 400);
 
-    const { data: conversation, error: conversationError } = await sb.from('conversations').select('id,company_id,customer_id,channel').eq('id', conversationId).maybeSingle();
-    if (conversationError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar a conversa.', stage: 'conversation_lookup', internal_error_code: safeInternalCode(conversationError) }, 500);
+    let conversation: any;
+    if (internalJobRequest) {
+      const jobResult = await sb.from('assistant_jobs').select('id,company_id,conversation_id,status,intelligence_event_id').eq('id', jobId).eq('conversation_id', conversationId).maybeSingle();
+      if (jobResult.error) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'job_lookup', internal_error_code: safeInternalCode(jobResult.error) }, 500);
+      internalJobScope = jobResult.data;
+      if (!internalJobScope || internalJobScope.status !== 'processing') return json({ code: 'INVALID_ASSISTANT_JOB' }, 409);
+      if (!internalJobScope.intelligence_event_id) return json({ code: 'INTELLIGENCE_EVENT_REQUIRED' }, 409);
+      conversation = { id: internalJobScope.conversation_id, company_id: internalJobScope.company_id };
+    } else {
+      const { data, error: conversationError } = await sb.from('conversations').select('id,company_id').eq('id', conversationId).maybeSingle();
+      if (conversationError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o escopo da conversa.', stage: 'conversation_lookup', internal_error_code: safeInternalCode(conversationError) }, 500);
+      conversation = data;
+    }
     if (!conversation) return json({ code: 'NOT_FOUND' }, 404);
     diagnosticCompanyId = conversation.company_id;
     await logStage(sb, conversation.company_id, 'ASSISTANT_REQUEST_RECEIVED');
     await logStage(sb, conversation.company_id, stage);
     if (internalJobRequest) {
-      const jobResult = await sb.from('assistant_jobs').select('id,company_id,conversation_id,status,intelligence_event_id').eq('id', jobId).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
-      if (jobResult.error) return json({ code: 'INTERNAL_PROVIDER_ERROR', stage: 'job_lookup', internal_error_code: safeInternalCode(jobResult.error) }, 500);
-      if (!jobResult.data || jobResult.data.status !== 'processing') return json({ code: 'INVALID_ASSISTANT_JOB' }, 409);
-      if (!jobResult.data.intelligence_event_id) return json({ code: 'INTELLIGENCE_EVENT_REQUIRED' }, 409);
-      const eventResult = await sb.from('intelligence_events').select('*').eq('id', jobResult.data.intelligence_event_id).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
-      if (eventResult.error || !eventResult.data) return json({ code: 'INVALID_INTELLIGENCE_EVENT' }, 409);
-      intelligenceEvent = eventResult.data;
-      stage = 'JOB_SCOPE_OK';
-      await logStage(sb, conversation.company_id, stage);
     } else {
       const { data: member, error: memberError } = await sb.from('company_users').select('role,active').eq('company_id', conversation.company_id).eq('user_id', user.id).maybeSingle();
       if (memberError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar a permissão da empresa.', stage: 'membership_lookup', internal_error_code: safeInternalCode(memberError) }, 500);
@@ -372,8 +380,17 @@ Deno.serve(async (req) => {
     const { data: allowed, error: featureError } = await sb.rpc('company_has_feature_internal', { target_company: conversation.company_id, feature: 'ai' });
     if (featureError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o entitlement da empresa.', stage: 'feature_lookup', internal_error_code: safeInternalCode(featureError) }, 500);
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
+    const maintenance = aiMaintenanceResponse(Deno.env.get('AI_MAINTENANCE_MODE'), corsHeaders);
+    if (maintenance) return maintenance;
     stage = 'ENTITLEMENT_OK';
     await logStage(sb, conversation.company_id, stage);
+    if (internalJobRequest) {
+      const eventResult = await sb.from('intelligence_events').select('*').eq('id', internalJobScope.intelligence_event_id).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
+      if (eventResult.error || !eventResult.data) return json({ code: 'INVALID_INTELLIGENCE_EVENT' }, 409);
+      intelligenceEvent = eventResult.data;
+      stage = 'JOB_SCOPE_OK';
+      await logStage(sb, conversation.company_id, stage);
+    }
     const limited = await sb.rpc('consume_rate_limit', { target_company: conversation.company_id, target_user: internalJobRequest ? conversation.company_id : user.id, target_metric: internalJobRequest ? 'intelligence-supervised' : 'assistant-suggest', max_count: internalJobRequest ? 30 : 10, window_seconds: internalJobRequest ? 3600 : 60 });
     if (limited.error) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna no controle de uso.', stage: 'rate_limit', internal_error_code: safeInternalCode(limited.error) }, 500);
     if (limited.data === false) return json({ code: 'RATE_LIMITED' }, 429);
@@ -412,7 +429,7 @@ Deno.serve(async (req) => {
     }
     await logStage(sb, conversation.company_id, 'CONVERSATION_INTENT_START');
     const normalizedMessages = normalizeIntentMessages(messages);
-    const previousIntent = input?.previous_intent && typeof input.previous_intent === 'object' ? input.previous_intent : null;
+    const previousIntent = body?.previous_intent && typeof body.previous_intent === 'object' ? body.previous_intent : null;
     let conversationIntent: any;
     try {
       conversationIntent = resolveConversationIntent(normalizedMessages, previousIntent);
@@ -436,7 +453,7 @@ Deno.serve(async (req) => {
     const relevantProducts = filterProductsForAssistant(selectRelevantProducts(productRows, terms), settings || {});
     stage = 'INTERNAL_PRODUCTS_RESOLVED';
     await logStage(sb, conversation.company_id, stage);
-    const productIntelligence = await resolveProductOrPart({ company_id: conversation.company_id, query: currentRequestText, products: relevantProducts, verified_applications: verifiedApplications || [], cross_references: crossReferences || [], verified_knowledge: knowledge || [], manufacturer: conversationIntent.activeIntent.manufacturer });
+    const productIntelligence: Record<string, any> = await resolveProductOrPart({ company_id: conversation.company_id, query: currentRequestText, products: relevantProducts, verified_applications: verifiedApplications || [], cross_references: crossReferences || [], verified_knowledge: knowledge || [], manufacturer: conversationIntent.activeIntent.manufacturer });
     productIntelligence.conversation_intent = { latest_customer_message: conversationIntent.latestCustomerMessage, current_request: currentRequest, previous_intent: conversationIntent.previousIntent, intent_changed: conversationIntent.intentChanged, invalidations: conversationIntent.invalidations, active_intent: conversationIntent.activeIntent };
     stage = 'PRODUCT_INTELLIGENCE_INTERNAL_READY';
     await logStage(sb, conversation.company_id, stage);
@@ -461,7 +478,7 @@ Deno.serve(async (req) => {
       technicalInput = { manufacturer: conversationIntent.activeIntent.manufacturer, model: conversationIntent.activeIntent.model, part_description: String(currentRequest || '').slice(0, 180), user_text: String(currentRequestText || '') };
       await logStage(sb, conversation.company_id, 'WEB_RESEARCH_INPUT_FALLBACK', { error_name: safeErrorDetails(error).error_name, internal_error_code: safeInternalCode(error) });
     }
-    const researchRegion = resolveResearchRegion({ language: settings?.language, locale: settings?.language, country: settings?.country, market: settings?.market, region: settings?.region });
+    const researchRegion = resolveResearchRegion({ language: settings?.language, locale: settings?.language });
     let researchNeeded = false;
     try {
       // Technical intent comes from the customer message. The preliminary
@@ -490,16 +507,30 @@ Deno.serve(async (req) => {
         try {
           const maxWebQueriesPerRun = Math.min(3, Math.max(1, Number(settings?.max_daily_web_queries || 3)));
           const maxResearchRounds = Math.min(2, Math.max(1, Number(settings?.max_research_rounds || 2)));
-          const webBudget = await reserveAIBudget(sb, { company_id: conversation.company_id, web_queries: maxWebQueriesPerRun });
+          if (!requestId) throw Object.assign(new Error('AI_IDEMPOTENCY_KEY_REQUIRED'), { code: 'AI_IDEMPOTENCY_KEY_REQUIRED' });
+          const requestKey = `${requestId}:research`;
+          const webBudget = await reserveAIExternalBudget(sb, { company_id: conversation.company_id, settings, web_queries: maxWebQueriesPerRun, request_key: requestKey });
           if (!webBudget.allowed) throw Object.assign(new Error('AI_WEB_BUDGET_EXCEEDED'), { code: 'AI_WEB_BUDGET_EXCEEDED' });
+          if (webBudget.reservation_id) activeReservation = { id: webBudget.reservation_id, requestKey, companyId: conversation.company_id };
           await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESEARCH_STARTED', provider: 'brave', query_count: maxWebQueriesPerRun });
           const safeResearchQuery = buildResearchQuery(conversationIntent, safeText(researchRegion.region || researchRegion.market || researchRegion.country, 80));
           await logResearchEvent(sb, conversation.company_id, conversationId, 'MACHINE_IDENTITY_DISCOVERY_STARTED', { research_trace_id: researchTraceId, model: technicalInput?.model, requested_part: technicalInput?.part_description });
           webResearch = await conductWebResearch({ sb, company_id: conversation.company_id, query: { query: safeResearchQuery, manufacturer: technicalInput?.manufacturer, model: technicalInput?.model, year: technicalInput?.year, application: technicalInput?.part_description, part_number: technicalInput?.old_part_number, domains: [], ...researchRegion, max_results: 5 }, ttl_hours: 24, max_pages: 2, limits: { max_rounds: maxResearchRounds, max_web_queries: maxWebQueriesPerRun }, onQuery: (event, details) => logResearchEvent(sb, conversation.company_id, conversationId, event, { research_trace_id: researchTraceId, provider: 'BraveWebSearchProvider', ...details }) });
+          if (activeReservation) {
+            const queryCount = webResearch.cache_hit ? 0 : webResearch.queries_executed;
+            const usageReliable = Number.isSafeInteger(queryCount) && queryCount >= 0 && !(webResearch.failure_codes || []).length;
+            const settlement = await settleAIReservation(sb, { company_id: conversation.company_id, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, external_queries: usageReliable ? queryCount : null, usage_reliable: usageReliable });
+            if (!settlement.settled) await markAIReservationUncertain(sb, { company_id: conversation.company_id, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usageReliable ? 'settlement_unavailable' : 'provider_usage_incomplete' });
+            activeReservation = null;
+          }
           await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESEARCH_COMPLETED', provider: 'brave', query_count: webResearch.queries_executed || 0, source_domains: (webResearch.results || []).map((item: any) => item.domain), candidate_count: (webResearch.candidates || []).length, duration_ms: webResearch.duration_ms });
           stage = 'WEB_RESEARCH_READY';
           await logStage(sb, conversation.company_id, stage);
         } catch (error) {
+          if (activeReservation) {
+            await markAIReservationUncertain(sb, { company_id: activeReservation.companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: safeInternalCode(error) || 'research_result_unknown' });
+            activeReservation = null;
+          }
           webResearch = { searched: true, results: [], candidates: [], evidence: { part_numbers: [], source_urls: [], confidence: 0, candidates: [] }, code: 'WEB_RESEARCH_FAILED' };
           const safe = safeErrorDetails(error);
           await logStage(sb, conversation.company_id, 'WEB_RESEARCH_FALLBACK', { error_name: safe.error_name, error_message: safe.error_message, internal_error_code: safeInternalCode(error) });
@@ -548,35 +579,61 @@ Deno.serve(async (req) => {
     // signed media URLs or credentials from the company data.
     const startedAt = Date.now();
     const model = Deno.env.get('AI_MODEL') || DEFAULT_MODEL;
-    const estimatedTokens = Math.ceil(JSON.stringify({ bounded, relevantProducts, verifiedKnowledge, productIntelligenceContext }).length / 4);
-    const estimatedCost = Number(settings?.estimated_cost_per_1k_tokens || 0) * estimatedTokens / 1000;
-    const aiBudget = await reserveAIBudget(sb, { company_id: conversation.company_id, ai_calls: 1, tokens: estimatedTokens, estimated_cost: estimatedCost });
+    const providerInput = {
+      settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules, current_request: currentRequestText, intent_changed: conversationIntent.intentChanged },
+      messages: [{ sender: 'customer', content: `CURRENT_REQUEST (priority): ${currentRequestText}` }, ...bounded],
+      products: relevantProducts,
+      sources: filterSourcesForAssistant(sourceMetadata, settings || {}),
+      knowledge: verifiedKnowledge,
+      productIntelligence: { ...productIntelligenceContext, decision: assistantDecision },
+    };
+    // Count the complete sanitized model input (including company rules and
+    // verified knowledge), not only the message/catalog subset.
+    const estimatedTokens = conservativeInputTokenUpperBound(providerInput, 3000);
+    const requestKey = requestId ? `${requestId}:model` : '';
+    const aiBudget = estimatedTokens && requestKey
+      ? await reserveAIModelBudget(sb, { company_id: conversation.company_id, request_key: requestKey, model_key: model, settings, input_tokens: estimatedTokens, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS })
+      : { allowed: false, reason: requestKey ? 'AI_INPUT_BOUND_INVALID' : 'AI_IDEMPOTENCY_KEY_REQUIRED' };
+    const estimatedCost = Number(aiBudget.estimated_cost || 0);
     if (!aiBudget.allowed) {
       await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', safe_error_code: aiBudget.reason, duration_ms: Date.now() - requestStartedAt });
       return json({ success: false, code: 'AI_BUDGET_EXCEEDED', error: 'AI_BUDGET_EXCEEDED', message: 'Limite de uso da IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
     }
+    if (aiBudget.reservation_id) activeReservation = { id: aiBudget.reservation_id, requestKey, companyId: conversation.company_id };
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'BUDGET_RESERVED', model, reserved_tokens: aiBudget.reserved_tokens, reserved_cost: estimatedCost });
     stage = 'AI_REQUEST_STARTED';
     await logStage(sb, conversation.company_id, stage, { model, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model } });
-    const providerMessages = [{ sender: 'customer', content: `CURRENT_REQUEST (priority): ${currentRequestText}` }, ...bounded];
-    const providerSuggestion: any = await modelRouter.generateStructured('openai_compatible', { settings: { ...(settings || {}), quick_replies: relevantQuickReplies, handoff_rules: relevantHandoffRules, current_request: currentRequestText, intent_changed: conversationIntent.intentChanged }, messages: providerMessages, products: relevantProducts, sources: filterSourcesForAssistant(sourceMetadata, settings || {}), knowledge: verifiedKnowledge, productIntelligence: { ...productIntelligenceContext, decision: assistantDecision } });
+    const providerSuggestion: any = await modelRouter.generateStructured('openai_compatible', providerInput);
     await logStage(sb, conversation.company_id, 'AI_REQUEST_FINISHED', { duration_ms: Date.now() - startedAt, model });
     const missingInformation = missingForConfirmation;
+    const usage = providerSuggestion.ok ? readProviderUsage(providerSuggestion.usage, { reservedInputTokens: estimatedTokens, maxOutputTokens: MAX_PROVIDER_OUTPUT_TOKENS }) : { input_tokens: null, output_tokens: null, reported: false };
+    const recordedInputTokens = usage.reported ? usage.input_tokens : null;
+    const recordedOutputTokens = usage.reported ? usage.output_tokens : null;
+    let settlement: any = { settled: false };
+    if (activeReservation) {
+      if (providerSuggestion.ok) settlement = await settleAIReservation(sb, { company_id: conversation.company_id, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, usage_reliable: usage.reported });
+      if (!settlement.settled) await markAIReservationUncertain(sb, { company_id: conversation.company_id, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: providerSuggestion.ok ? usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' : providerSuggestion.code || 'provider_result_unknown' });
+      activeReservation = null;
+    }
+    const recordedCost = settlement.settled ? Number(settlement.actual_cost || 0) : estimatedCost;
+    if (providerSuggestion.ok) await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESPONSE_CREATED', provider_usage_reported: usage.reported, input_tokens: recordedInputTokens, output_tokens: recordedOutputTokens });
     if (!providerSuggestion.ok) {
       await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'failure', providerSuggestion.code, bounded.length, relevantProducts.length, sourceMetadata.length);
       const status = providerSuggestion.code === 'AI_PROVIDER_TIMEOUT' ? 504 : providerSuggestion.code === 'AI_PROVIDER_RATE_LIMITED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_EXCEEDED' || providerSuggestion.code === 'AI_PROVIDER_QUOTA_OR_RATE_LIMIT' ? 429 : providerSuggestion.code === 'AI_PROVIDER_AUTH_ERROR' || providerSuggestion.code === 'AI_PROVIDER_MODEL_NOT_FOUND' || providerSuggestion.code === 'AI_MODEL_NOT_AVAILABLE' || providerSuggestion.code === 'AI_JSON_MODE_UNSUPPORTED' || providerSuggestion.code === 'AI_STRUCTURED_OUTPUT_UNSUPPORTED' || providerSuggestion.code === 'AI_PROVIDER_CONFIG_INVALID' || providerSuggestion.code === 'AI_INVALID_RESPONSE' ? 502 : 503;
       await logStage(sb, conversation.company_id, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: providerSuggestion.code, provider_code: providerSuggestion.provider_code, provider_type: providerSuggestion.provider_type, provider_param: providerSuggestion.provider_param, provider_request_id: providerSuggestion.request_id, provider_config: { api_key_configured: true, api_url_configured: Boolean(Deno.env.get('AI_API_URL')), model_configured: Boolean(Deno.env.get('AI_MODEL')), model }, http_status: status, model });
-      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', provider: 'openai', model, tool_names: assistantDecision.tools, candidate_count: productIntelligenceContext.candidates.length, input_tokens: estimatedTokens, estimated_cost: estimatedCost, safe_error_code: providerSuggestion.code, duration_ms: Date.now() - requestStartedAt });
+      await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', provider: 'openai', model, tool_names: assistantDecision.tools, candidate_count: productIntelligenceContext.candidates.length, estimated_cost: estimatedCost, safe_error_code: providerSuggestion.code, duration_ms: Date.now() - requestStartedAt });
       return json({ success: false, error: providerSuggestion.code, code: providerSuggestion.code, message: `Não foi possível obter uma sugestão segura (${providerSuggestion.code}).`, suggestion: null, requires_human: true, sources: filterSourcesForCustomer(sourceMetadata, settings || {}), missing_information: missingInformation, decision: assistantDecision }, status);
     }
     await logStage(sb, conversation.company_id, 'AI_RESPONSE_PARSED', { duration_ms: Date.now() - requestStartedAt, model });
     await logObservation(sb, conversation.company_id, model, Date.now() - startedAt, 'success', null, bounded.length, relevantProducts.length, sourceMetadata.length);
     await logStage(sb, conversation.company_id, 'ASSISTANT_SUCCESS', { duration_ms: Date.now() - requestStartedAt, model });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESPONSE_CREATED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
-    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'COMPLETED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: estimatedTokens, estimated_cost: estimatedCost, duration_ms: Date.now() - requestStartedAt });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESPONSE_CREATED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: recordedInputTokens, output_tokens: recordedOutputTokens, estimated_cost: recordedCost, duration_ms: Date.now() - requestStartedAt });
+    await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'COMPLETED', provider: 'openai', model, tool_names: assistantDecision.tools, query_count: webResearch.queries_executed || 0, source_domains: sourceMetadata.map((item: any) => item.domain), candidate_count: productIntelligenceContext.candidates.length, confidence: providerSuggestion.confidence, input_tokens: recordedInputTokens, output_tokens: recordedOutputTokens, estimated_cost: recordedCost, duration_ms: Date.now() - requestStartedAt });
     return json({ success: true, suggestion: providerSuggestion.suggestion, requires_human: true, confidence: providerSuggestion.confidence, current_request: currentRequestText, intent_changed: conversationIntent.intentChanged, decision: assistantDecision, intelligence: engineResult, sources: filterSourcesForCustomer(sourceMetadata, settings || {}), product_intelligence: productIntelligenceContext, products_considered: relevantProducts.map((product: any) => ({ product_name: product.name, sku: product.sku || null, manufacturer: product.brand || null, ...(Object.prototype.hasOwnProperty.call(product, 'price') ? { sale_price: product.price } : {}), ...(Object.prototype.hasOwnProperty.call(product, 'stock') ? { stock_quantity: product.stock } : {}) })), missing_information: [...new Set([...missingInformation, ...(productIntelligence.missing_information || [])])] });
   } catch (error) {
     const safeCode = safeInternalCode(error) || 'INTERNAL_PROVIDER_ERROR';
     const safeDetails = safeErrorDetails(error);
+    if (diagnosticCompanyId && activeReservation) await markAIReservationUncertain(admin(), { company_id: activeReservation.companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: safeCode });
     if (diagnosticCompanyId) await logStage(admin(), diagnosticCompanyId, 'ASSISTANT_FAILED', { duration_ms: Date.now() - requestStartedAt, internal_error_code: safeCode, error_name: safeDetails.error_name, error_message: safeDetails.error_message, stage, http_status: 500 });
     return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao gerar a sugestão.', stage, internal_error_code: safeCode, error_name: safeDetails.error_name, error_message: safeDetails.error_message }, 500);
   }

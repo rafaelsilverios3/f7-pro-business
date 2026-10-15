@@ -39,7 +39,7 @@ test('supervised worker creates an approval proposal and never sends externally'
 });
 
 test('internal execution requires a processing job and a supervised event', () => {
-  assert.match(assistant, /jobResult\.data\.status !== 'processing'/);
+  assert.match(assistant, /internalJobScope\.status !== 'processing'/);
   assert.match(assistant, /INTELLIGENCE_EVENT_REQUIRED/);
   assert.match(assistant, /INVALID_INTELLIGENCE_EVENT/);
   assert.match(assistant, /settings\?\.autonomy_mode !== 'SUPERVISED_AUTONOMOUS'/);

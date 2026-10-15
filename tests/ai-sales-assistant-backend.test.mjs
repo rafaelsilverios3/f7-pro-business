@@ -78,7 +78,7 @@ test('backend valida a permissão específica antes de consultar cada ferramenta
   assert.match(fn, /permissionsForTool\(intent\)/);
   assert.match(fn, /TOOL_PERMISSION_DENIED/);
   assert.match(fn, /target_metric: metric/);
-  assert.match(fn, /reserveAIBudget/);
+  assert.match(fn, /reserveAIModelBudget/);
   assert.match(fn, /feature: 'ai_sales'/);
   assert.match(fn, /consumeRateLimit\(sb, companyId, userData\.user\.id, 'ai-sales-status', 30\)/);
   assert.match(fn, /const rateLimit = await consumeRateLimit\(sb, companyId, userData\.user\.id\)/);

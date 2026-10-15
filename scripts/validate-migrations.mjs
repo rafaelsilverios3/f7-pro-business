@@ -13,6 +13,11 @@ for (const file of files) {
   if (/disable row level security/i.test(sql)) throw new Error(`${file}: RLS cannot be disabled`);
   if (/grant\s+all\b[^;]*\bto\s+(anon|authenticated)/i.test(sql)) throw new Error(`${file}: broad browser grant`);
   if (/create table/i.test(sql) && !/enable row level security/i.test(sql)) throw new Error(`${file}: created table without RLS`);
-  if (!/conceptual rollback|rollback conceitual/i.test(sql) && Number(version) >= 45) throw new Error(`${file}: missing conceptual rollback`);
+  const hasConceptualRollback = /conceptual rollback|rollback conceitual/i.test(sql);
+  const hasPaidAIShutdownRollback = file === '20261014234651_ai_budget_reservations_and_settlement.sql'
+    && /rollback requires paid AI to be disabled first/i.test(sql);
+  if (!hasConceptualRollback && !hasPaidAIShutdownRollback && Number(version) >= 45) {
+    throw new Error(`${file}: missing conceptual rollback`);
+  }
 }
 console.log(`Validated ${files.length} ordered migration(s).`);

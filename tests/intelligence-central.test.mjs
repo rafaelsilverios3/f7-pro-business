@@ -28,7 +28,9 @@ test('central query enforces tenant membership and server-side bounded tools', (
   assert.match(edge, /eq\('company_id', companyId\)\.eq\('user_id', userData\.user\.id\)/);
   assert.match(edge, /ALLOWED_ROLES/);
   assert.match(edge, /eq\('company_id', companyId\)/);
-  assert.match(edge, /reserve_ai_budget/);
+  assert.match(edge, /reserveAIModelBudget/);
+  assert.match(edge, /reserveAIExternalBudget/);
+  assert.match(edge, /AI_ENABLED.*!== 'true'/);
   assert.match(edge, /conductWebResearch/);
   assert.doesNotMatch(conversation, /SUPABASE_SERVICE_ROLE_KEY|AI_API_KEY/);
 });
@@ -49,8 +51,8 @@ test('opportunity persistence remains an explicit human action', () => {
 });
 
 test('central queries record reusable ai_runs and ai_run_events observability', () => {
-  assert.match(edge, /from\('ai_runs'\)/);
-  assert.match(edge, /from\('ai_run_events'\)/);
+  assert.match(edge, /persistAIRun\(sb, \{ companyId, traceId, patch \}\)/);
+  assert.match(edge, /persistAIRunEvent\(sb, \{ companyId, traceId/);
   assert.match(edge, /INTENT_CLASSIFIED/);
   assert.match(edge, /RESPONSE_CREATED/);
 });

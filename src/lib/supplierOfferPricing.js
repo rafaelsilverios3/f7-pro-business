@@ -22,6 +22,7 @@ function validIsoDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+/** @param {any} offer @param {{ quantity?: number, today?: string, maxAgeDays?: number }} [options] */
 export function assessDeclaredSupplierAvailability(offer, {
   quantity,
   today = new Date().toISOString().slice(0, 10),
@@ -45,6 +46,7 @@ export function assessDeclaredSupplierAvailability(offer, {
   return { status: 'sufficient_declared', requested_quantity: requestedQuantity, declared_quantity: declaredQuantity, observed_at: observedAt, age_days: ageDays, shortfall: 0 };
 }
 
+/** @param {{ availability?: any, scenario?: any }} [input] */
 export function canPresentSupplierOfferScenario({ availability, scenario } = {}) {
   return availability?.status === 'sufficient_declared' && scenario?.feasible === true;
 }
@@ -82,6 +84,7 @@ export function classifySupplierOffersForPricing(offers = [], scope = {}) {
     }));
 }
 
+/** @param {any} offer @param {{ companyId?: string, productId?: string, today?: string, quantity?: number, costs?: Record<string, number>, confidence?: Record<string, string>, price?: number, targetMargin?: number, channelFeePct?: number }} [options] */
 export function buildSupplierOfferPricingScenario(offer, {
   companyId,
   productId,

@@ -7,7 +7,7 @@ export type F7IntelligenceEngineInput = {
   company_context: { company_id: string; autonomy_mode: AutonomyMode; segment?: string; business_description?: string; specific_rules?: string; [key: string]: unknown };
   actor: { type: string; id?: string | null };
   event: F7IntelligenceEvent;
-  conversation_context: { latest_message: string };
+  conversation_context: { latest_message: string; current_request?: string; conversation_history?: unknown[]; intent_changed?: boolean; [key: string]: unknown };
   available_tools: unknown[];
   available_specialists: unknown[];
   policies: Record<string, unknown>;
