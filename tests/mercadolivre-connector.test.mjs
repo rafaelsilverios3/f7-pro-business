@@ -8,6 +8,7 @@ const entitlementMigration = read('supabase/migrations/0085_tenant_commercial_ac
 const api = read('supabase/functions/mercadolivre-api/index.ts');
 const callback = read('supabase/functions/mercadolivre-callback/index.ts');
 const webhook = read('supabase/functions/mercadolivre-webhook/index.ts');
+const webhookPayload = read('supabase/functions/_shared/mercadolivreWebhook.ts');
 const connect = read('supabase/functions/mercadolivre-connect/index.ts');
 const ui = read('src/components/commerce/MercadoLivreConnector.jsx');
 const service = read('src/services/mercadoLivreService.js');
@@ -99,7 +100,9 @@ test('stock and price pushes require manager permission, explicit confirmation, 
 });
 
 test('webhook validates official source IP, app/seller/topic, provider event ID, and queues only safe pointers', () => {
-  assert.match(webhook, /32_768/);
+  assert.match(webhook, /boundedNotificationPayload/);
+  assert.match(webhookPayload, /MAX_NOTIFICATION_BYTES = 32_768/);
+  assert.match(webhookPayload, /reader.read()/);
   assert.match(webhook, /cf-connecting-ip/);
   assert.match(webhook, /isOfficialMercadoLivreWebhookIp/);
   assert.match(webhook, /application_id/);

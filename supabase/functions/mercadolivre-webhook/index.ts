@@ -1,18 +1,7 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
 import { isOfficialMercadoLivreWebhookIp, safeResourcePath, sha256, validSellerId } from '../_shared/mercadolivre.ts';
 import { checkMarketplaceEntitlement } from '../_shared/mercadolivreAccess.ts';
-
-async function boundedPayload(req: Request): Promise<Record<string, unknown> | null> {
-  const declared = Number(req.headers.get('content-length') || '0');
-  if (declared > 32_768) return null;
-  const text = await req.text();
-  if (new TextEncoder().encode(text).byteLength > 32_768) return null;
-  if (!text.trim()) return {};
-  try {
-    const value = JSON.parse(text);
-    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
-  } catch { return null; }
-}
+import { boundedNotificationPayload } from '../_shared/mercadolivreWebhook.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -21,7 +10,7 @@ Deno.serve(async (req) => {
   // fall back to caller-controlled X-Forwarded-For values.
   const sourceIp = req.headers.get('cf-connecting-ip')?.trim() || '';
   if (!isOfficialMercadoLivreWebhookIp(sourceIp)) return json({ code: 'UNTRUSTED_NOTIFICATION_SOURCE' }, 403);
-  const body = await boundedPayload(req);
+  const body = await boundedNotificationPayload(req);
   if (!body) return json({ code: 'INVALID_NOTIFICATION' }, 400);
   const query = new URL(req.url).searchParams;
   const get = (key: string) => body[key] ?? query.get(key) ?? null;

@@ -1,5 +1,6 @@
 import { assertSellerOwnedItem, canManageMarketplace, decryptToken, encryptToken, isOfficialMercadoLivreWebhookIp, makeAuthorizationUrl, meliRequest, minimalOrder, parseTokenResponse, pkceChallenge, safeResourcePath, sha256, validItemId } from './mercadolivre.ts';
 import { authorizeMarketplace, checkMarketplaceEntitlement } from './mercadolivreAccess.ts';
+import { boundedNotificationPayload } from './mercadolivreWebhook.ts';
 
 Deno.test('Mercado Livre authorization URL binds server callback and opaque state', () => {
   const url = new URL(makeAuthorizationUrl('123456', 'https://project.supabase.co/functions/v1/mercadolivre-callback', 'opaque-state'));
@@ -100,6 +101,40 @@ Deno.test('webhook origin allowlist accepts only the current official Mercado Li
   }
   for (const candidate of [null, '', '127.0.0.1', '44.212.211.213, 127.0.0.1', '54.88.218.97', '256.1.1.1', '::1']) {
     if (isOfficialMercadoLivreWebhookIp(candidate)) throw new Error('untrusted or malformed source accepted');
+  }
+});
+
+Deno.test('webhook payload parser accepts small object JSON and rejects invalid or non-object JSON', async () => {
+  const valid = await boundedNotificationPayload(new Request('https://test.invalid', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ topic: 'items' }),
+  }));
+  if (valid?.topic !== 'items') throw new Error('valid webhook payload rejected');
+  for (const body of ['[1,2]', 'null', '{bad json', '"text"']) {
+    const parsed = await boundedNotificationPayload(new Request('https://test.invalid', { method: 'POST', body }));
+    if (parsed !== null) throw new Error('invalid or non-object payload accepted');
+  }
+});
+
+Deno.test('webhook payload parser enforces the byte limit while streaming without Content-Length', async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(20_000));
+      controller.enqueue(new Uint8Array(20_000));
+    },
+    cancel() { cancelled = true; },
+  });
+  const oversized = new Request('https://test.invalid', { method: 'POST', body: stream, duplex: 'half' } as RequestInit);
+  const parsed = await boundedNotificationPayload(oversized);
+  if (parsed !== null || !cancelled) throw new Error('oversized streamed webhook was not rejected/cancelled');
+});
+
+Deno.test('webhook payload parser rejects malformed content-length and declared oversized payloads', async () => {
+  for (const contentLength of ['32k', '32769']) {
+    const parsed = await boundedNotificationPayload(new Request('https://test.invalid', {
+      method: 'POST', headers: { 'content-length': contentLength }, body: '{}',
+    }));
+    if (parsed !== null) throw new Error('bad or oversized declared body accepted');
   }
 });
 
