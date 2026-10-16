@@ -55,6 +55,15 @@ test('membership state keeps pending, stale tenant, query errors, and inactive l
   assert.equal(companyMembershipGateState({ loading: false, companyId: 'company-a', active: true, role: 'admin' }, 'company-a'), 'active');
 });
 
+test('authorized roles remain distinct from roles without marketplace view permission', () => {
+  const { can } = permissionContext.permissionExports;
+  assert.equal(can({ role: 'admin' }, 'sales_channels.view'), true);
+  assert.equal(can({ role: 'vendedor' }, 'sales_channels.view'), true);
+  assert.equal(can({ role: 'atendimento' }, 'sales_channels.view'), false);
+  assert.match(meliConnector, /can\(\{ role: memberRole \}, 'sales_channels\.view'\)/);
+  assert.match(app, /membershipState === 'active' && can\(\{ role: membership\.role \}, permission\)/);
+});
+
 test('Commerce waits for the active company membership before mounting the marketplace connector', () => {
   assert.match(page, /membershipState === 'loading'[\s\S]*Verificando vínculo e permissões/);
   assert.match(page, /membershipState === 'error'[\s\S]*Nenhuma integração foi consultada/);

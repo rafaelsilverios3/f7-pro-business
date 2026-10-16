@@ -34,12 +34,13 @@ export function useCompanyMembership(companyId) {
     }
 
     setMembership({ ...EMPTY_MEMBERSHIP, companyId });
-    getSupabaseClient()
-      .from('company_users')
-      .select('role, active')
-      .eq('company_id', companyId)
-      .eq('user_id', user.id)
-      .maybeSingle()
+    Promise.resolve()
+      .then(() => getSupabaseClient()
+        .from('company_users')
+        .select('role, active')
+        .eq('company_id', companyId)
+        .eq('user_id', user.id)
+        .maybeSingle())
       .then(({ data, error }) => {
         if (cancelled) return;
         setMembership({
