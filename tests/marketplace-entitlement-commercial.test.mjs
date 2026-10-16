@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const entitlement = read('supabase/migrations/0085_tenant_commercial_access_hardening.sql');
-const catalog = read('supabase/migrations/20261016150000_plan_marketplace_integrations_entitlements.sql');
+const catalog = read('supabase/migrations/20261016151752_plan_marketplace_integrations_entitlements.sql');
 const admin = read('supabase/functions/platform-admin/index.ts');
 const ui = read('src/pages/PlatformAdmin.jsx');
 const access = read('supabase/functions/_shared/mercadolivreAccess.ts');
