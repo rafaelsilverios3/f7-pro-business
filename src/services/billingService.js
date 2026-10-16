@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { invokeEdgeFunction } from '@/services/integrationsService';
+import { buildActivePlanCatalog, planCatalogUnavailable } from '@/services/billingPlanCatalog';
 
 const FALLBACK_PLANS = [
   { code: 'free', name: 'FREE', description: 'Para começar e conhecer o sistema.', price_minor: null, billing_period: 'month', highlighted: false, sort_order: 1, features: [] },
@@ -13,11 +14,16 @@ export const billingService = {
     if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return FALLBACK_PLANS;
     try {
       const { data, error } = await getSupabaseClient().from('plans').select('id,code,name,description,price_minor,currency,billing_period,trial_days,highlighted,sort_order').eq('active', true).order('sort_order');
-      if (error || !data?.length) return FALLBACK_PLANS;
+      if (error) throw planCatalogUnavailable();
       const ids = data.map((plan) => plan.id).filter(Boolean);
-      const { data: features } = ids.length ? await getSupabaseClient().from('plan_features').select('plan_id,feature,enabled,usage_limit').in('plan_id', ids) : { data: [] };
-      return data.map((plan) => ({ ...plan, features: (features || []).filter((feature) => feature.plan_id === plan.id).map(({ plan_id, ...feature }) => feature) }));
-    } catch { return FALLBACK_PLANS; }
+      const featureResult = ids.length
+        ? await getSupabaseClient().from('plan_features').select('plan_id,feature,enabled,usage_limit').in('plan_id', ids)
+        : { data: [], error: null };
+      if (featureResult.error) throw planCatalogUnavailable();
+      return buildActivePlanCatalog(data || [], featureResult.data || []);
+    } catch {
+      throw planCatalogUnavailable();
+    }
   },
   createCheckout: (companyId, planCode, method = 'pix', cardTokenId = undefined) => invokeEdgeFunction('billing-checkout', {
     company_id: companyId, plan_code: planCode, method,

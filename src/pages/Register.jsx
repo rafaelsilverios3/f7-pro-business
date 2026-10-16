@@ -10,13 +10,14 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
 import { toast } from "@/components/ui/use-toast";
-import { safeReturnTo } from "@/lib/authReturnTo";
+import { emailConfirmationRedirect, safeReturnTo } from "@/lib/authReturnTo";
 
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
@@ -25,16 +26,20 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setNotice("");
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
     setLoading(true);
     try {
-      const result = await signUp(email, password);
+      const confirmationRedirect = import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+        ? emailConfirmationRedirect(window.location.origin, safeReturnTo())
+        : undefined;
+      const result = await signUp(email, password, confirmationRedirect);
       if (import.meta.env.VITE_DATA_PROVIDER === 'supabase') {
-        if (result?.session) window.location.href = safeReturnTo();
-        else setError("Conta criada. Confirme seu e-mail para entrar.");
+        if (result?.session) window.location.assign(safeReturnTo());
+        else setNotice("Conta criada. Confirme o e-mail pelo link enviado; depois da confirmação, você voltará para continuar sua contratação.");
       } else setShowOtp(true);
     } catch (err) {
       setError(err.message || "Registration failed");
@@ -170,6 +175,8 @@ export default function Register() {
           {error}
         </div>
       )}
+
+      {notice && <div role="status" className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</div>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">

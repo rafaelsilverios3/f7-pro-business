@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, BarChart3, Check, ChevronLeft, Factory, Package, ShoppingBag, Sparkles, Users, Wrench } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,7 @@ export default function Onboarding() {
   const [companyName, setCompanyName] = useState('');
   const [companyError, setCompanyError] = useState('');
   const [creatingCompany, setCreatingCompany] = useState(false);
+  const createCompanyLock = useRef(false);
   const [subscription, setSubscription] = useState(null);
 
   useEffect(() => { setJourneyState(getJourney(company?.id)); setSeen(getSeenEducativeSteps(company?.id)); }, [company?.id]);
@@ -76,9 +77,25 @@ export default function Onboarding() {
   const chooseJourney = (value) => { setJourney(company?.id, value); setJourneyState(value); };
   const dismiss = () => { setOnboardingDismissed(company?.id); navigate(safeReturnTo()); };
   const openStep = (step) => { if (step.completionRule === 'seen') { markEducativeStepSeen(company.id, step.id); setSeen((current) => ({ ...current, [step.id]: true })); } navigate(step.route); };
+  const submitCompany = async (event) => {
+    event.preventDefault();
+    if (createCompanyLock.current) return;
+    createCompanyLock.current = true;
+    setCompanyError('');
+    setCreatingCompany(true);
+    try {
+      await createCompany(companyName);
+      navigate(safeReturnTo(), { replace: true });
+    } catch (cause) {
+      setCompanyError(cause.message || 'Não foi possível criar a empresa.');
+    } finally {
+      createCompanyLock.current = false;
+      setCreatingCompany(false);
+    }
+  };
 
   if (!company) return (
-    <div className="mx-auto max-w-lg px-5 py-16"><div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h1 className="text-2xl font-bold text-slate-900">Crie sua empresa</h1><p className="mt-2 text-sm text-slate-500">Sua conta ainda não possui uma empresa. Informe o nome para iniciar o F7 PRO BUSINESS.</p>{companyError && <p className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{companyError}</p>}<form className="mt-5 space-y-3" onSubmit={async (event) => { event.preventDefault(); setCompanyError(''); setCreatingCompany(true); try { await createCompany(companyName); } catch (cause) { setCompanyError(cause.message || 'Não foi possível criar a empresa.'); } finally { setCreatingCompany(false); } }}><Label htmlFor="company-name">Nome da empresa</Label><Input id="company-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Ex: F7 Comércio" required minLength={2} /><Button type="submit" className="w-full" disabled={creatingCompany}>{creatingCompany ? 'Criando...' : 'Criar empresa e continuar'}</Button></form></div></div>
+    <div className="mx-auto max-w-lg px-5 py-16"><div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h1 className="text-2xl font-bold text-slate-900">Crie sua empresa</h1><p className="mt-2 text-sm text-slate-500">Sua conta ainda não possui uma empresa. Informe o nome para iniciar o F7 PRO BUSINESS.</p>{companyError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{companyError}</p>}<form className="mt-5 space-y-3" onSubmit={submitCompany}><Label htmlFor="company-name">Nome da empresa</Label><Input id="company-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Ex: F7 Comércio" required minLength={2} /><Button type="submit" className="w-full" disabled={creatingCompany}>{creatingCompany ? 'Criando...' : 'Criar empresa e continuar'}</Button></form></div></div>
   );
 
   if (!journey) return (

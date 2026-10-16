@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import GoogleIcon from "@/components/GoogleIcon";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 export default function Login() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -17,7 +18,11 @@ export default function Login() {
   // Post-login destination (e.g. the MCP OAuth consent page sends users here
   // with returnTo so the grant flow can resume). Same-origin paths only.
   const returnTo = safeReturnTo();
-  const { signIn, signInWithProvider } = useAuth();
+  const { signIn, signInWithProvider, isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) navigate(returnTo, { replace: true });
+  }, [isAuthenticated, navigate, returnTo]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,7 +30,7 @@ export default function Login() {
     setLoading(true);
     try {
       await signIn(email, password);
-      window.location.href = returnTo;
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(err.message || "Invalid email or password");
     } finally {
