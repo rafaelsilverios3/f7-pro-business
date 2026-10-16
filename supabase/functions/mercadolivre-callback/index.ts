@@ -1,6 +1,6 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
 import { canManageMarketplace, decryptToken, parseTokenResponse, encryptToken, meliRequest, sha256, validSellerId } from '../_shared/mercadolivre.ts';
-import { safeIntegrationLog } from '../_shared/mercadolivreAccess.ts';
+import { checkMarketplaceEntitlement, safeIntegrationLog } from '../_shared/mercadolivreAccess.ts';
 
 function resultRedirect(code: string) {
   const configured = Deno.env.get('APP_ORIGIN') || '';
@@ -41,6 +41,12 @@ Deno.serve(async (req) => {
     if (memberError || !canManageMarketplace(member?.role, member?.active)) {
       await safeIntegrationLog(sb, companyId, 'oauth_callback_denied', 'error', { reason: 'membership_or_entitlement' });
       return resultRedirect('access_revoked');
+    }
+    const entitlement = await checkMarketplaceEntitlement(sb, companyId);
+    if (entitlement.unavailable) return resultRedirect('connection_failed');
+    if (!entitlement.allowed) {
+      await safeIntegrationLog(sb, companyId, 'oauth_callback_denied', 'error', { reason: 'feature_not_available' });
+      return resultRedirect('feature_not_available');
     }
 
     const clientId = Deno.env.get('MELI_CLIENT_ID') || '';

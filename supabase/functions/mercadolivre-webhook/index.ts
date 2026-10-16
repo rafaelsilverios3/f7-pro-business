@@ -1,5 +1,6 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
-import { safeResourcePath, sha256, validSellerId } from '../_shared/mercadolivre.ts';
+import { isOfficialMercadoLivreWebhookIp, safeResourcePath, sha256, validSellerId } from '../_shared/mercadolivre.ts';
+import { checkMarketplaceEntitlement } from '../_shared/mercadolivreAccess.ts';
 
 async function boundedPayload(req: Request): Promise<Record<string, unknown> | null> {
   const declared = Number(req.headers.get('content-length') || '0');
@@ -16,6 +17,10 @@ async function boundedPayload(req: Request): Promise<Record<string, unknown> | n
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
+  // Supabase's Cloudflare edge supplies this canonical client address. Do not
+  // fall back to caller-controlled X-Forwarded-For values.
+  const sourceIp = req.headers.get('cf-connecting-ip')?.trim() || '';
+  if (!isOfficialMercadoLivreWebhookIp(sourceIp)) return json({ code: 'UNTRUSTED_NOTIFICATION_SOURCE' }, 403);
   const body = await boundedPayload(req);
   if (!body) return json({ code: 'INVALID_NOTIFICATION' }, 400);
   const query = new URL(req.url).searchParams;
@@ -37,9 +42,11 @@ Deno.serve(async (req) => {
   if (!matches || matches.length !== 1) return json({ code: 'ACCEPTED', accepted: false });
   const match = matches[0];
   const providerId = String(get('_id') || '');
-  const sent = String(get('sent') || '');
-  const minute = Number.isFinite(Date.parse(sent)) ? new Date(sent).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16);
-  const dedupeKey = await sha256(providerId ? `id:${providerId}` : `${sellerId}|${topic}|${resource}|${minute}`);
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(providerId)) return json({ code: 'ACCEPTED', accepted: false });
+  const entitlement = await checkMarketplaceEntitlement(sb, String(match.company_id));
+  if (entitlement.unavailable) return json({ code: 'TEMPORARY_FAILURE' }, 503);
+  if (!entitlement.allowed) return json({ code: 'ACCEPTED', accepted: false });
+  const dedupeKey = await sha256(`id:${providerId}`);
   const { data: queued, error: queueError } = await sb.rpc('meli_enqueue_notification', {
     p_company_id: match.company_id,
     p_connection_id: match.id,
@@ -48,9 +55,14 @@ Deno.serve(async (req) => {
     p_resource_path: resource,
   });
   if (queueError) return json({ code: 'TEMPORARY_FAILURE' }, 503);
-  if (queued === false) return json({ code: 'QUEUE_LIMIT_REACHED', accepted: false }, 503);
-  // Notifications are unsigned in the documented contract used here. This
-  // endpoint stores only a pointer; the worker trusts the authenticated API
-  // response, never the notification body, as resource data.
-  return json({ code: 'ACCEPTED', accepted: true }, 200);
+  if (queued === false) {
+    const { data: duplicate, error: duplicateLookupError } = await sb.from('meli_webhook_events').select('id')
+      .eq('company_id', match.company_id).eq('dedupe_key', dedupeKey).maybeSingle();
+    if (duplicateLookupError) return json({ code: 'TEMPORARY_FAILURE' }, 503);
+    if (duplicate) return json({ code: 'ACCEPTED', accepted: true, deduplicated: true }, 200);
+    return json({ code: 'QUEUE_LIMIT_REACHED', accepted: false }, 503);
+  }
+  // The notification only points to a resource. The worker fetches the
+  // canonical resource with this seller's token before persisting anything.
+  return json({ code: 'ACCEPTED', accepted: true, deduplicated: false }, 200);
 });

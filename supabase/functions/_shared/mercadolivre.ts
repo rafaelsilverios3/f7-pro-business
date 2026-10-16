@@ -1,6 +1,29 @@
 export const MELI_API = 'https://api.mercadolibre.com';
 export const MELI_AUTH = 'https://auth.mercadolivre.com.br/authorization';
 
+// Official Mercado Livre notification source addresses published on
+// 2026-09-14. Refresh this allowlist whenever the official Notifications page
+// changes. The handler accepts only the edge-provided cf-connecting-ip value,
+// never caller-supplied forwarding chains.
+const MERCADOLIVRE_WEBHOOK_IPS = new Set([
+  '44.212.211.213', '52.1.149.176', '52.44.99.39', '52.2.210.204', '52.6.145.31', '54.205.100.116',
+  '184.73.213.131', '52.6.10.186', '52.73.233.211', '3.223.169.202', '34.206.9.12', '34.238.55.98',
+  '3.227.34.138', '3.229.206.80', '34.238.221.21', '13.223.211.78', '44.215.49.123', '54.159.49.50',
+  '13.223.10.233', '13.223.33.60', '3.93.112.28', '13.223.124.243', '3.233.174.68', '50.16.251.125',
+  '50.16.65.64', '54.81.195.49', '54.82.205.180', '3.94.30.241', '54.242.75.139', '98.82.195.215',
+  '34.196.28.113', '44.208.170.246', '52.23.122.60', '13.223.232.16', '13.223.236.125', '44.193.180.190',
+  '13.223.107.11', '3.219.157.78', '3.230.160.247', '13.223.154.1', '44.214.161.82', '54.196.88.69',
+  '100.24.130.185', '3.230.190.19', '35.172.55.95', '23.22.202.234', '3.95.35.84', '54.146.232.68',
+]);
+
+export function isOfficialMercadoLivreWebhookIp(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const ip = value.trim();
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return false;
+  if (ip.split('.').some((part) => Number(part) > 255)) return false;
+  return MERCADOLIVRE_WEBHOOK_IPS.has(ip);
+}
+
 export function canManageMarketplace(role: unknown, active: unknown): boolean {
   return active === true && ['admin', 'gestor', 'comercial'].includes(String(role || '').toLowerCase());
 }

@@ -21,7 +21,9 @@ export function mercadoLivreErrorMessage(error) {
   const messages = {
     MELI_SUPABASE_PROVIDER_REQUIRED: 'A conexão de marketplace requer o backend Supabase deste ambiente.',
     MELI_AUTHORIZATION_URL_INVALID: 'O servidor retornou um endereço OAuth inválido. A conexão foi interrompida.',
-    MELI_CONNECTOR_NOT_CONFIGURED: 'O aplicativo OAuth do Mercado Livre e a chave de criptografia ainda não foram configurados no servidor.',
+    MELI_CONNECTOR_NOT_CONFIGURED: 'A configuração necessária para conectar o Mercado Livre está incompleta no servidor.',
+    ENTITLEMENT_CHECK_FAILED: 'Não foi possível confirmar se o plano da empresa permite integrações com marketplaces. Tente novamente mais tarde.',
+    UNTRUSTED_NOTIFICATION_SOURCE: 'A notificação recebida não passou pela validação de origem.',
     MELI_CONNECTOR_CONFIG_INVALID: 'A URL de retorno do Mercado Livre não está configurada corretamente.',
     FEATURE_NOT_AVAILABLE: 'O plano atual da empresa não habilita integrações com marketplaces.',
     FORBIDDEN: 'Seu papel não permite esta operação de marketplace.',

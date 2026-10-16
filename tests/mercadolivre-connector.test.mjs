@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
-const migration = read('supabase/migrations/20261015231925_mercado_livre_connector_foundation.sql');
+const migration = read('supabase/migrations/20261015233622_mercado_livre_connector_foundation.sql');
+const entitlementMigration = read('supabase/migrations/0085_tenant_commercial_access_hardening.sql');
 const api = read('supabase/functions/mercadolivre-api/index.ts');
 const callback = read('supabase/functions/mercadolivre-callback/index.ts');
 const webhook = read('supabase/functions/mercadolivre-webhook/index.ts');
@@ -56,12 +57,20 @@ test('changing a connected seller immediately clears the previous seller data an
   assert.match(ui, /setListings\(\[\]\); setOrders\(\[\]\); setHistory\(\[\]\); setProducts\(\[\]\);[\s\S]*?refresh\(\);/);
 });
 
-test('API validates active company membership and Sales Hub roles server-side before account operations', () => {
+test('API validates active company membership, role, and centralized plan entitlement server-side', () => {
   assert.match(api, /authorizeMarketplace\(req, companyId/);
   const access = read('supabase/functions/_shared/mercadolivreAccess.ts');
   assert.match(access, /from\('company_users'\)/);
   assert.match(access, /member\?\.active !== true/);
   assert.match(access, /MANAGER_ROLES/);
+  assert.match(access, /company_has_feature_internal/);
+  assert.match(access, /marketplace_integrations/);
+  assert.match(access, /entitlement\.unavailable.*ENTITLEMENT_CHECK_FAILED/);
+  assert.match(entitlementMigration, /subscription_status in \('expired',\s*'cancelled',\s*'suspended',\s*'past_due'\)/);
+  assert.match(entitlementMigration, /plan_features/);
+  assert.match(entitlementMigration, /company_feature_overrides/);
+  assert.match(callback, /checkMarketplaceEntitlement\(sb, companyId\)/);
+  assert.match(webhook, /checkMarketplaceEntitlement\(sb, String\(match\.company_id\)\)/);
   assert.doesNotMatch(access, /service_role.*browser/i);
   assert.match(api, /eq\('company_id', companyId\)/);
 });
@@ -89,13 +98,24 @@ test('stock and price pushes require manager permission, explicit confirmation, 
   assert.match(ui, /idempotency_key: crypto\.randomUUID\(\)/);
 });
 
-test('webhook validates app/seller/topic, bounds input and queues only safe resource pointers', () => {
+test('webhook validates official source IP, app/seller/topic, provider event ID, and queues only safe pointers', () => {
   assert.match(webhook, /32_768/);
+  assert.match(webhook, /cf-connecting-ip/);
+  assert.match(webhook, /isOfficialMercadoLivreWebhookIp/);
   assert.match(webhook, /application_id/);
   assert.match(webhook, /eq\('seller_id', sellerId\)/);
+  assert.match(webhook, /providerId\)\) return json\(\{ code: 'ACCEPTED', accepted: false \}\)/);
+  assert.doesNotMatch(webhook, /const minute =|sent\) \|\| ''/);
+  assert.match(webhook, /deduplicated: true/);
   assert.match(webhook, /safeResourcePath/);
   assert.match(webhook, /meli_enqueue_notification/);
   assert.doesNotMatch(webhook, /from\('meli_orders'\)\.(insert|upsert)/);
+});
+
+test('connector configuration messaging reports only an aggregate incomplete state', () => {
+  assert.match(ui, /configuração necessária.*incompleta no servidor.*não informa quais itens estão ausentes/i);
+  assert.doesNotMatch(ui, /O backend confirmou que o aplicativo OAuth e a chave de criptografia/i);
+  assert.match(service, /A configuração necessária para conectar o Mercado Livre está incompleta no servidor/);
 });
 
 test('notification claims are isolated by company and connection with bounded retry count', () => {

@@ -85,7 +85,7 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
   React.useEffect(() => {
     const callback = new URLSearchParams(window.location.search).get('mercadolivre');
     if (!callback) return;
-    const labels = { connected: 'Conta conectada com sucesso.', authorization_failed: 'A autorização do Mercado Livre não foi concluída.', authorization_expired: 'A tentativa de conexão expirou. Inicie novamente.', access_revoked: 'A empresa ou o acesso mudou durante a autorização.', connector_not_configured: 'O servidor do conector ainda não tem as configurações necessárias.', identity_validation_failed: 'A conta autorizada não passou pela validação de identidade.', connection_failed: 'Não foi possível salvar a conexão. Consulte o histórico.' };
+    const labels = { connected: 'Conta conectada com sucesso.', authorization_failed: 'A autorização do Mercado Livre não foi concluída.', authorization_expired: 'A tentativa de conexão expirou. Inicie novamente.', access_revoked: 'A empresa ou o acesso mudou durante a autorização.', feature_not_available: 'O plano atual da empresa não habilita integrações com marketplaces.', connector_not_configured: 'A configuração necessária para conectar o Mercado Livre está incompleta no servidor.', identity_validation_failed: 'A conta autorizada não passou pela validação de identidade.', connection_failed: 'Não foi possível salvar a conexão. Consulte o histórico.' };
     setState((previous) => ({ ...previous, notice: labels[callback] || 'A autorização não foi concluída.' }));
     const next = new URL(window.location.href); next.searchParams.delete('mercadolivre');
     window.history.replaceState({}, '', `${next.pathname}${next.search}${next.hash}`);
@@ -173,7 +173,7 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
         }}>{state.connections.map((connection) => <option key={connection.id} value={connection.id}>Vendedor {connection.seller_id}</option>)}</select>
       </label>}
 
-      {!loading && !state.error && !state.configured && !selectedConnection && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">O backend confirmou que o aplicativo OAuth e a chave de criptografia ainda não estão configurados. Nenhuma conexão simulada foi criada.</div>}
+      {!loading && !state.error && !state.configured && !selectedConnection && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">A configuração necessária para conectar o Mercado Livre está incompleta no servidor. O sistema não informa quais itens estão ausentes. Nenhuma conexão simulada foi criada.</div>}
       {!loading && !selectedConnection && !state.error && state.configured && canManage && <Button className="mt-4" onClick={connect} disabled={Boolean(busy)}>{busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />} Conectar conta Mercado Livre</Button>}
       {!loading && !selectedConnection && !canManage && !state.error && <p className="mt-4 text-xs text-slate-500">Um administrador, gestor ou perfil comercial autorizado precisa conectar a conta.</p>}
 
