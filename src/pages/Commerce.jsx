@@ -1,10 +1,10 @@
 import React from 'react';
-import { ArrowUpRight, Boxes, CircleOff, Package, ShoppingCart, Store, Target, Truck } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Boxes, CircleOff, Package, RefreshCw, ShoppingCart, Store, Target, Truck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '@/components/layout/PageHeader';
-import { useAuth } from '@/lib/AuthContext';
 import { useCompany } from '@/lib/useCompany';
-import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { useCompanyMembership } from '@/hooks/useCompanyMembership';
+import { companyMembershipGateState } from '@/lib/companyMembershipGate';
 import { getVisibleCommerceWorkspaces } from '@/lib/commerceNavigation';
 import MercadoLivreConnector from '@/components/commerce/MercadoLivreConnector';
 
@@ -50,35 +50,10 @@ function MarketplaceReadinessCard({ name }) {
 }
 
 export default function Commerce() {
-  const { user } = useAuth();
   const { company } = useCompany();
-  const [memberRole, setMemberRole] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? '' : String(user?.role || '').toLowerCase());
-  const [roleCompanyId, setRoleCompanyId] = React.useState(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) {
-      setMemberRole(String(user?.role || '').toLowerCase());
-      setRoleCompanyId(company?.id || null);
-      return undefined;
-    }
-    setMemberRole('');
-    setRoleCompanyId(null);
-    getSupabaseClient()
-      .from('company_users')
-      .select('role')
-      .eq('company_id', company.id)
-      .eq('user_id', user.id)
-      .eq('active', true)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!cancelled) { setMemberRole(error ? '' : String(data?.role || '').toLowerCase()); setRoleCompanyId(company.id); }
-      })
-      .catch(() => { if (!cancelled) { setMemberRole(''); setRoleCompanyId(company.id); } });
-    return () => { cancelled = true; };
-  }, [company?.id, user?.id, user?.role]);
-
-  const currentMemberRole = roleCompanyId === company?.id ? memberRole : '';
+  const membership = useCompanyMembership(company?.id);
+  const membershipState = companyMembershipGateState(membership, company?.id);
+  const currentMemberRole = membershipState === 'active' ? membership.role : '';
   const visibleWorkspaces = getVisibleCommerceWorkspaces(currentMemberRole);
 
   return (
@@ -106,7 +81,10 @@ export default function Commerce() {
           </Link>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <MercadoLivreConnector memberRole={currentMemberRole} />
+          {membershipState === 'loading' ? <article role="status" className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Verificando vínculo e permissões da empresa…</article>
+            : membershipState === 'error' ? <article role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><span className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />Não foi possível verificar seu vínculo com a empresa. Nenhuma integração foi consultada.</span><button type="button" onClick={membership.refresh} className="inline-flex shrink-0 items-center gap-1 font-medium underline"><RefreshCw className="h-3.5 w-3.5" />Tentar novamente</button></article>
+              : membershipState === 'inactive' ? <article role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Não foi encontrado um vínculo ativo para esta empresa. Nenhuma integração foi consultada.</article>
+                : <MercadoLivreConnector memberRole={currentMemberRole} />}
           <MarketplaceReadinessCard name="Shopee" />
         </div>
         <p className="mt-3 text-xs text-slate-500">

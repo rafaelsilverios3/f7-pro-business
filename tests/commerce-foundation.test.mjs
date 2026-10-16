@@ -21,6 +21,11 @@ const navigationSource = fs.readFileSync(new URL('../src/lib/commerceNavigation.
 const navigationContext = { can: permissionContext.permissionExports.can };
 vm.runInNewContext(`${navigationSource}\nthis.navigationExports = { COMMERCE_WORKSPACES, getVisibleCommerceWorkspaces };`, navigationContext);
 const { COMMERCE_WORKSPACES, getVisibleCommerceWorkspaces } = navigationContext.navigationExports;
+const membershipGateSource = fs.readFileSync(new URL('../src/lib/companyMembershipGate.js', import.meta.url), 'utf8')
+  .replace(/\bexport\s+(?=function\s)/g, '');
+const membershipGateContext = {};
+vm.runInNewContext(`${membershipGateSource}\nthis.membershipGateExports = { companyMembershipGateState };`, membershipGateContext);
+const { companyMembershipGateState } = membershipGateContext.membershipGateExports;
 
 test('F7 Commerce is an authenticated central using the existing sales-channel permission', () => {
   assert.match(app, /path="\/f7-commerce" element=\{<RoleGuard permission="sales_channels\.view"><Commerce \/><\/RoleGuard>\}/);
@@ -38,7 +43,25 @@ test('commerce overview points to existing modules and connects Mercado Livre th
   assert.match(meliConnector, /mercadoLivreAction\(companyId, 'status'\)/);
   assert.match(meliService, /invokeEdgeFunction\('mercadolivre-api'/);
   assert.doesNotMatch(meliConnector, /mock|fixture|simulat/i);
-  assert.match(page, /from\('company_users'\)/);
+  assert.match(page, /useCompanyMembership\(company\?\.id\)/);
+  assert.doesNotMatch(page, /from\('company_users'\)/);
+});
+
+test('membership state keeps pending, stale tenant, query errors, and inactive links distinct', () => {
+  assert.equal(companyMembershipGateState({ loading: true }, 'company-a'), 'loading');
+  assert.equal(companyMembershipGateState({ loading: false, companyId: 'company-b', active: true, role: 'admin' }, 'company-a'), 'loading');
+  assert.equal(companyMembershipGateState({ loading: false, companyId: 'company-a', error: new Error('query failed') }, 'company-a'), 'error');
+  assert.equal(companyMembershipGateState({ loading: false, companyId: 'company-a', active: false, role: '' }, 'company-a'), 'inactive');
+  assert.equal(companyMembershipGateState({ loading: false, companyId: 'company-a', active: true, role: 'admin' }, 'company-a'), 'active');
+});
+
+test('Commerce waits for the active company membership before mounting the marketplace connector', () => {
+  assert.match(page, /membershipState === 'loading'[\s\S]*Verificando vínculo e permissões/);
+  assert.match(page, /membershipState === 'error'[\s\S]*Nenhuma integração foi consultada/);
+  assert.match(page, /membership\.refresh/);
+  assert.match(page, /membershipState === 'active'[\s\S]*<MercadoLivreConnector memberRole=\{currentMemberRole\}/);
+  assert.match(app, /companyMembershipGateState\(membership, company\?\.id\)/);
+  assert.match(app, /membershipState === 'error'[\s\S]*Nenhum acesso foi liberado/);
 });
 
 test('commerce links are filtered using the same permissions as their guarded destination routes', () => {

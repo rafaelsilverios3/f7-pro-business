@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -11,6 +11,8 @@ const EMPTY_MEMBERSHIP = { role: '', active: false, loading: true, error: null, 
 export function useCompanyMembership(companyId) {
   const { user } = useAuth();
   const [membership, setMembership] = useState(EMPTY_MEMBERSHIP);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const refresh = useCallback(() => setReloadVersion((version) => version + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,8 +55,8 @@ export function useCompanyMembership(companyId) {
       });
 
     return () => { cancelled = true; };
-  }, [companyId, user?.id, user?.role]);
+  }, [companyId, user?.id, user?.role, reloadVersion]);
 
-  return membership;
+  return { ...membership, refresh };
 }
 
