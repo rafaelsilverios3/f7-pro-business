@@ -1,5 +1,6 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
 import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -41,9 +42,12 @@ export async function handleBillingSubscriptionManageRequest(req: Request, depen
     if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
     const providerToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
     const livePaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
-    if (environment === 'test' && !providerToken.startsWith('TEST-')) return json({ code: 'MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED' }, 409);
-    if (environment === 'production' && (!livePaymentsEnabled || !providerToken.startsWith('APP_USR-'))) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
+    if (environment === 'production' && !livePaymentsEnabled) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
     if (!['test', 'production'].includes(environment) || !providerToken) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409);
+    const credentialCheck = await verifyMercadoPagoCredentialEnvironment(providerToken, environment as 'test' | 'production', providerFetch);
+    if (credentialCheck !== 'verified') {
+      return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialCheck === 'unavailable' ? 503 : 409);
+    }
 
     const controlToken = crypto.randomUUID();
     const claimed = await sb.rpc('claim_billing_subscription_control', {

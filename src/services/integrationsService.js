@@ -71,7 +71,13 @@ export async function invokeEdgeFunction(functionName, body, options = {}) {
   if (!supabaseUrl || !publicKey) throw new Error('Supabase não configurado.');
 
   const method = options.method || 'POST';
-  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${functionName}`, {
+  const endpoint = new URL(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/${functionName}`);
+  if (method === 'GET' && options.query && typeof options.query === 'object') {
+    for (const [key, value] of Object.entries(options.query)) {
+      if (typeof value === 'string' && value.length > 0) endpoint.searchParams.set(key, value);
+    }
+  }
+  const response = await fetch(endpoint, {
     method,
     headers: {
       Authorization: `Bearer ${session.access_token}`,
@@ -126,7 +132,7 @@ function createIntegrationError(rawDetail, httpStatus) {
     MERCADO_PAGO_NOT_CONFIGURED: 'O checkout ainda não está disponível: o provedor de pagamentos não foi configurado.',
     CARD_TOKEN_REQUIRED: 'O token seguro do cartão não foi recebido. Confira os dados no formulário do Mercado Pago.',
     MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED: 'O ambiente de pagamentos ainda não foi configurado.',
-    MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED: 'O checkout está protegido: este ambiente exige credenciais de sandbox.',
+    MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED: 'Não foi possível confirmar que a credencial corresponde ao ambiente configurado. O checkout permanece bloqueado; confira as credenciais de teste no painel do Mercado Pago.',
     MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED: 'O checkout está bloqueado até a configuração do webhook seguro.',
     PRODUCTION_PAYMENTS_DISABLED: 'Pagamentos reais estão desativados neste ambiente.',
     CARD_CHECKOUT_REQUIRES_TOKENIZATION: 'O checkout seguro de cartão ainda não está configurado neste ambiente.',

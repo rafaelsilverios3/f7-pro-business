@@ -162,6 +162,9 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
   const providerFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     calls.push({ method: init?.method || "GET", path: url.pathname });
+    if (url.origin === "https://api.mercadolibre.com" && url.pathname === "/users/me") {
+      return Response.json({ id: 987654321, site_id: "MLB", tags: ["test_user"] });
+    }
     if (url.origin !== "https://api.mercadopago.com") {
       throw new Error("Unexpected provider host in local test.");
     }
@@ -236,7 +239,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
     Deno.env.set("MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED", "false");
     Deno.env.set(
       "MERCADO_PAGO_ACCESS_TOKEN",
-      "TEST-local-only-recurring-provider-token",
+      "APP_USR-local-only-recurring-test-token",
     );
     Deno.env.set("MERCADO_PAGO_WEBHOOK_SECRET", webhookSecret);
 

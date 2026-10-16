@@ -72,7 +72,7 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
   const webhookSecret = 'local-only-webhook-secret';
   Deno.env.set('MERCADO_PAGO_ENVIRONMENT', 'test');
   Deno.env.set('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'false');
-  Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'TEST-local-only-provider-token');
+  Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'APP_USR-local-only-test-token');
   Deno.env.set('MERCADO_PAGO_WEBHOOK_SECRET', webhookSecret);
   let ownerA: Awaited<ReturnType<typeof makeUser>> | undefined;
   let ownerB: Awaited<ReturnType<typeof makeUser>> | undefined;
@@ -90,6 +90,10 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
   const providerFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     providerCalls.push({ method: init?.method || 'GET', endpoint: `${url.origin}${url.pathname}`, idempotency: new Headers(init?.headers).get('X-Idempotency-Key') });
+    if (url.origin === 'https://api.mercadolibre.com' && url.pathname === '/users/me') {
+      const token = new Headers(init?.headers).get('Authorization') || '';
+      return Response.json({ id: 987654321, site_id: 'MLB', tags: token.includes('must-not-run-in-test') ? ['normal'] : ['test_user'] });
+    }
     if (url.origin !== 'https://api.mercadopago.com') throw new Error('unexpected provider host');
     if (init?.method === 'POST' && url.pathname === '/v1/orders') {
       const idempotency = new Headers(init.headers).get('X-Idempotency-Key') || '';
@@ -127,13 +131,14 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
     assert(invalidMethodResponse.status === 422 && (await invalidMethodResponse.json()).code === 'INVALID_PAYMENT_METHOD' && providerCalls.length === invalidMethodProviderCalls, 'unknown payment method was silently converted to PIX');
 
     const providerCallsBeforeWrongCredentialMode = providerCalls.length;
+    const providerOrderCreatesBeforeWrongCredentialMode = providerOrderCreates;
     const beforeWrongModeCheckouts = await admin.from('billing_checkout_sessions').select('id', { count: 'exact', head: true }).eq('company_id', ownerA.companyId);
     Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'APP_USR-local-only-must-not-run-in-test');
     const wrongCredentialMode = await handleBillingCheckoutRequest(checkoutRequest(ownerA.jwt, ownerA.companyId), { adminClient: admin, providerFetch });
-    assert(wrongCredentialMode.status === 409 && (await wrongCredentialMode.json()).code === 'MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED', 'live-format credential was accepted in test environment');
+    assert(wrongCredentialMode.status === 409 && (await wrongCredentialMode.json()).code === 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED', 'production identity was accepted in test environment');
     const afterWrongModeCheckouts = await admin.from('billing_checkout_sessions').select('id', { count: 'exact', head: true }).eq('company_id', ownerA.companyId);
-    assert(providerCalls.length === providerCallsBeforeWrongCredentialMode && beforeWrongModeCheckouts.count === afterWrongModeCheckouts.count, 'credential mode mismatch reached provider or persisted a checkout');
-    Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'TEST-local-only-provider-token');
+    assert(providerCalls.length === providerCallsBeforeWrongCredentialMode + 1 && providerOrderCreates === providerOrderCreatesBeforeWrongCredentialMode && beforeWrongModeCheckouts.count === afterWrongModeCheckouts.count, 'credential mode mismatch passed identity verification or persisted a checkout');
+    Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'APP_USR-local-only-test-token');
 
     const forbiddenSettlement = await ownerA.client.rpc('settle_billing_webhook_event', {
       p_event_id: crypto.randomUUID(), p_processing_token: 'not-a-settlement-token',
@@ -163,7 +168,7 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
     const blockedNoToken = await handleBillingCheckoutRequest(checkoutRequest(ownerB.jwt, ownerB.companyId), { adminClient: admin, providerFetch });
     assert(blockedNoToken.status === 409 && (await blockedNoToken.json()).code === 'MERCADO_PAGO_NOT_CONFIGURED', 'missing payment credentials did not fail closed');
     assert(providerCalls.length === noTokenBefore, 'checkout contacted the provider without a configured credential');
-    Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'TEST-local-only-provider-token');
+    Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'APP_USR-local-only-test-token');
 
     const checkoutId = String(checkoutBody.checkout.id);
     const persistedPayment = await admin.from('billing_payments').select('id,status,metadata').eq('provider_payment_id', paymentId).maybeSingle();

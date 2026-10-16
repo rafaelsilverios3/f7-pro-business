@@ -32,7 +32,7 @@ export const billingService = {
   manageSubscription: (companyId, subscriptionId, action) => invokeEdgeFunction('billing-subscription-manage', {
     company_id: companyId, subscription_id: subscriptionId, action,
   }),
-  health: () => invokeEdgeFunction('billing-health', null, { method: 'GET' }),
+  health: (companyId) => invokeEdgeFunction('billing-health', null, { method: 'GET', query: { company_id: companyId } }),
 };
 
 export { FALLBACK_PLANS };

@@ -9,6 +9,9 @@ enabled = true
 [functions.billing-webhook]
 verify_jwt = false
 
+[functions.billing-health]
+verify_jwt = true
+
 [functions.billing-subscription-manage]
 verify_jwt = true
 

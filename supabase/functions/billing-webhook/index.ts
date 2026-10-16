@@ -1,5 +1,6 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
 import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeProviderLabel = (value: unknown) => {
@@ -99,9 +100,12 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   const providerToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
   const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
   if (!['test', 'production'].includes(environment) || !providerToken) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);
-  if (environment === 'test' && !providerToken.startsWith('TEST-')) return json({ code: 'MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED' }, 503);
-  if (environment === 'production' && (!productionPaymentsEnabled || !providerToken.startsWith('APP_USR-'))) return json({ code: 'MERCADO_PAGO_PRODUCTION_DISABLED' }, 503);
+  if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'MERCADO_PAGO_PRODUCTION_DISABLED' }, 503);
   if (typeof body?.live_mode !== 'boolean' || body.live_mode !== (environment === 'production')) return json({ code: 'WEBHOOK_MODE_MISMATCH' }, 409);
+  const credentialCheck = await verifyMercadoPagoCredentialEnvironment(providerToken, environment as 'test' | 'production', providerFetch);
+  if (credentialCheck !== 'verified') {
+    return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialCheck === 'unavailable' ? 503 : 409);
+  }
   const eventId = clean(body?.id || body?.data?.id);
   const type = clean(body?.type || body?.action, 80);
   const resourceId = clean(signature.dataId || body?.data?.object_id);

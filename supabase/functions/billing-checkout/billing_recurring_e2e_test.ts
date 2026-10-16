@@ -55,7 +55,7 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
   const secret = 'local-recurring-webhook-secret';
   Deno.env.set('MERCADO_PAGO_ENVIRONMENT', 'test');
   Deno.env.set('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'false');
-  Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'TEST-local-only-recurring-token');
+  Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'APP_USR-local-only-recurring-test-token');
   Deno.env.set('MERCADO_PAGO_WEBHOOK_SECRET', secret);
   let owner: Awaited<ReturnType<typeof makeOwner>> | undefined;
   const nonce = crypto.randomUUID().replaceAll('-', '');
@@ -71,6 +71,9 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
   const calls: string[] = [];
   const providerFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input)); calls.push(`${init?.method || 'GET'} ${url.pathname}`);
+    if (url.origin === 'https://api.mercadolibre.com' && url.pathname === '/users/me') {
+      return Response.json({ id: 987654321, site_id: 'MLB', tags: ['test_user'] });
+    }
     if (url.origin !== 'https://api.mercadopago.com') throw new Error('unexpected provider host');
     if (url.pathname === '/preapproval' && init?.method === 'POST') {
       providerPostCount += 1;

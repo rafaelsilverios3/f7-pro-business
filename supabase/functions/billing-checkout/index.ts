@@ -1,5 +1,6 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
 import { blocksLiveBillingInHomologation, blocksRecurringCardInHomologation } from '../_shared/billingEnvironment.ts';
+import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -51,8 +52,10 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     // card flow must not leave an orphan `created` session behind.
     const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
     if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409);
-    if (environment === 'test' && !token.startsWith('TEST-')) return json({ code: 'MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED' }, 409);
-    if (environment === 'production' && !token.startsWith('APP_USR-')) return json({ code: 'MERCADO_PAGO_LIVE_CREDENTIALS_REQUIRED' }, 409);
+    const credentialCheck = await verifyMercadoPagoCredentialEnvironment(token, environment as 'test' | 'production', providerFetch);
+    if (credentialCheck !== 'verified') {
+      return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialCheck === 'unavailable' ? 503 : 409);
+    }
     const accountEmail = typeof userData.user.email === 'string' ? userData.user.email.trim().toLowerCase() : '';
     if (environment === 'production' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) return json({ code: 'PAYER_EMAIL_REQUIRED' }, 409);
     const cardTokenId = typeof body?.card_token_id === 'string' ? body.card_token_id.trim() : '';
@@ -72,7 +75,9 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     const idempotency = `f7-order-${checkout.id}`;
     const isTest = environment === 'test';
     const amount = (Number(checkout.amount_minor) / 100).toFixed(2);
-    const payer = isTest ? { email: 'test_user_br@testuser.com', first_name: 'APRO' } : { email: accountEmail };
+    // Orders API test flows require the documented generic test payer email;
+    // the older Payments API test-user pattern is not valid for Orders.
+    const payer = isTest ? { email: 'test@testuser.com', first_name: 'APRO' } : { email: accountEmail };
     if (method === 'card') {
       const subscriptionBody = {
         reason: `F7 Business ${plan.name}`,

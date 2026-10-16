@@ -26,6 +26,7 @@ const intelligenceEdge = fs.readFileSync('supabase/functions/intelligence-query/
 const supplierEdge = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
 const automationEdge = fs.readFileSync('supabase/functions/automation-worker/index.ts', 'utf8');
 const billingHealth = fs.readFileSync('supabase/functions/billing-health/index.ts', 'utf8');
+const integrationsService = fs.readFileSync('src/services/integrationsService.js', 'utf8');
 const radarService = fs.readFileSync('src/services/opportunityRadarService.js', 'utf8');
 const subscriptionService = fs.readFileSync('src/services/subscriptionService.js', 'utf8');
 const supabaseConfig = fs.readFileSync('supabase/config.toml', 'utf8');
@@ -71,8 +72,8 @@ test('checkout resolves amount from the active plan and keeps provider secrets s
   assert.match(checkout, /X-Idempotency-Key/);
   assert.match(checkout, /INVALID_PAYMENT_METHOD/);
   assert.match(checkout, /v1\/orders/);
-  assert.match(checkout, /environment === 'test' && !token\.startsWith\('TEST-'\)/);
-  assert.match(checkout, /environment === 'production' && !token\.startsWith\('APP_USR-'\)/);
+  assert.match(checkout, /verifyMercadoPagoCredentialEnvironment\(token, environment as 'test' \| 'production', providerFetch\)/);
+  assert.doesNotMatch(checkout, /token\.startsWith\(['\"](?:TEST-|APP_USR-)/);
   assert.match(checkout, /processing_mode: 'automatic'/);
   assert.match(checkout, /payment_method: \{ id: 'pix', type: 'bank_transfer' \}/);
   assert.doesNotMatch(service + page, /MERCADO_PAGO_ACCESS_TOKEN|WEBHOOK_SECRET/);
@@ -142,7 +143,7 @@ test('recurring subscription controls are tenant scoped, authenticated and expli
 
 test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remains mandatory', () => {
   assert.match(supabaseConfig, /\[functions\.billing-webhook\][\s\S]*verify_jwt\s*=\s*false/);
-  assert.doesNotMatch(supabaseConfig, /\[functions\.(billing-checkout|billing-health)\][\s\S]*verify_jwt\s*=\s*false/);
+  assert.doesNotMatch(supabaseConfig, /^\[functions\.(billing-checkout|billing-health)\]\r?\nverify_jwt\s*=\s*false$/m);
   assert.match(webhook, /req\.headers\.get\('x-signature'\)/);
   assert.match(webhook, /req\.headers\.get\('x-request-id'\)/);
   assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
@@ -155,7 +156,8 @@ test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remai
   assert.match(webhook, /received_digest_length/);
   assert.match(webhook, /v1\/orders/);
   assert.match(webhook, /body\.live_mode !== \(environment === 'production'\)/);
-  assert.match(webhook, /providerToken\.startsWith\('TEST-'\)/);
+  assert.match(webhook, /verifyMercadoPagoCredentialEnvironment\(providerToken, environment as 'test' \| 'production', providerFetch\)/);
+  assert.doesNotMatch(webhook, /providerToken\.startsWith\(['\"](?:TEST-|APP_USR-)/);
 });
 
 test('billing webhook validates Mercado Pago timestamps in Unix seconds and fails closed', () => {
@@ -217,9 +219,10 @@ test('Orders activation is tenant, checkout, money and idempotency safe', () => 
   assert.match(atomicBillingMigration, /event_row\.metadata->>'processing_token' is distinct from p_processing_token/);
 });
 
-test('Orders PIX test contract uses the official deterministic payer without exposing secrets', () => {
-  assert.match(checkout, /test_user_br@testuser\.com/);
+test('Orders PIX uses the documented Orders test payer data and never exposes secrets', () => {
+  assert.match(checkout, /test@testuser\.com/);
   assert.match(checkout, /first_name: 'APRO'/);
+  assert.doesNotMatch(checkout, /test_user_br@testuser\.com/);
   assert.match(checkout, /BILLING_PROVIDER_REQUEST_FAILED/);
   assert.match(checkout, /request_id_present: Boolean\(details\.request_id_present\)/);
   assert.match(checkout, /database_code:/);
@@ -381,14 +384,14 @@ test('checkout reuses open intent and webhook validates money before activation'
   assert.match(atomicBillingMigration, /PAYMENT_REFERENCE_MISMATCH/);
 });
 
-test('billing health never returns provider secrets and radar is gated server-side', () => {
-  assert.match(billingHealth, /access_token_configured/);
-  assert.match(billingHealth, /users\/me/);
-  assert.match(billingHealth, /environment_confirmed/);
-  assert.match(billingHealth, /credential_environment/);
+test('billing health requires tenant-scoped role authorization and only returns sanitized status', () => {
+  assert.match(billingHealth, /company_id/);
+  assert.match(billingHealth, /company_users/);
+  assert.match(billingHealth, /!member\?\.active \|\| !\['admin', 'gestor'\]\.includes\(member\.role\)/);
   assert.match(billingHealth, /MERCADO_PAGO_ENVIRONMENT/);
-  assert.match(billingHealth, /configured_environment/);
-  assert.match(billingHealth, /pix_allowed/);
+  assert.match(billingHealth, /safeHealthResponse/);
+  assert.match(billingHealth, /card_enabled: false/);
+  assert.doesNotMatch(billingHealth, /provider_user_id|provider_site_id|environment_evidence|credentials_configured|access_token_configured/);
   assert.match(checkout, /MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED/);
   assert.match(checkout, /PRODUCTION_PAYMENTS_DISABLED/);
   assert.match(checkout, /MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED/);
@@ -410,13 +413,12 @@ test('production billing is server-controlled and fail-closed without creating a
   assert.doesNotMatch(checkout, /import\.meta\.env|localStorage.*MERCADO_PAGO|window\..*MERCADO_PAGO/);
 });
 
-test('billing health reports production readiness without enabling payments by default', () => {
-  for (const field of ['configured_environment', 'provider_reachable', 'credentials_configured', 'webhook_secret_configured', 'payments_enabled', 'production_payments_enabled']) {
-    assert.match(billingHealth, new RegExp(`${field}:`));
-  }
-  assert.match(billingHealth, /productionReady/);
-  assert.match(billingHealth, /const environmentConfirmed = configuredEnvironment === 'test' \? sandboxAllowed : productionReady/);
-  assert.match(billingHealth, /configuredEnvironment === 'test' \? sandboxAllowed : productionReady && productionPaymentsEnabled/);
+test('billing health explicitly requires JWT verification in Supabase config', () => {
+  assert.match(fs.readFileSync('supabase/config.toml', 'utf8'), /\[functions\.billing-health\]\s+verify_jwt = true/);
+  assert.match(billingHealth, /auth\.getUser\(jwt\)/);
+  assert.match(billingHealth, /blocksLiveBillingInHomologation/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_ACCESS_TOKEN/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_WEBHOOK_SECRET/);
+  assert.match(service, /health: \(companyId\) => invokeEdgeFunction\('billing-health', null, \{ method: 'GET', query: \{ company_id: companyId \} \}\)/);
+  assert.match(integrationsService, /endpoint\.searchParams\.set\(key, value\)/);
 });
