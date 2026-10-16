@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateAiRateCard, validateAiRateCardEnabled, validateCompanyAiBudget, SUPPORTED_AI_CURRENCIES } from '../supabase/functions/_shared/platformAiFinancialPolicy.js';
 
-const migration = fs.readFileSync('supabase/migrations/20261016170000_platform_ai_financial_admin_controls.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/20261016232326_20261016170000_platform_ai_financial_admin_controls.sql', 'utf8');
 const budgetMigration = fs.readFileSync('supabase/migrations/20261014234651_ai_budget_reservations_and_settlement.sql', 'utf8');
 const edge = fs.readFileSync('supabase/functions/platform-admin/index.ts', 'utf8');
 const ui = fs.readFileSync('src/components/platform-admin/AiFinancialControls.jsx', 'utf8');
