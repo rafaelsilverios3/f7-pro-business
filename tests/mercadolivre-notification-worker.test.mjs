@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { processMeliNotificationBatch } from '../supabase/functions/_shared/mercadolivreQueuePolicy.js';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
-const migration = read('supabase/migrations/20261017090000_mercado_livre_notification_worker.sql');
+const migration = read('supabase/migrations/20261017012312_mercado_livre_notification_worker.sql');
 const webhook = read('supabase/functions/mercadolivre-webhook/index.ts');
 const worker = read('supabase/functions/mercadolivre-notification-worker/index.ts');
 const api = read('supabase/functions/mercadolivre-api/index.ts');

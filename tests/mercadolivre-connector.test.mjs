@@ -125,7 +125,7 @@ test('connector configuration messaging reports only an aggregate incomplete sta
 });
 
 test('notification claims are isolated by company and connection with bounded retry count', () => {
-  const workerMigration = read('supabase/migrations/20261017090000_mercado_livre_notification_worker.sql');
+  const workerMigration = read('supabase/migrations/20261017012312_mercado_livre_notification_worker.sql');
   assert.match(workerMigration, /meli_claim_notification_batch/);
   assert.match(workerMigration, /event\.company_id = p_company_id/);
   assert.match(workerMigration, /event\.connection_id = p_connection_id/);
