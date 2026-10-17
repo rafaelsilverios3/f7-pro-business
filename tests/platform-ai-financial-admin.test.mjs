@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import { validateAiRateCard, validateAiRateCardEnabled, validateCompanyAiBudget, SUPPORTED_AI_CURRENCIES } from '../supabase/functions/_shared/platformAiFinancialPolicy.js';
 
 const migration = fs.readFileSync('supabase/migrations/20261016232326_20261016170000_platform_ai_financial_admin_controls.sql', 'utf8');
+const lifecycleMigration = fs.readFileSync('supabase/migrations/20261016233851_platform_admin_temporary_expiry.sql', 'utf8');
 const budgetMigration = fs.readFileSync('supabase/migrations/20261014234651_ai_budget_reservations_and_settlement.sql', 'utf8');
 const edge = fs.readFileSync('supabase/functions/platform-admin/index.ts', 'utf8');
+const accessPolicy = fs.readFileSync('supabase/functions/_shared/platformAdminAccess.js', 'utf8');
 const ui = fs.readFileSync('src/components/platform-admin/AiFinancialControls.jsx', 'utf8');
 const service = fs.readFileSync('src/services/platformAdminService.js', 'utf8');
 
@@ -54,6 +56,8 @@ test('database keeps AI pricing and reservation ledger private and exposes only 
   assert.match(migration, /grant execute on function public\.platform_admin_ai_list_rate_cards\(\) to authenticated/i);
   assert.match(migration, /pg_advisory_xact_lock\(hashtextextended\(target_company::text \|\| ':' \|\| current_date::text \|\| ':ai-budget-v2', 0\)\)/);
   assert.match(migration, /platform_admin_audit_logs\([\s\S]*company\.ai_financial_budget\.changed/);
+  assert.match(lifecycleMigration, /platform_admin_ai_assert_financial_admin\(\)[\s\S]*pa\.role = 'owner'/i);
+  assert.match(lifecycleMigration, /platform_admin_ai_assert_financial_reader\(\)[\s\S]*pa\.role in \('owner','admin','support','readonly'\)/i);
   assert.match(budgetMigration, /ai_rate_cards_prevent_repricing/);
   assert.match(migration, /AI_FINANCIAL_RATE_OVERLAP/);
   assert.equal((migration.match(/target_currency not in \('BRL','EUR','USD'\)/g) || []).length, 2);
@@ -61,7 +65,7 @@ test('database keeps AI pricing and reservation ledger private and exposes only 
 });
 
 test('Edge financial actions use caller JWT RPCs and exclude limits from generic settings updates', () => {
-  assert.match(edge, /AI_FINANCIAL_ACTIONS[\s\S]*ai_financial_budget/);
+  assert.match(accessPolicy, /AI_FINANCIAL_ACTIONS[\s\S]*ai_financial_budget/);
   assert.match(edge, /userClient\(jwt\)/);
   assert.match(edge, /platform_admin_ai_set_company_budget/);
   assert.match(edge, /platform_admin_ai_create_rate_card/);
@@ -85,7 +89,7 @@ test('admin UI exposes bounded tariff, company budget, pause, and sanitized rese
   assert.match(ui, /const aiCurrencies = \['BRL', 'USD', 'EUR'\]/);
   assert.match(ui, /Buscar empresa por nome ou identificador/);
   assert.match(ui, /platformAdminService\.companies\(\{ search: query, page: 1, page_size: 100 \}\)/);
-  assert.match(ui, /const loadUsage = useCallback\(async \(\) => \{ if \(!canManage\) return;/);
+  assert.match(ui, /const loadUsage = useCallback\(async \(\) => \{ if \(!canRead\) return;/);
   assert.match(ui, /const budgetSettings = usage\.budget/);
   assert.doesNotMatch(ui, /data\?\.rows \|\| \[\]/);
 });

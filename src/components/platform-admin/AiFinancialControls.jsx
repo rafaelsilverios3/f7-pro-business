@@ -19,8 +19,9 @@ function SelectField({ label, children, ...props }) {
   return <label className="block text-xs font-medium text-slate-600">{label}<select className={fieldClass} {...props}>{children}</select></label>;
 }
 
-export function GlobalAiFinancialAdmin({ companies = [], onSelect, canManage }) {
+export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
   const [cards, setCards] = useState([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [busy, setBusy] = useState(false);
   const [companyQuery, setCompanyQuery] = useState('');
   const [searchedCompanies, setSearchedCompanies] = useState(null);
@@ -31,11 +32,11 @@ export function GlobalAiFinancialAdmin({ companies = [], onSelect, canManage }) 
   const [form, setForm] = useState({ rate_kind: 'model_tokens', provider_key: 'https://api.openai.com', model_key: '', rate_version: '', currency: '', input_cost_per_1k: '', output_cost_per_1k: '', cost_per_query: '', source_reference: '', effective_from: new Date(Date.now() + 60_000).toISOString().slice(0, 16), enabled: false, reason: '' });
   const isModel = form.rate_kind === 'model_tokens';
   const load = useCallback(async () => {
-    if (!canManage) return;
+    if (!canRead) return;
     setError('');
     try { const result = await platformAdminService.aiRateCards(); setCards(result.rows || []); }
     catch (cause) { setError(cause.message || 'Não foi possível carregar as tarifas administrativas.'); }
-  }, [canManage]);
+  }, [canRead]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     const query = companyQuery.trim();
@@ -86,12 +87,13 @@ export function GlobalAiFinancialAdmin({ companies = [], onSelect, canManage }) 
     finally { setBusy(false); }
   };
   const companyRows = searchedCompanies ?? companies;
+  if (!canRead) return <Notice>Leitura financeira de IA não está disponível para este papel.</Notice>;
   return <div className="space-y-5">
     <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
       <div><h3 className="font-semibold text-slate-900">Tarifas de IA</h3><p className="mt-1 text-xs text-slate-500">O catálogo é privado. Cadastre a origem HTTPS exata do provedor usada pelo runtime e o nome exato do modelo configurado fora deste painel. Cada tarifa exige fonte pública, versão, moeda e aprovação; reajustes criam nova versão.</p></div>
       {error && <Notice tone="red">{error}</Notice>}{message && <Notice tone="green">{message}</Notice>}
-      {!canManage && <Notice>Leitura e alterações financeiras estão disponíveis apenas para administradores globais com papel admin ou owner.</Notice>}
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-3">
+      {!canManage && <Notice>Modo somente leitura. Apenas o owner global pode cadastrar ou habilitar tarifas.</Notice>}
+      {canManage && <form onSubmit={submit} className="grid gap-3 md:grid-cols-3">
         <SelectField label="Tipo de tarifa" value={form.rate_kind} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, rate_kind: event.target.value })}><option value="model_tokens">Tokens de modelo</option><option value="external_query">Consulta externa</option></SelectField>
         <Field label="Origem do provedor (sem caminho ou segredo)" value={form.provider_key} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, provider_key: event.target.value })} placeholder="https://api.openai.com" />
         {isModel && <Field label="Modelo exato" value={form.model_key} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, model_key: event.target.value })} placeholder="Identificador do modelo" />}
@@ -103,14 +105,14 @@ export function GlobalAiFinancialAdmin({ companies = [], onSelect, canManage }) 
         <Field label="Justificativa de auditoria" value={form.reason} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Não inclua dados sensíveis" maxLength={500} />
         <label className="flex items-center gap-2 self-end rounded-lg border border-slate-200 p-3 text-xs text-slate-700"><input type="checkbox" checked={form.enabled} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />Habilitar para reservas quando entrar em vigor</label>
         <button className={`${buttonClass} self-end`} disabled={!canManage || busy}>{busy ? 'Salvando…' : 'Registrar tarifa imutável'}</button>
-      </form>
+      </form>}
       <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Provedor / modelo', 'Versão', 'Moeda', 'Entrada / saída por 1k', 'Estado / vigência', 'Fonte', ''].map((label) => <th key={label} className="px-3 py-2">{label}</th>)}</tr></thead><tbody>{cards.map((card) => <tr key={card.id} className="border-t border-slate-100"><td className="px-3 py-2">{card.provider_key}<br />{card.model_key || 'Consulta externa'}</td><td className="px-3 py-2">{card.rate_version}</td><td className="px-3 py-2">{card.currency}</td><td className="px-3 py-2">{card.rate_kind === 'model_tokens' ? `${money(card.input_cost_per_1k, card.currency)} / ${money(card.output_cost_per_1k, card.currency)}` : money(card.cost_per_query, card.currency)}</td><td className="px-3 py-2">{card.enabled ? 'Ativa' : 'Desativada'}<br />{dt(card.effective_from)}</td><td className="max-w-48 truncate px-3 py-2"><a href={card.source_reference} target="_blank" rel="noreferrer" className="text-blue-600">Fonte</a></td><td className="px-3 py-2"><button type="button" disabled={!canManage || busy} onClick={() => toggle(card)} className="font-semibold text-blue-700 disabled:opacity-50">{card.enabled ? 'Desabilitar' : 'Habilitar'}</button></td></tr>)}</tbody></table>{!cards.length && <p className="p-6 text-center text-sm text-slate-500">Nenhuma tarifa configurada.</p>}</div>
     </section>
-    <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h3 className="font-semibold">Controles por empresa</h3><p className="text-xs text-slate-500">Orçamentos e consumo são carregados somente no detalhe protegido de cada empresa. Nenhum valor é ativado automaticamente por plano.</p><label className="block max-w-lg text-xs font-medium text-slate-600">Buscar empresa por nome ou identificador<input aria-label="Buscar empresa por nome ou identificador" value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} className={fieldClass} placeholder="Digite para pesquisar todas as empresas" /></label>{companyLookupBusy && <p role="status" className="text-xs text-slate-500">Buscando empresas…</p>}{companyLookupError && <Notice tone="red">{companyLookupError}</Notice>}{!companyQuery.trim() && <p className="text-xs text-slate-500">A lista inicial contém as empresas recentes. Use a busca para localizar outras empresas.</p>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-xs text-slate-500"><th className="px-3 py-2">Empresa</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{companyRows.map((row) => <tr key={row.id} className="border-t border-slate-100"><td className="px-3 py-2">{row.name || row.company_name || row.id}</td><td className="px-3 py-2"><button type="button" onClick={() => onSelect(row.id)} className="font-semibold text-blue-700">Abrir controles protegidos</button></td></tr>)}</tbody></table>{!companyRows.length && <p className="p-5 text-center text-sm text-slate-500">Sem empresas retornadas.</p>}</div></section>
+    <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h3 className="font-semibold">Controles por empresa</h3><p className="text-xs text-slate-500">Orçamentos e consumo são carregados com autorização server-side. Nenhum valor é ativado automaticamente por plano.</p><label className="block max-w-lg text-xs font-medium text-slate-600">Buscar empresa por nome ou identificador<input aria-label="Buscar empresa por nome ou identificador" value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} className={fieldClass} placeholder="Digite para pesquisar empresas" /></label>{companyLookupBusy && <p role="status" className="text-xs text-slate-500">Buscando empresas…</p>}{companyLookupError && <Notice tone="red">{companyLookupError}</Notice>}{!companyQuery.trim() && <p className="text-xs text-slate-500">A lista inicial contém as empresas recentes. Use a busca para localizar outras empresas.</p>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-xs text-slate-500"><th className="px-3 py-2">Empresa</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{companyRows.map((row) => <tr key={row.id} className="border-t border-slate-100"><td className="px-3 py-2">{row.name || row.company_name || row.id}</td><td className="px-3 py-2"><button type="button" onClick={() => setSelectedCompanyId(row.id)} className="font-semibold text-blue-700">Consultar orçamento e consumo</button></td></tr>)}</tbody></table>{!companyRows.length && <p className="p-5 text-center text-sm text-slate-500">Sem empresas retornadas.</p>}</div>{selectedCompanyId && <CompanyAiFinancialControls companyId={selectedCompanyId} canRead={canRead} canManage={canManage} />}</section>
   </div>;
 }
 
-export function CompanyAiFinancialControls({ companyId, canManage, onSaved }) {
+export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSaved }) {
   const [usage, setUsage] = useState(null);
   const [enabled, setEnabled] = useState(false);
   const [calls, setCalls] = useState('');
@@ -122,7 +124,7 @@ export function CompanyAiFinancialControls({ companyId, canManage, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const loadUsage = useCallback(async () => { if (!canManage) return; try { const result = await platformAdminService.aiFinancialUsage(companyId); setUsage(result.usage); } catch (cause) { setError(cause.message || 'Não foi possível carregar consumo e reservas.'); } }, [canManage, companyId]);
+  const loadUsage = useCallback(async () => { if (!canRead) return; try { const result = await platformAdminService.aiFinancialUsage(companyId); setUsage(result.usage); } catch (cause) { setError(cause.message || 'Não foi possível carregar consumo e reservas.'); } }, [canRead, companyId]);
   useEffect(() => { loadUsage(); }, [loadUsage]);
   useEffect(() => {
     if (!usage) return;
@@ -132,7 +134,7 @@ export function CompanyAiFinancialControls({ companyId, canManage, onSaved }) {
   }, [companyId, usage]);
   const today = usage?.today || {};
   const reservations = usage?.reservations || [];
-  if (!canManage) return <Notice>Consulta de tarifas, orçamentos e reservas disponível somente para administradores globais com papel admin ou owner.</Notice>;
+  if (!canRead) return <Notice>Consulta de orçamento e consumo não está disponível para este papel.</Notice>;
   const submit = async (event) => {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     try {
@@ -145,7 +147,7 @@ export function CompanyAiFinancialControls({ companyId, canManage, onSaved }) {
     <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
       <div><h3 className="font-semibold text-slate-900">Orçamento de geração da empresa</h3><p className="mt-1 text-xs text-slate-500">O estado abaixo controla apenas o limite da empresa. Não ativa AI_ENABLED, não altera manutenção e não configura segredos do provedor.</p></div>
       {error && <Notice tone="red">{error}</Notice>}{message && <Notice tone="green">{message}</Notice>}
-      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {canManage && <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700"><input type="checkbox" checked={enabled} disabled={!canManage || busy} onChange={(event) => setEnabled(event.target.checked)} />Consumo por geração habilitado</label>
         <Field label="Máximo de chamadas por dia (1–1000)" type="number" min="1" max="1000" step="1" value={calls} disabled={!canManage || busy || !enabled} onChange={(event) => setCalls(event.target.value)} />
         <Field label="Máximo de consultas externas/dia (1–1000)" type="number" min="1" max="1000" step="1" value={webQueries} disabled={!canManage || busy || !enabled} onChange={(event) => setWebQueries(event.target.value)} />
@@ -154,8 +156,9 @@ export function CompanyAiFinancialControls({ companyId, canManage, onSaved }) {
         <Field label="Tokens máximos por solicitação (256–100000)" type="number" min="256" max="100000" step="1" value={tokens} disabled={!canManage || busy || !enabled} onChange={(event) => setTokens(event.target.value)} />
         <Field label="Motivo de auditoria (não inclua dados sensíveis)" value={reason} maxLength={500} disabled={!canManage || busy} onChange={(event) => setReason(event.target.value)} placeholder="Motivo obrigatório" />
         <button className={`${buttonClass} sm:col-span-2 xl:col-span-3`} disabled={!canManage || busy || reason.trim().length < 8}>{busy ? 'Salvando…' : 'Salvar limites auditados'}</button>
-      </form>
-      {!canManage && <Notice>Somente administradores globais com papel admin ou owner podem alterar tarifas ou orçamentos.</Notice>}
+      </form>}
+      {!canManage && <Notice>Modo somente leitura. Alterações de orçamento e limites estão restritas ao owner global.</Notice>}
+      {!canManage && <Notice>Somente o owner global pode alterar tarifas ou orçamentos.</Notice>}
       {enabled && <Notice>Habilitar orçamento por empresa não ativa o provedor global. A geração continua bloqueada até AI_ENABLED, manutenção e configuração de modelo/tarifa válidos.</Notice>}
     </section>
     <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5">
