@@ -1,4 +1,5 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
+import { waitUntilEdgeTask } from '../_shared/edgeRuntime.ts';
 
 const clean = (value: unknown, max = 160) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max);
 const validSchedulerRequest = (req: Request) => {
@@ -7,10 +8,23 @@ const validSchedulerRequest = (req: Request) => {
   const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   return Boolean((configured && provided && provided === configured) || (service && req.headers.get('Authorization') === `Bearer ${service}`));
 };
+function dispatchMeliNotificationSweep() {
+  const url = Deno.env.get('SUPABASE_URL') || '';
+  const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  if (!url || !service) return;
+  const task = fetch(`${url}/functions/v1/mercadolivre-notification-worker`, {
+    method: 'POST', headers: { Authorization: `Bearer ${service}`, apikey: service, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit: 20, remaining_batches: 2, trigger: 'scheduler' }),
+  }).then(() => undefined).catch(() => undefined);
+  waitUntilEdgeTask(task);
+}
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   if (!validSchedulerRequest(req)) return json({ code: 'FORBIDDEN' }, 403);
+  // Reuse the existing scheduler tick as a retry/recovery sweep. The queue
+  // remains durable if the worker is unavailable; webhook dispatch is separate.
+  dispatchMeliNotificationSweep();
   const sb = admin(); const tickId = crypto.randomUUID(); const started = Date.now();
   const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   await sb.from('automation_runs').update({ status: 'failed', safe_error_code: 'SCHEDULER_STALLED', error_message: 'Execução interrompida pelo scheduler após 20 minutos.', finished_at: new Date().toISOString(), stalled_at: new Date().toISOString() }).eq('status', 'processing').lt('started_at', cutoff);

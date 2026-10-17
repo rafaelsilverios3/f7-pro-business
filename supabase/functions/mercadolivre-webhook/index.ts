@@ -2,6 +2,21 @@ import { admin, corsHeaders, json } from '../_shared/core.ts';
 import { isOfficialMercadoLivreWebhookIp, safeResourcePath, sha256, validSellerId } from '../_shared/mercadolivre.ts';
 import { checkMarketplaceEntitlement } from '../_shared/mercadolivreAccess.ts';
 import { boundedNotificationPayload } from '../_shared/mercadolivreWebhook.ts';
+import { waitUntilEdgeTask } from '../_shared/edgeRuntime.ts';
+
+function dispatchNotificationWorker() {
+  const url = Deno.env.get('SUPABASE_URL') || '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  if (!url || !serviceKey) return;
+  const task = fetch(`${url}/functions/v1/mercadolivre-notification-worker`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit: 10, remaining_batches: 2, trigger: 'webhook' }),
+  }).then(() => undefined).catch(() => undefined);
+  waitUntilEdgeTask(task);
+  // The durable database queue is already committed. If waitUntil is absent in
+  // a local runtime, do not delay or fail the provider's webhook response.
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -48,10 +63,14 @@ Deno.serve(async (req) => {
     const { data: duplicate, error: duplicateLookupError } = await sb.from('meli_webhook_events').select('id')
       .eq('company_id', match.company_id).eq('dedupe_key', dedupeKey).maybeSingle();
     if (duplicateLookupError) return json({ code: 'TEMPORARY_FAILURE' }, 503);
-    if (duplicate) return json({ code: 'ACCEPTED', accepted: true, deduplicated: true }, 200);
+    if (duplicate) {
+      dispatchNotificationWorker();
+      return json({ code: 'ACCEPTED', accepted: true, deduplicated: true }, 200);
+    }
     return json({ code: 'QUEUE_LIMIT_REACHED', accepted: false }, 503);
   }
   // The notification only points to a resource. The worker fetches the
   // canonical resource with this seller's token before persisting anything.
+  dispatchNotificationWorker();
   return json({ code: 'ACCEPTED', accepted: true, deduplicated: false }, 200);
 });

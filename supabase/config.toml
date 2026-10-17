@@ -44,3 +44,6 @@ verify_jwt = true
 
 [functions.mercadolivre-webhook]
 verify_jwt = false
+
+[functions.mercadolivre-notification-worker]
+verify_jwt = true

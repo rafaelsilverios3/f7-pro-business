@@ -6,6 +6,8 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 const migration = read('supabase/migrations/20261015233622_mercado_livre_connector_foundation.sql');
 const entitlementMigration = read('supabase/migrations/0085_tenant_commercial_access_hardening.sql');
 const api = read('supabase/functions/mercadolivre-api/index.ts');
+const processor = read('supabase/functions/_shared/mercadolivreNotificationProcessor.ts');
+const tokenHelper = read('supabase/functions/_shared/mercadolivreTokens.ts');
 const callback = read('supabase/functions/mercadolivre-callback/index.ts');
 const webhook = read('supabase/functions/mercadolivre-webhook/index.ts');
 const webhookPayload = read('supabase/functions/_shared/mercadolivreWebhook.ts');
@@ -41,15 +43,16 @@ test('refresh rotation uses a tenant scoped lease and marks ambiguous refreshes 
   assert.match(migration, /refresh_lease_until is null or connection\.refresh_lease_until < clock_timestamp\(\)/);
   assert.match(migration, /token_version = connection\.token_version \+ 1/);
   assert.match(migration, /status = 'reauth_required'/);
-  assert.match(api, /meli_claim_token_refresh/);
-  assert.match(api, /meli_complete_token_refresh/);
-  assert.match(api, /meli_fail_token_refresh/);
-  assert.match(api, /p_connection_id: connection\.id/);
+  assert.match(tokenHelper, /meli_claim_token_refresh/);
+  assert.match(tokenHelper, /meli_complete_token_refresh/);
+  assert.match(tokenHelper, /meli_fail_token_refresh/);
+  assert.match(tokenHelper, /p_connection_id: connection\.id/);
+  assert.match(api, /accessMercadoLivreToken/);
 });
 
 test('catalog snapshots reject seller IDs that do not match the authorized connection', () => {
-  assert.match(api, /assertSellerOwnedItem\(item, sellerId\)/);
-  assert.match(api, /persistListing\(sb, companyId, connection\.id, String\(connection\.seller_id\), resource\.data\)/);
+  assert.match(processor, /assertSellerOwnedItem\(item, sellerId\)/);
+  assert.match(api, /persistMeliListing\(sb, companyId, connection\.id, String\(connection\.seller_id\), item\.data\)/);
   assert.match(service, /MELI_LISTING_SELLER_MISMATCH/);
   assert.match(service, /MELI_VARIATIONS_UNSUPPORTED/);
 });
@@ -122,9 +125,11 @@ test('connector configuration messaging reports only an aggregate incomplete sta
 });
 
 test('notification claims are isolated by company and connection with bounded retry count', () => {
-  assert.match(migration, /meli_claim_notification_events\(p_company_id uuid, p_connection_id uuid/);
-  assert.match(migration, /event\.connection_id = p_connection_id/);
-  assert.match(migration, /event\.attempts < 6/);
+  const workerMigration = read('supabase/migrations/20261017090000_mercado_livre_notification_worker.sql');
+  assert.match(workerMigration, /meli_claim_notification_batch/);
+  assert.match(workerMigration, /event\.company_id = p_company_id/);
+  assert.match(workerMigration, /event\.connection_id = p_connection_id/);
+  assert.match(workerMigration, /event\.attempts < 6/);
   assert.match(api, /p_connection_id: connection\.id, p_limit: 10/);
 });
 
@@ -150,4 +155,5 @@ test('Edge Function JWT modes preserve public callback/webhook and authenticated
   assert.match(config, /\[functions\.mercadolivre-api\]\s+verify_jwt = true/);
   assert.match(config, /\[functions\.mercadolivre-callback\]\s+verify_jwt = false/);
   assert.match(config, /\[functions\.mercadolivre-webhook\]\s+verify_jwt = false/);
+  assert.match(config, /\[functions\.mercadolivre-notification-worker\]\s+verify_jwt = true/);
 });
