@@ -15,6 +15,9 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
   const [state, setState] = React.useState({ loading: true, companyId: null, configured: false, connections: [], error: '', notice: '' });
   const [selectedConnectionId, setSelectedConnectionId] = React.useState('');
   const [listingCount, setListingCount] = React.useState(0);
+  const [hasMoreListings, setHasMoreListings] = React.useState(false);
+  const [nextOrdersOffset, setNextOrdersOffset] = React.useState(0);
+  const [hasMoreOrders, setHasMoreOrders] = React.useState(false);
   const [busy, setBusy] = React.useState('');
   const sequence = React.useRef(0);
   const canView = can({ role: memberRole }, 'sales_channels.view');
@@ -57,6 +60,11 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
 
   React.useEffect(() => { refresh(); }, [refresh]);
   React.useEffect(() => {
+    setHasMoreListings(false);
+    setNextOrdersOffset(0);
+    setHasMoreOrders(false);
+  }, [company?.id, selectedConnectionId]);
+  React.useEffect(() => {
     const callback = new URLSearchParams(window.location.search).get('mercadolivre');
     if (!callback) return;
     const labels = { connected: 'Conta conectada com sucesso.', authorization_failed: 'A autorização do Mercado Livre não foi concluída.', authorization_expired: 'A tentativa de conexão expirou. Inicie novamente.', access_revoked: 'A empresa ou o acesso mudou durante a autorização.', feature_not_available: 'O plano atual da empresa não habilita integrações com marketplaces.', connector_not_configured: 'A configuração necessária para conectar o Mercado Livre está incompleta no servidor.', identity_validation_failed: 'A conta autorizada não passou pela validação de identidade.', connection_failed: 'Não foi possível salvar a conexão. Consulte o histórico.' };
@@ -72,8 +80,19 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
     setState((previous) => ({ ...previous, error: '', notice: '' }));
     try {
       const result = await operation();
+      if (name === 'sync_listings') setHasMoreListings(Boolean(result?.has_more));
+      if (name === 'sync_orders') {
+        setNextOrdersOffset(result?.next_offset || 0);
+        setHasMoreOrders(Boolean(result?.has_more));
+      }
       await refresh();
-      setState((previous) => ({ ...previous, notice: result?.written !== undefined ? `${result.written} anúncios sincronizados.` : 'Operação concluída.' }));
+      const notice = name === 'sync_listings' ? `${result?.written || 0} anúncios sincronizados.`
+        : name === 'sync_orders' ? `${result?.written || 0} pedidos importados. Dados pessoais de compradores não são importados.`
+          : name === 'process_notifications' ? result?.failed
+            ? `${result.written || 0} notificações processadas; ${result.failed} falharam e seguirão a política de retentativa.`
+            : `${result?.written || 0} notificações processadas.`
+            : 'Operação concluída.';
+      setState((previous) => ({ ...previous, notice }));
       return result;
     } catch (error) {
       setState((previous) => ({ ...previous, error: mercadoLivreErrorMessage(error) }));
@@ -87,8 +106,9 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
     return { code: 'REDIRECTING' };
   });
 
-  const syncListings = () => perform('sync', () => mercadoLivreAction(company.id, 'sync_listings', {
+  const sync = (action) => perform(action, () => mercadoLivreAction(company.id, action, {
     connection_id: connection.id,
+    ...(action === 'sync_orders' ? { offset: nextOrdersOffset } : {}),
     idempotency_key: crypto.randomUUID(),
   }));
 
@@ -126,7 +146,13 @@ export default function MercadoLivreConnector({ memberRole = '' }) {
 
       {connection && <div className="mt-4 flex flex-col gap-3 rounded-xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-sm font-semibold text-slate-900">{listingCount} anúncios sincronizados</p><p className="mt-1 text-xs text-slate-500">{connection.last_catalog_sync_at ? `Última sincronização ${new Date(connection.last_catalog_sync_at).toLocaleString('pt-BR')}` : 'Ainda não há registro de sincronização.'}</p></div>
-        <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={syncListings} disabled={Boolean(busy)}>{busy === 'sync' && <Loader2 className="h-4 w-4 animate-spin" />} Atualizar catálogo</Button><Link to="/f7-commerce/anuncios" className="inline-flex min-h-9 items-center gap-2 rounded-md bg-blue-700 px-3 text-sm font-medium text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Anúncios sincronizados <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>{canManage && <Button size="sm" variant="outline" onClick={disconnect} disabled={Boolean(busy)}>Desconectar</Button>}</div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={() => sync('sync_listings')} disabled={Boolean(busy)}>{busy === 'sync_listings' && <Loader2 className="h-4 w-4 animate-spin" />} {hasMoreListings ? 'Sincronizar próximos 20 anúncios' : 'Sincronizar anúncios'}</Button>
+          <Button size="sm" variant="secondary" onClick={() => sync('sync_orders')} disabled={Boolean(busy)}>{busy === 'sync_orders' && <Loader2 className="h-4 w-4 animate-spin" />} {hasMoreOrders ? `Importar próximos 50 pedidos (a partir de ${nextOrdersOffset})` : 'Importar pedidos'}</Button>
+          <Button size="sm" variant="outline" onClick={() => sync('process_notifications')} disabled={Boolean(busy)}>{busy === 'process_notifications' && <Loader2 className="h-4 w-4 animate-spin" />} Processar notificações</Button>
+          <Link to="/f7-commerce/anuncios" className="inline-flex min-h-9 items-center gap-2 rounded-md bg-blue-700 px-3 text-sm font-medium text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Anúncios sincronizados <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+          {canManage && <Button size="sm" variant="outline" onClick={disconnect} disabled={Boolean(busy)}>Desconectar</Button>}
+        </div>
       </div>}
     </article>
   );

@@ -135,7 +135,7 @@ export default function MercadoLivreListings() {
   React.useEffect(() => {
     let cancelled = false;
     if (!companyId || !canManage || !connectionId) { setProducts([]); return () => { cancelled = true; }; }
-    getSupabaseClient().from('products').select('id,name,sku').eq('company_id', companyId).eq('active', true).order('name').limit(500)
+    getSupabaseClient().from('products').select('id,name,sku,price,stock').eq('company_id', companyId).eq('active', true).order('name').limit(500)
       .then(({ data, error: productError }) => {
         if (cancelled) return;
         if (productError) setError('Não foi possível carregar os produtos desta empresa para associação.');
@@ -229,6 +229,33 @@ export default function MercadoLivreListings() {
     finally { setBusy(false); }
   };
 
+  const pushProduct = async () => {
+    if (!selected?.product_id || !canManage) return;
+    const product = products.find((item) => item.id === selected.product_id);
+    if (!product) return;
+    const price = Number(product.price);
+    const stock = Number(product.stock);
+    if (!Number.isFinite(price) || price <= 0 || !Number.isSafeInteger(stock) || stock < 0) {
+      setError('O preço ou estoque do produto F7 não é válido para enviar.');
+      return;
+    }
+    const formattedPrice = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price);
+    if (!window.confirm(`Enviar ao anúncio ${selected.external_item_id} o preço ${formattedPrice} e o estoque ${stock}? Esta ação altera a conta Mercado Livre e não o catálogo do F7.`)) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await mercadoLivreAction(companyId, 'push_product', {
+        connection_id: connectionId,
+        external_item_id: selected.external_item_id,
+        fields: ['price', 'stock'],
+        idempotency_key: crypto.randomUUID(),
+        confirm: true,
+      });
+      setNotice('Preço e estoque enviados ao anúncio confirmado.');
+      setCatalogVersion((version) => version + 1);
+    } catch (pushError) { setError(mercadoLivreErrorMessage(pushError)); }
+    finally { setBusy(false); }
+  };
+
   if (membershipState === 'loading') return <main className="mx-auto max-w-7xl px-4 py-8"><div role="status" className="text-sm text-slate-600">Verificando vínculo e permissões da empresa…</div></main>;
   if (membershipState === 'error') return <main className="mx-auto max-w-7xl px-4 py-8"><div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">Não foi possível confirmar seu vínculo com a empresa. Nenhum anúncio foi consultado. <button type="button" className="underline" onClick={membership.refresh}>Tentar novamente</button></div></main>;
   if (!canView) return <main className="mx-auto max-w-7xl px-4 py-8"><h1 className="text-xl font-semibold">Acesso restrito</h1><p className="mt-2 text-sm text-slate-600">Seu papel não permite consultar os anúncios desta empresa.</p></main>;
@@ -316,7 +343,7 @@ export default function MercadoLivreListings() {
         </div>
         <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="text-sm"><p className="font-medium text-slate-800">{selected.product_id ? 'Vinculado a produto do catálogo F7' : 'Sem vínculo com produto F7'}</p>{selected.product_id && <p className="mt-1 text-xs text-slate-500">A associação é interna desta empresa; nenhuma alteração será enviada ao Mercado Livre.</p>}</div>
-          {canManage && <div className="flex flex-col gap-2 sm:min-w-72"><label htmlFor="meli-f7-product" className="text-xs font-medium text-slate-600">Associar produto desta empresa</label><select id="meli-f7-product" className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">Selecionar produto…</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}{product.sku ? ` · ${product.sku}` : ''}</option>)}</select><Button variant="secondary" disabled={!productId || productId === selected.product_id || busy} onClick={associate}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Associar produto</Button></div>}
+          {canManage && <div className="flex flex-col gap-2 sm:min-w-72"><label htmlFor="meli-f7-product" className="text-xs font-medium text-slate-600">Associar produto desta empresa</label><select id="meli-f7-product" className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">Selecionar produto…</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}{product.sku ? ` · ${product.sku}` : ''}</option>)}</select><Button variant="secondary" disabled={!productId || productId === selected.product_id || busy} onClick={associate}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Associar produto</Button>{selected.product_id && <Button variant="outline" disabled={busy} onClick={pushProduct}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Enviar preço e estoque</Button>}</div>}
         </div>
         {safeMeliPermalink(selected.permalink) && <a href={safeMeliPermalink(selected.permalink)} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 self-start text-sm font-medium text-blue-700 underline">Abrir anúncio original <ExternalLink className="h-4 w-4" /></a>}
       </DialogContent>}

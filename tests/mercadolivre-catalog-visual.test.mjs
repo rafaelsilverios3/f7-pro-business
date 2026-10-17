@@ -69,7 +69,13 @@ test('visual catalog route and requests preserve company, connection, role, and 
   assert.match(api, /has_more: filters\.offset \+ \(data \|\| \[\]\)\.length < total/);
   assert.match(connector, /Anúncios sincronizados/);
   assert.match(connector, /list_listings/);
-  assert.doesNotMatch(connector, /Pedidos importados|Enviar preço e estoque/);
+  assert.match(connector, /Sincronizar anúncios/);
+  assert.match(connector, /Importar pedidos/);
+  assert.match(connector, /Processar notificações/);
+  assert.doesNotMatch(connector, /<h4[^>]*>Pedidos importados/);
+  assert.match(page, /Enviar preço e estoque/);
+  assert.match(page, /mercadoLivreAction\(companyId, 'push_product'/);
+  assert.match(page, /window\.confirm\(`Enviar ao anúncio/);
 });
 
 test('visual catalog renders real image, category, marketplace link, F7 mapping, and load-more affordance', () => {
