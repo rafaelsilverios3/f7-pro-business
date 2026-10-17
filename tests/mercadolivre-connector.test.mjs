@@ -13,6 +13,7 @@ const webhook = read('supabase/functions/mercadolivre-webhook/index.ts');
 const webhookPayload = read('supabase/functions/_shared/mercadolivreWebhook.ts');
 const connect = read('supabase/functions/mercadolivre-connect/index.ts');
 const ui = read('src/components/commerce/MercadoLivreConnector.jsx');
+const catalogMigration = read('supabase/migrations/20261017015357_meli_listing_visual_catalog.sql');
 const service = read('src/services/mercadoLivreService.js');
 
 test('Mercado Livre tables keep OAuth secrets private and tenant business reads RLS scoped', () => {
@@ -52,13 +53,22 @@ test('refresh rotation uses a tenant scoped lease and marks ambiguous refreshes 
 
 test('catalog snapshots reject seller IDs that do not match the authorized connection', () => {
   assert.match(processor, /assertSellerOwnedItem\(item, sellerId\)/);
-  assert.match(api, /persistMeliListing\(sb, companyId, connection\.id, String\(connection\.seller_id\), item\.data\)/);
+  assert.match(api, /persistMeliListing\(sb, companyId, connection\.id, String\(connection\.seller_id\), item\.data, categoryName\)/);
+  assert.match(processor, /image_url: safeMeliImageUrl\(item\)/);
+  assert.match(processor, /category_name: safeMeliCategoryName\(categoryName\)/);
+  assert.match(processor, /old\?\.category_name/);
+  assert.match(processor, /old\?\.image_url/);
+  assert.match(catalogMigration, /add column if not exists image_url text/);
+  assert.match(catalogMigration, /add column if not exists category_name text/);
   assert.match(service, /MELI_LISTING_SELLER_MISMATCH/);
   assert.match(service, /MELI_VARIATIONS_UNSUPPORTED/);
 });
 
-test('changing a connected seller immediately clears the previous seller data and reloads the selected account', () => {
-  assert.match(ui, /setListings\(\[\]\); setOrders\(\[\]\); setHistory\(\[\]\); setProducts\(\[\]\);[\s\S]*?refresh\(\);/);
+test('summary connector stays compact and counts rows only for selected tenant connection', () => {
+  assert.match(ui, /setListingCount\(0\)/);
+  assert.match(ui, /list_listings', \{ connection_id: selected\.id, page: 0, page_size: 1 \}/);
+  assert.match(ui, /Anúncios sincronizados/);
+  assert.doesNotMatch(ui, /Pedidos importados/);
 });
 
 test('API validates active company membership, role, and centralized plan entitlement server-side', () => {
@@ -98,7 +108,7 @@ test('stock and price pushes require manager permission, explicit confirmation, 
   assert.match(api, /method: 'PUT', body: JSON\.stringify\(payload\)/);
   assert.match(api, /remoteListing\.data\.variations\.length > 0/);
   assert.match(api, /assertSellerOwnedItem\(remoteListing\.data, String\(connection\.seller_id\)\)/);
-  assert.match(ui, /window\.confirm\(/);
+  assert.doesNotMatch(ui, /push_product|Enviar preço e estoque/);
   assert.match(ui, /idempotency_key: crypto\.randomUUID\(\)/);
 });
 

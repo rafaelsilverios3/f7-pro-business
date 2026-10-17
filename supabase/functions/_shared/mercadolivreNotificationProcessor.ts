@@ -1,8 +1,10 @@
 import { meliRequest, minimalOrder, assertSellerOwnedItem, validItemId } from './mercadolivre.ts';
 import { processMeliNotificationBatch } from './mercadolivreQueuePolicy.js';
 import type { MeliTokenConnection } from './mercadolivreTokens.ts';
+import { safeMeliCategoryName, safeMeliImageUrl, safeMeliPermalink } from './mercadolivreCatalog.js';
 
 type AdminClient = ReturnType<typeof import('./core.ts').admin>;
+
 export type MeliClaimedEvent = {
   id: string;
   company_id: string;
@@ -17,7 +19,7 @@ export type MeliNotificationConnection = MeliTokenConnection & {
   seller_id: string;
 };
 
-export function listingSnapshot(item: Record<string, unknown>, sellerId: string, now = new Date().toISOString()) {
+export function listingSnapshot(item: Record<string, unknown>, sellerId: string, now = new Date().toISOString(), categoryName: unknown = null) {
   assertSellerOwnedItem(item, sellerId);
   const id = String(item.id || '');
   if (!validItemId(id)) throw new Error('MELI_ITEM_ID_INVALID');
@@ -27,24 +29,28 @@ export function listingSnapshot(item: Record<string, unknown>, sellerId: string,
     external_item_id: id,
     title: String(item.title || 'Anúncio sem título').slice(0, 240),
     status: String(item.status || 'unknown').slice(0, 40),
-    permalink: typeof item.permalink === 'string' && item.permalink.startsWith('https://') ? item.permalink.slice(0, 1000) : null,
+    permalink: safeMeliPermalink(item.permalink),
+    image_url: safeMeliImageUrl(item),
     currency_id: typeof item.currency_id === 'string' ? item.currency_id.slice(0, 8) : null,
     price: Number.isFinite(price) ? price : null,
     available_quantity: Number.isSafeInteger(quantity) ? quantity : null,
     category_id: typeof item.category_id === 'string' ? item.category_id.slice(0, 40) : null,
+    category_name: safeMeliCategoryName(categoryName),
     seller_sku: typeof item.seller_custom_field === 'string' ? item.seller_custom_field.slice(0, 120) : null,
     external_updated_at: typeof item.last_updated === 'string' ? item.last_updated : null,
     synced_at: now,
   };
 }
 
-export async function persistMeliListing(sb: AdminClient, companyId: string, connectionId: string, sellerId: string, item: Record<string, unknown>) {
-  const snapshot = listingSnapshot(item, sellerId);
-  const { data: old, error: lookupError } = await sb.from('meli_listing_links').select('product_id')
+export async function persistMeliListing(sb: AdminClient, companyId: string, connectionId: string, sellerId: string, item: Record<string, unknown>, categoryName: unknown = null) {
+  const snapshot = listingSnapshot(item, sellerId, new Date().toISOString(), categoryName);
+  const { data: old, error: lookupError } = await sb.from('meli_listing_links').select('product_id,category_name,image_url')
     .eq('company_id', companyId).eq('connection_id', connectionId).eq('external_item_id', snapshot.external_item_id).maybeSingle();
   if (lookupError) throw new Error('MELI_LISTING_PERSIST_FAILED');
   const { error } = await sb.from('meli_listing_links').upsert({ company_id: companyId, connection_id: connectionId,
-    ...snapshot, product_id: old?.product_id || null }, { onConflict: 'company_id,connection_id,external_item_id' });
+    ...snapshot, category_name: snapshot.category_name || old?.category_name || null,
+    image_url: snapshot.image_url || old?.image_url || null, product_id: old?.product_id || null },
+  { onConflict: 'company_id,connection_id,external_item_id' });
   if (error) throw new Error('MELI_LISTING_PERSIST_FAILED');
 }
 

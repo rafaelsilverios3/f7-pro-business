@@ -3,6 +3,7 @@ import { authorizeMarketplace, safeIntegrationLog } from '../_shared/mercadolivr
 import { assertSellerOwnedItem, meliRequest, minimalOrder, validItemId, validUuid } from '../_shared/mercadolivre.ts';
 import { processClaimedMeliNotifications, persistMeliListing } from '../_shared/mercadolivreNotificationProcessor.ts';
 import { accessMercadoLivreToken } from '../_shared/mercadolivreTokens.ts';
+import { normalizeMeliListingQuery, safeMeliCategoryName } from '../_shared/mercadolivreCatalog.js';
 
 const accessToken = accessMercadoLivreToken;
 
@@ -36,10 +37,25 @@ async function syncListings(sb: ReturnType<typeof import('../_shared/core.ts').a
   if (connection.catalog_scroll_id) query.set('scroll_id', connection.catalog_scroll_id);
   const page = await meliRequest(`/users/${encodeURIComponent(connection.seller_id)}/items/search?${query.toString()}`, token);
   const ids = Array.isArray(page.data.results) ? page.data.results.map(String).filter(validItemId).slice(0, 20) : [];
+  const categoryNames = new Map<string, string | null>();
   let written = 0;
   for (const itemId of ids) {
     const item = await meliRequest(`/items/${encodeURIComponent(itemId)}`, token);
-    await persistMeliListing(sb, companyId, connection.id, String(connection.seller_id), item.data);
+    const categoryId = typeof item.data.category_id === 'string' ? item.data.category_id : '';
+    let categoryName: string | null = null;
+    if (categoryId) {
+      if (categoryNames.has(categoryId)) categoryName = categoryNames.get(categoryId) || null;
+      else {
+        try {
+          const category = await meliRequest(`/categories/${encodeURIComponent(categoryId)}`, token);
+          categoryName = safeMeliCategoryName(category.data?.name);
+        } catch {
+          // Preserve the real category ID and any previous name; never guess a label.
+        }
+        categoryNames.set(categoryId, categoryName);
+      }
+    }
+    await persistMeliListing(sb, companyId, connection.id, String(connection.seller_id), item.data, categoryName);
     written += 1;
   }
   const nextScrollId = typeof page.data.scroll_id === 'string' && page.data.scroll_id.length <= 2000 ? page.data.scroll_id : null;
@@ -154,10 +170,26 @@ async function handle(req: Request) {
     return json({ code: 'OK', orders: data || [] });
   }
   if (action === 'list_listings') {
-    const { data, error } = await sb.from('meli_listing_links').select('id,product_id,external_item_id,title,status,permalink,currency_id,price,available_quantity,category_id,seller_sku,external_updated_at,synced_at')
-      .eq('company_id', companyId).eq('connection_id', connectionId).order('synced_at', { ascending: false }).limit(100);
+    const filters = normalizeMeliListingQuery(body);
+    const select = 'id,product_id,external_item_id,title,status,permalink,image_url,currency_id,price,available_quantity,category_id,category_name,seller_sku,external_updated_at,synced_at';
+    let query = sb.from('meli_listing_links').select(select, { count: 'exact' })
+      .eq('company_id', companyId).eq('connection_id', connectionId);
+    if (filters.categoryId) query = query.eq('category_id', filters.categoryId);
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.search) query = query.or(`title.ilike.%${filters.search}%,external_item_id.ilike.%${filters.search}%`);
+    const sortOptions: Record<string, [string, boolean]> = {
+      updated_desc: ['synced_at', false], updated_asc: ['synced_at', true],
+      price_asc: ['price', true], price_desc: ['price', false],
+      title_asc: ['title', true], title_desc: ['title', false],
+    };
+    const sort = sortOptions[filters.sort] || sortOptions.updated_desc;
+    query = query.order(sort[0], { ascending: sort[1], nullsFirst: false })
+      .range(filters.offset, filters.offset + filters.pageSize - 1);
+    const { data, error, count } = await query;
     if (error) return json({ code: 'MELI_LISTINGS_LOOKUP_FAILED' }, 500);
-    return json({ code: 'OK', listings: data || [] });
+    const total = count || 0;
+    return json({ code: 'OK', listings: data || [], total, page: filters.page, page_size: filters.pageSize,
+      has_more: filters.offset + (data || []).length < total });
   }
   if (action === 'list_history') {
     const { data, error } = await sb.from('meli_sync_runs')

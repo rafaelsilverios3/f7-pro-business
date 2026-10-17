@@ -1,4 +1,4 @@
-import { processCanonicalMeliNotification } from '../_shared/mercadolivreNotificationProcessor.ts';
+import { listingSnapshot, processCanonicalMeliNotification } from '../_shared/mercadolivreNotificationProcessor.ts';
 
 const companyA = '11111111-1111-4111-8111-111111111111';
 const companyB = '22222222-2222-4222-8222-222222222222';
@@ -24,6 +24,19 @@ function withProviderResponse(payload: Record<string, unknown>, run: () => Promi
   globalThis.fetch = () => Promise.resolve(new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } }));
   return run().finally(() => { globalThis.fetch = original; });
 }
+
+Deno.test('listing snapshot stores real image and category metadata and rejects untrusted links', () => {
+  const snapshot = listingSnapshot({
+    id: 'MLB12345678', seller_id: '12345678', title: 'Synthetic listing', status: 'active',
+    pictures: [{ secure_url: 'https://http2.mlstatic.com/D_123.jpg' }],
+    category_id: 'MLB1234', permalink: 'https://produto.mercadolivre.com.br/MLB-12345678',
+  }, '12345678', '2026-10-16T00:00:00.000Z', 'Acessórios');
+  if (snapshot.image_url !== 'https://http2.mlstatic.com/D_123.jpg') throw new Error('Real provider image was not preserved');
+  if (snapshot.category_id !== 'MLB1234' || snapshot.category_name !== 'Acessórios') throw new Error('Category metadata was not preserved');
+  if (!snapshot.permalink?.startsWith('https://produto.mercadolivre.com.br/')) throw new Error('Official listing permalink was rejected');
+  const untrusted = listingSnapshot({ id: 'MLB12345678', seller_id: '12345678', permalink: 'https://attacker.test/item', thumbnail: 'https://attacker.test/image.jpg' }, '12345678');
+  if (untrusted.permalink !== null || untrusted.image_url !== null) throw new Error('Untrusted provider URL was persisted');
+});
 
 Deno.test('canonical item fetch persists only a matching seller snapshot in the claimed tenant', async () => {
   const sb = fakeAdmin();
