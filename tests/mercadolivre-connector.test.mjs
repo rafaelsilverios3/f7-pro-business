@@ -13,7 +13,7 @@ const webhook = read('supabase/functions/mercadolivre-webhook/index.ts');
 const webhookPayload = read('supabase/functions/_shared/mercadolivreWebhook.ts');
 const connect = read('supabase/functions/mercadolivre-connect/index.ts');
 const ui = read('src/components/commerce/MercadoLivreConnector.jsx');
-const catalogMigration = read('supabase/migrations/20261017015357_meli_listing_visual_catalog.sql');
+const catalogMigration = read('supabase/migrations/20261017020431_meli_listing_visual_catalog.sql');
 const service = read('src/services/mercadoLivreService.js');
 
 test('Mercado Livre tables keep OAuth secrets private and tenant business reads RLS scoped', () => {
@@ -145,11 +145,26 @@ test('notification claims are isolated by company and connection with bounded re
 
 test('catalog pagination resumes using server-stored scan cursor and orders use official page offsets', () => {
   assert.match(migration, /catalog_scroll_id text/);
-  assert.match(api, /query\.set\('scroll_id', connection\.catalog_scroll_id\)/);
+  assert.match(api, /freshMeliScanCursor\(connection\.catalog_scroll_id, connection\.last_catalog_sync_at\)/);
+  assert.match(api, /nextMeliScanCursor\(page\.data\.scroll_id, ids\.length\)/);
   assert.match(api, /catalog_scroll_id: nextScrollId/);
   assert.match(api, /offset: String\(offset\)/);
   assert.match(api, /next_offset: hasMore \? offset \+ orders\.length : null/);
   assert.match(api, /action === 'list_history'/);
+});
+
+test('catalog scan resumes only with a fresh cursor and clears empty or expired scans', async () => {
+  const { freshMeliScanCursor, nextMeliScanCursor } = await import('../supabase/functions/_shared/mercadolivreCatalog.js');
+  const now = Date.parse('2026-10-17T02:10:00.000Z');
+  assert.equal(freshMeliScanCursor('cursor', '2026-10-17T02:06:01.000Z', now), 'cursor');
+  assert.equal(freshMeliScanCursor('cursor', '2026-10-17T02:05:59.000Z', now), null);
+  assert.equal(freshMeliScanCursor('cursor', 'not-a-date', now), null);
+  assert.equal(freshMeliScanCursor('cursor', '2026-10-17T02:10:01.000Z', now), null);
+  assert.equal(freshMeliScanCursor('x'.repeat(2_001), '2026-10-17T02:09:00.000Z', now), null);
+  assert.equal(nextMeliScanCursor('next', 20), 'next');
+  assert.equal(nextMeliScanCursor('stale-echo', 0), null);
+  assert.equal(nextMeliScanCursor('x'.repeat(2_001), 20), null);
+  assert.equal(nextMeliScanCursor(null, 20), null);
 });
 
 test('frontend calls real functions and exposes no direct token persistence', () => {

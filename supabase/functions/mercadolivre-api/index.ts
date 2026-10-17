@@ -3,7 +3,7 @@ import { authorizeMarketplace, safeIntegrationLog } from '../_shared/mercadolivr
 import { assertSellerOwnedItem, meliRequest, minimalOrder, validItemId, validUuid } from '../_shared/mercadolivre.ts';
 import { processClaimedMeliNotifications, persistMeliListing } from '../_shared/mercadolivreNotificationProcessor.ts';
 import { accessMercadoLivreToken } from '../_shared/mercadolivreTokens.ts';
-import { normalizeMeliListingQuery, safeMeliCategoryName } from '../_shared/mercadolivreCatalog.js';
+import { freshMeliScanCursor, nextMeliScanCursor, normalizeMeliListingQuery, safeMeliCategoryName } from '../_shared/mercadolivreCatalog.js';
 
 const accessToken = accessMercadoLivreToken;
 
@@ -34,7 +34,8 @@ async function finishRun(sb: ReturnType<typeof import('../_shared/core.ts').admi
 
 async function syncListings(sb: ReturnType<typeof import('../_shared/core.ts').admin>, companyId: string, connection: Record<string, any>, token: string) {
   const query = new URLSearchParams({ search_type: 'scan', limit: '20' });
-  if (connection.catalog_scroll_id) query.set('scroll_id', connection.catalog_scroll_id);
+  const cursor = freshMeliScanCursor(connection.catalog_scroll_id, connection.last_catalog_sync_at);
+  if (cursor) query.set('scroll_id', cursor);
   const page = await meliRequest(`/users/${encodeURIComponent(connection.seller_id)}/items/search?${query.toString()}`, token);
   const ids = Array.isArray(page.data.results) ? page.data.results.map(String).filter(validItemId).slice(0, 20) : [];
   const categoryNames = new Map<string, string | null>();
@@ -58,7 +59,7 @@ async function syncListings(sb: ReturnType<typeof import('../_shared/core.ts').a
     await persistMeliListing(sb, companyId, connection.id, String(connection.seller_id), item.data, categoryName);
     written += 1;
   }
-  const nextScrollId = typeof page.data.scroll_id === 'string' && page.data.scroll_id.length <= 2000 ? page.data.scroll_id : null;
+  const nextScrollId = nextMeliScanCursor(page.data.scroll_id, ids.length);
   await sb.from('meli_connections').update({ last_catalog_sync_at: new Date().toISOString(), catalog_scroll_id: nextScrollId, last_error_code: null })
     .eq('company_id', companyId).eq('id', connection.id);
   return { seen: ids.length, written, has_more: Boolean(nextScrollId) };

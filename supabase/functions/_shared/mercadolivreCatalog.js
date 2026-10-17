@@ -1,5 +1,21 @@
 const IMAGE_HOSTS = ['mlstatic.com'];
 const LISTING_HOSTS = ['mercadolivre.com.br', 'mercadolibre.com'];
+// Mercado Livre scan cursors expire after five minutes. Use a safety margin so
+// clocks, request latency, and queued execution cannot make an expired cursor
+// look usable.
+const MELI_SCAN_CURSOR_MAX_AGE_MS = 4 * 60 * 1000;
+
+export function freshMeliScanCursor(scrollId, lastCatalogSyncAt, now = Date.now()) {
+  if (typeof scrollId !== 'string' || scrollId.length === 0 || scrollId.length > 2_000) return null;
+  const syncedAt = typeof lastCatalogSyncAt === 'string' ? Date.parse(lastCatalogSyncAt) : NaN;
+  const age = now - syncedAt;
+  return Number.isFinite(syncedAt) && age >= 0 && age < MELI_SCAN_CURSOR_MAX_AGE_MS ? scrollId : null;
+}
+
+export function nextMeliScanCursor(scrollId, resultCount) {
+  if (resultCount <= 0 || typeof scrollId !== 'string' || scrollId.length === 0 || scrollId.length > 2_000) return null;
+  return scrollId;
+}
 
 export function safeMeliImageUrl(item) {
   const pictures = Array.isArray(item?.pictures) ? item.pictures : [];
