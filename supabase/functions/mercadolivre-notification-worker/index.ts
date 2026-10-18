@@ -1,4 +1,5 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
+import { meliNotificationProcessingEnabled } from '../_shared/schedulerPolicy.js';
 import { accessMercadoLivreToken } from '../_shared/mercadolivreTokens.ts';
 import { processClaimedMeliNotifications, type MeliNotificationConnection } from '../_shared/mercadolivreNotificationProcessor.ts';
 import { MELI_NOTIFICATION_MAX_BATCH } from '../_shared/mercadolivreQueuePolicy.js';
@@ -12,6 +13,9 @@ export async function handleMercadoLivreNotificationWorker(req: Request, depende
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   if (!hasInternalServiceAuthorization(req, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '')) return json({ code: 'FORBIDDEN' }, 403);
+  if (!meliNotificationProcessingEnabled({ F7_MELI_QUEUE_PROCESSING_ENABLED: Deno.env.get('F7_MELI_QUEUE_PROCESSING_ENABLED') })) {
+    return json({ code: 'MELI_QUEUE_PROCESSING_DISABLED', status: 'disabled' }, 200);
+  }
   const length = Number(req.headers.get('content-length') || '0');
   if (length > 2048) return json({ code: 'PAYLOAD_TOO_LARGE' }, 413);
   let body: Record<string, unknown> = {};

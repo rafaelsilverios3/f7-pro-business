@@ -9,8 +9,10 @@ Deno.serve(async (req) => {
   if (userError || !user) return json({ code: 'AUTH_REQUIRED' }, 401);
   const body = await req.json().catch(() => ({}));
   const companyId = typeof body?.company_id === 'string' ? body.company_id : '';
-  const membership = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
-  if (membership.error || membership.data?.active === false || !roles.has(String(membership.data?.role || '').toLowerCase())) return json({ code: 'FORBIDDEN' }, 403);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companyId)) return json({ code: 'COMPANY_CONTEXT_REQUIRED' }, 400);
+  const membership = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).eq('active', true).maybeSingle();
+  if (membership.error) return json({ code: 'COMPANY_MEMBERSHIP_LOOKUP_FAILED' }, 500);
+  if (!membership.data || !roles.has(String(membership.data.role || '').toLowerCase())) return json({ code: 'FORBIDDEN' }, 403);
   const runs = await sb.from('ai_runs').select('trace_id,mode,status,current_stage,provider,model,tool_names,query_count,source_domains,candidate_count,confidence,input_tokens,output_tokens,estimated_cost,duration_ms,safe_error_code,started_at,finished_at').eq('company_id', companyId).order('started_at', { ascending: false }).limit(50);
   if (runs.error) return json({ code: 'INSPECTOR_LOOKUP_FAILED', internal_code: String(runs.error.code || '').slice(0, 80) }, 500);
   return json({ runs: runs.data || [] }, 200);

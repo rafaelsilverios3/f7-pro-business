@@ -9,7 +9,22 @@ enabled = true
 [functions.billing-webhook]
 verify_jwt = false
 
+[functions.billing-plans]
+verify_jwt = false
+
 [functions.billing-health]
+verify_jwt = true
+
+[functions.ai-run-inspector]
+verify_jwt = true
+
+[functions.platform-health]
+verify_jwt = true
+
+[functions.automation-scheduler]
+verify_jwt = false
+
+[functions.automation-worker]
 verify_jwt = true
 
 [functions.billing-subscription-manage]

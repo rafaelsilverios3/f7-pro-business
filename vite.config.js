@@ -7,6 +7,16 @@ import { fileURLToPath } from 'node:url'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const isPreview = process.env.VERCEL_ENV === 'preview' || env.VERCEL_ENV === 'preview';
+  const supabaseHost = (() => {
+    try { return new URL(env.VITE_SUPABASE_URL).hostname.toLowerCase(); } catch { return ''; }
+  })();
+  const protectedSupabaseRefs = new Set(['izakmtgezocbneilopwr', 'vwylnjmapixtzhryiutt']);
+  const previewTargetsProtectedBackend = isPreview && supabaseHost.endsWith('.supabase.co')
+    && protectedSupabaseRefs.has(supabaseHost.slice(0, -'.supabase.co'.length));
+  if (previewTargetsProtectedBackend) {
+    throw new Error('Preview deployments may not target either protected F7 Supabase project.');
+  }
   const base44Plugins = env.VITE_DATA_PROVIDER === 'supabase' ? [] : [base44({
       // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
       // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
