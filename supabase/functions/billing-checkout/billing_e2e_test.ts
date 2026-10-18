@@ -53,10 +53,10 @@ function makeSignature(secret: string, dataId: string, requestId: string, timest
     .then((bytes) => [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, '0')).join(''));
 }
 
-function checkoutRequest(jwt: string, companyId: string, method = 'pix') {
+function checkoutRequest(jwt: string, companyId: string, method = 'pix', billingModel = 'one_time', billingPeriod = 'month') {
   return new Request('http://127.0.0.1/functions/v1/billing-checkout', {
     method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ company_id: companyId, plan_code: 'pro', method }),
+    body: JSON.stringify({ company_id: companyId, plan_code: 'pro', method, billing_model: billingModel, billing_period: billingPeriod }),
   });
 }
 

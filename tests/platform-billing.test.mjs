@@ -21,6 +21,7 @@ const trialGateMigration = fs.readFileSync('supabase/migrations/0067_trial_gate_
 const ordersMigration = fs.readFileSync('supabase/migrations/0068_billing_orders_support.sql', 'utf8');
 const atomicBillingMigration = fs.readFileSync('supabase/migrations/20261015154213_billing_webhook_atomic_settlement.sql', 'utf8');
 const recurringBillingMigration = fs.readFileSync('supabase/migrations/20261015172611_billing_recurring_subscriptions.sql', 'utf8');
+const dualBillingMigration = fs.readFileSync('supabase/migrations/20261018120000_billing_dual_payment_models.sql', 'utf8');
 const subscriptionManageEdge = fs.readFileSync('supabase/functions/billing-subscription-manage/index.ts', 'utf8');
 const intelligenceEdge = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
 const supplierEdge = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
@@ -76,16 +77,26 @@ test('checkout resolves amount from the active plan and keeps provider secrets s
   assert.doesNotMatch(checkout, /token\.startsWith\(['\"](?:TEST-|APP_USR-)/);
   assert.match(checkout, /processing_mode: 'automatic'/);
   assert.match(checkout, /payment_method: \{ id: 'pix', type: 'bank_transfer' \}/);
+  assert.match(checkout, /api\.mercadopago\.com\/v1\/payments/);
+  assert.match(checkout, /back_url: appBackUrl/);
+  assert.match(dualBillingMigration, /get_or_create_billing_checkout_v2/);
+  assert.match(dualBillingMigration, /billing_period_snapshot/);
+  assert.match(dualBillingMigration, /ACTIVE_CONTRACT_MUST_END_OR_CANCEL_BEFORE_SWITCH/);
+  assert.match(dualBillingMigration, /pg_advisory_xact_lock/);
+  assert.match(dualBillingMigration, /grant execute on function public\.get_or_create_billing_checkout_v2[\s\S]*to service_role/);
+  assert.match(dualBillingMigration, /select coalesce\(s\.plan, 'free'\), s\.status, s\.current_period_end[\s\S]*period_end <= now\(\)/);
   assert.doesNotMatch(service + page, /MERCADO_PAGO_ACCESS_TOKEN|WEBHOOK_SECRET/);
 });
 
 test('checkout rejects missing provider credentials and invalid card token before persisting an intent', () => {
   const credentialGate = checkout.indexOf("if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409)");
-  const cardGate = checkout.indexOf("return json({ code: 'CARD_TOKEN_REQUIRED' }, 422)");
-  const checkoutReservation = checkout.indexOf("rpc('get_or_create_billing_checkout'");
+  const cardGate = checkout.indexOf("return json({ code: 'CARD_PAYMENT_DATA_INVALID' }, 422)");
+  const checkoutReservation = checkout.indexOf("rpc('get_or_create_billing_checkout_v2'");
   assert.ok(credentialGate >= 0 && credentialGate < checkoutReservation, 'missing credentials must be detected before checkout reservation');
   assert.ok(cardGate >= 0 && cardGate < checkoutReservation, 'invalid card tokens must be rejected before checkout reservation');
-  assert.match(checkout, /card_token_id: cardTokenId/);
+  assert.match(checkout, /token: cardTokenId/);
+  assert.match(checkout, /payment_method_id: paymentMethodId/);
+  assert.match(checkout, /installments/);
   assert.match(checkout, /api\.mercadopago\.com\/preapproval/);
   assert.match(checkout, /X-Idempotency-Key': `f7-subscription-/);
   assert.match(checkout, /frequency: billingPeriod === 'year' \? 12 : 1/);
@@ -107,7 +118,7 @@ test('PIX exposes provider evidence and payment activation only comes from webho
   assert.match(checkout, /qr_code/);
   assert.match(checkout, /qr_code_base64/);
   assert.match(page, /webhook/);
-  assert.match(page, /PIX não renova automaticamente/);
+  assert.match(page, /não há renovação automática/);
   assert.match(webhook, /validateSignature/);
   assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
   assert.match(webhook, /billing_webhook_events/);
@@ -262,11 +273,18 @@ test('public plans and authenticated checkout routes are wired without changing 
   assert.match(site, /Assinar/);
 });
 
-test('recurring card stays unavailable until remote schema and Edge Functions roll out together', () => {
-  assert.match(page, /const recurringBillingEnabled = false/);
-  assert.match(page, /\{recurringBillingEnabled && <Button/);
-  assert.match(page, /Cartão recorrente<\/Button>\}/);
-  assert.match(page, /Cartão recorrente ficará disponível após a publicação coordenada do Billing/);
+test('both models are explicit, annual prices are backend-checked and cards use single-use tokenization', () => {
+  assert.match(page, /Assinatura recorrente/);
+  assert.match(page, /Pagamento avulso/);
+  assert.match(page, /priceForBillingPeriod\(plan, billingPeriod\)/);
+  assert.match(page, /sem desconto/);
+  assert.match(page, /Esta compra não autoriza cobranças futuras/);
+  assert.match(checkout, /billingModel === 'recurring'/);
+  assert.match(checkout, /X-Idempotency-Key': `f7-payment-/);
+  assert.match(checkout, /persist_billing_checkout_payment/);
+  assert.match(dualBillingMigration, /current_period_end > now\(\)/);
+  assert.match(dualBillingMigration, /record_billing_subscription_control[\s\S]*access_row\.current_period_end>now\(\)/);
+  assert.match(dualBillingMigration, /billing_model='one_time' and s\.current_period_end > now\(\)/);
 });
 
 test('landing hero separates trial and plan discovery CTAs', () => {

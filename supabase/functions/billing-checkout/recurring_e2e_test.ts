@@ -26,6 +26,8 @@ const previousEnv = new Map(
     "MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED",
     "MERCADO_PAGO_ACCESS_TOKEN",
     "MERCADO_PAGO_WEBHOOK_SECRET",
+    "APP_URL",
+    "APP_ORIGIN",
   ].map((key) => [key, Deno.env.get(key)]),
 );
 const createdUsers: string[] = [];
@@ -242,6 +244,8 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       "APP_USR-local-only-recurring-test-token",
     );
     Deno.env.set("MERCADO_PAGO_WEBHOOK_SECRET", webhookSecret);
+    Deno.env.set("APP_ORIGIN", "http://127.0.0.1:54321");
+    Deno.env.set("APP_URL", "http://127.0.0.1:54321/checkout");
 
     const { data: plan, error: planError } = await admin.from("plans").select(
       "id,price_minor,currency,billing_period,active",
@@ -278,7 +282,14 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
           company_id: ownerA.companyId,
           plan_code: "pro",
           method: "card",
-          card_token_id: `test_${crypto.randomUUID().replaceAll("-", "")}`,
+          billing_model: "recurring",
+          billing_period: "month",
+          card_payment: {
+            token: `test_${crypto.randomUUID().replaceAll("-", "")}`,
+            payment_method_id: "visa",
+            installments: 1,
+            payer: { email: "billing-recurring-a@example.invalid", identification: { type: "CPF", number: "12345678909" } },
+          },
         }),
       },
     );
@@ -476,12 +487,12 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       "Cancellation left an active lease or incorrect terminal state.",
     );
     const cancelledAccess = await admin.from("company_subscriptions").select(
-      "status,plan",
+      "status,plan,current_period_end",
     ).eq("company_id", ownerA.companyId).single();
     assert(
-      !cancelledAccess.error && cancelledAccess.data.status === "cancelled" &&
-        cancelledAccess.data.plan === "pro",
-      "Cancellation did not update only the owner tenant access state.",
+      !cancelledAccess.error && cancelledAccess.data.status === "active" &&
+        cancelledAccess.data.plan === "pro" && new Date(cancelledAccess.data.current_period_end).getTime() > Date.now(),
+      "Cancellation did not stop renewal while preserving the already paid period.",
     );
   } finally {
     if (createdEvents.length) {

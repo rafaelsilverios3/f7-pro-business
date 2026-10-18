@@ -1,5 +1,5 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation, blocksRecurringCardInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksLiveBillingInHomologation, blocksRecurringBillingInHomologation } from '../_shared/billingEnvironment.ts';
 import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
@@ -13,7 +13,7 @@ const logProviderFailure = (details: Record<string, unknown>) => {
   console.error(JSON.stringify({
     event: 'BILLING_PROVIDER_REQUEST_FAILED',
     provider: 'mercado_pago',
-    operation: ['create_order', 'create_subscription'].includes(String(details.operation)) ? details.operation : 'unknown',
+    operation: ['create_order', 'create_payment', 'create_subscription'].includes(String(details.operation)) ? details.operation : 'unknown',
     http_status: Number.isInteger(httpStatus) ? httpStatus : null,
     request_id_present: Boolean(details.request_id_present),
     timestamp: new Date().toISOString(),
@@ -26,26 +26,44 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
   let companyId: string | null = null;
   try {
     const sb = dependencies.adminClient || admin(); const providerFetch = dependencies.providerFetch || fetch; const jwt = auth(req); const { data: userData } = await sb.auth.getUser(jwt); if (!userData?.user) return json({ code: 'AUTH_REQUIRED' }, 401);
-    const body = await req.json().catch(() => ({})); companyId = uuid(body?.company_id); const planCode = clean(body?.plan_code, 20).toLowerCase(); const method = body?.method ?? 'pix';
+    const body = await req.json().catch(() => ({})); companyId = uuid(body?.company_id); const planCode = clean(body?.plan_code, 20).toLowerCase(); const method = body?.method;
+    const billingModel = body?.billing_model;
+    const billingPeriod = body?.billing_period;
     if (!companyId || !['free', 'pro', 'business', 'premium'].includes(planCode)) return json({ code: 'INVALID_REQUEST' }, 422);
     if (!['pix', 'card'].includes(method)) return json({ code: 'INVALID_PAYMENT_METHOD' }, 422);
+    if (!['one_time', 'recurring'].includes(billingModel)) return json({ code: 'INVALID_BILLING_MODEL' }, 422);
+    if (!['month', 'year'].includes(billingPeriod)) return json({ code: 'INVALID_BILLING_PERIOD' }, 422);
+    if (billingModel === 'recurring' && method !== 'card') return json({ code: 'RECURRING_CARD_REQUIRED' }, 422);
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle(); if (!member?.active || !['admin', 'gestor'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
     const { data: plan } = await sb.from('plans').select('id,code,name,price_minor,currency,billing_period').eq('code', planCode).eq('active', true).maybeSingle(); if (!plan) return json({ code: 'PLAN_NOT_FOUND' }, 404);
     if (plan.price_minor == null) return json({ code: 'PLAN_PRICE_NOT_CONFIGURED', message: 'O preço deste plano ainda não foi definido.' }, 409);
     if (plan.code === 'free') return json({ code: 'FREE_PLAN_NO_PAYMENT_REQUIRED', plan });
-    const amountMinor = Number(plan.price_minor);
-    const billingPeriod = String(plan.billing_period || '').toLowerCase();
+    const configuredPeriod = String(plan.billing_period || '').toLowerCase();
+    const baseAmountMinor = Number(plan.price_minor);
+    const amountMinor = billingPeriod === configuredPeriod ? baseAmountMinor
+      : configuredPeriod === 'month' && billingPeriod === 'year' ? baseAmountMinor * 12 : Number.NaN;
     if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || String(plan.currency || '').toUpperCase() !== 'BRL') {
       return json({ code: 'PLAN_PRICE_INVALID' }, 409);
     }
-    if (!['month', 'year'].includes(billingPeriod)) return json({ code: 'BILLING_PERIOD_UNSUPPORTED' }, 409);
-    if (blocksRecurringCardInHomologation(method)) return json({ code: 'HOMOLOGATION_RECURRING_CARD_DISABLED' }, 409);
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
+    if (blocksRecurringBillingInHomologation(billingModel, environment)) return json({ code: 'HOMOLOGATION_RECURRING_BILLING_TEST_ONLY' }, 409);
     if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
     const validEnvironment = environment === 'test' || environment === 'production';
     if (!validEnvironment) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
     const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
     if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
+    let appBackUrl: string | null = null;
+    if (billingModel === 'recurring') {
+      try {
+        const candidate = new URL(Deno.env.get('APP_URL') || '');
+        const configuredOrigin = new URL(Deno.env.get('APP_ORIGIN') || '');
+        const localTestOrigin = environment === 'test' && candidate.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(candidate.hostname);
+        if (candidate.username || candidate.password || candidate.search || candidate.hash ||
+          (!localTestOrigin && candidate.protocol !== 'https:') ||
+          (!localTestOrigin && candidate.origin !== configuredOrigin.origin)) return json({ code: 'BILLING_RETURN_URL_NOT_CONFIGURED' }, 409);
+        appBackUrl = candidate.toString();
+      } catch { return json({ code: 'BILLING_RETURN_URL_NOT_CONFIGURED' }, 409); }
+    }
     if (!Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET')) return json({ code: 'MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED' }, 409);
     // Reject unavailable payment paths before creating a persistent checkout
     // intent. In particular, a missing provider credential or unsupported
@@ -58,31 +76,47 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     }
     const accountEmail = typeof userData.user.email === 'string' ? userData.user.email.trim().toLowerCase() : '';
     if (environment === 'production' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) return json({ code: 'PAYER_EMAIL_REQUIRED' }, 409);
-    const cardTokenId = typeof body?.card_token_id === 'string' ? body.card_token_id.trim() : '';
-    if (method === 'card' && (!cardTokenId || cardTokenId.length > 256 || !/^[A-Za-z0-9_-]+$/.test(cardTokenId))) {
-      return json({ code: 'CARD_TOKEN_REQUIRED' }, 422);
+    const cardPayment = body?.card_payment && typeof body.card_payment === 'object' ? body.card_payment : {};
+    const cardTokenId = typeof cardPayment.token === 'string' ? cardPayment.token.trim() : '';
+    const paymentMethodId = typeof cardPayment.payment_method_id === 'string' ? cardPayment.payment_method_id.trim() : '';
+    const installments = Number(cardPayment.installments);
+    const payerIdentification = cardPayment.payer?.identification;
+    const payerEmail = typeof cardPayment.payer?.email === 'string' ? cardPayment.payer.email.trim().toLowerCase() : accountEmail;
+    if (method === 'card' && (!cardTokenId || cardTokenId.length > 256 || !/^[A-Za-z0-9_-]+$/.test(cardTokenId)
+      || !/^[A-Za-z0-9_-]{1,40}$/.test(paymentMethodId) || !Number.isInteger(installments) || installments < 1 || installments > 24
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)
+      || !['CPF','CNPJ'].includes(String(payerIdentification?.type || '').toUpperCase())
+      || !/^\d{11,14}$/.test(String(payerIdentification?.number || '').replace(/\D/g, '')))) {
+      return json({ code: 'CARD_PAYMENT_DATA_INVALID' }, 422);
     }
-    const { data: checkoutRows, error: checkoutError } = await sb.rpc('get_or_create_billing_checkout', {
+    const { data: checkoutRows, error: checkoutError } = await sb.rpc('get_or_create_billing_checkout_v2', {
       p_company_id: companyId, p_user_id: userData.user.id, p_plan_id: plan.id, p_method: method,
+      p_billing_model: billingModel, p_billing_period: billingPeriod,
     });
     if (checkoutError) {
       console.error(JSON.stringify({ event: 'BILLING_CHECKOUT_RESERVATION_FAILED', database_code: /^[0-9A-Z]{5}$/.test(String(checkoutError.code || '')) ? checkoutError.code : 'UNKNOWN' }));
-      return json({ code: checkoutError.code === '42501' ? 'FORBIDDEN' : 'CHECKOUT_CREATE_FAILED' }, checkoutError.code === '42501' ? 403 : 500);
+      const status = checkoutError.code === '42501' ? 403
+        : ['23514', '22023', '22003'].includes(String(checkoutError.code)) ? 409 : 500;
+      const code = checkoutError.code === '42501' ? 'FORBIDDEN'
+        : checkoutError.code === '23514' ? 'ACTIVE_CONTRACT_CONFLICT'
+        : ['22023', '22003'].includes(String(checkoutError.code)) ? 'CHECKOUT_TERMS_INVALID' : 'CHECKOUT_CREATE_FAILED';
+      return json({ code }, status);
     }
     const checkout = Array.isArray(checkoutRows) ? checkoutRows[0] : checkoutRows;
     if (!checkout) throw new Error('CHECKOUT_CREATE_FAILED');
-    if (Number(checkout.amount_minor) !== amountMinor) return json({ code: 'CHECKOUT_PRICE_CHANGED' }, 409);
+    if (Number(checkout.amount_minor) !== amountMinor || checkout.billing_model !== billingModel || checkout.billing_period_snapshot !== billingPeriod) return json({ code: 'CHECKOUT_PRICE_CHANGED' }, 409);
     const idempotency = `f7-order-${checkout.id}`;
     const isTest = environment === 'test';
     const amount = (Number(checkout.amount_minor) / 100).toFixed(2);
     // Orders API test flows require the documented generic test payer email;
     // the older Payments API test-user pattern is not valid for Orders.
     const payer = isTest ? { email: 'test@testuser.com', first_name: 'APRO' } : { email: accountEmail };
-    if (method === 'card') {
+    if (billingModel === 'recurring') {
       const subscriptionBody = {
         reason: `F7 Business ${plan.name}`,
+        back_url: appBackUrl,
         external_reference: checkout.id,
-        payer_email: payer.email,
+        payer_email: payerEmail,
         card_token_id: cardTokenId,
         auto_recurring: {
           // Mercado Pago recurring plans use days/months; represent an annual
@@ -137,6 +171,65 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
       return json({ code: 'OK', checkout: { id: checkout.id, status: 'pending', amount_minor: checkout.amount_minor, expires_at: checkout.expires_at },
         subscription: { id: persisted.subscription_id, status: persisted.status, provider_status: providerStatus,
           init_point: safeInitPoint } });
+    }
+    if (method === 'card') {
+      const paymentBody = {
+        transaction_amount: Number(amount),
+        token: cardTokenId,
+        description: `F7 Business ${plan.name} - ${billingPeriod === 'year' ? '12 meses' : '1 mês'}`,
+        installments,
+        payment_method_id: paymentMethodId,
+        ...(cardPayment.issuer_id ? { issuer_id: clean(cardPayment.issuer_id, 40) } : {}),
+        external_reference: checkout.id,
+        payer: {
+          email: payerEmail,
+          identification: {
+            type: String(payerIdentification.type).toUpperCase(),
+            number: String(payerIdentification.number).replace(/\D/g, ''),
+          },
+        },
+      };
+      let paymentResponse: Response;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        try {
+          paymentResponse = await providerFetch('https://api.mercadopago.com/v1/payments', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Idempotency-Key': `f7-payment-${checkout.id}` },
+            body: JSON.stringify(paymentBody), signal: controller.signal,
+          });
+        } finally { clearTimeout(timeout); }
+      } catch {
+        return json({ code: 'MERCADO_PAGO_RESULT_UNCERTAIN' }, 503);
+      }
+      const rawPayment = await paymentResponse.text();
+      let paymentResult: any = {};
+      try { paymentResult = rawPayment ? JSON.parse(rawPayment) : {}; } catch { paymentResult = {}; }
+      if (!paymentResponse.ok) {
+        logProviderFailure({ operation: 'create_payment', http_status: paymentResponse.status, request_id_present: Boolean(paymentResponse.headers.get('x-request-id')) });
+        if (paymentResponse.status < 500 && paymentResponse.status !== 429) await sb.from('billing_checkout_sessions').update({ status: 'failed' }).eq('id', checkout.id).eq('company_id', companyId);
+        else return json({ code: 'MERCADO_PAGO_RESULT_UNCERTAIN' }, 503);
+        return json({ code: 'MERCADO_PAGO_ERROR' }, 502);
+      }
+      const providerPaymentId = clean(paymentResult.id, 120);
+      const providerStatus = clean(paymentResult.status, 80);
+      const providerAmountMinor = Number.isFinite(Number(paymentResult.transaction_amount)) ? Math.round(Number(paymentResult.transaction_amount) * 100) : null;
+      const providerCurrency = String(paymentResult.currency_id || '').toUpperCase();
+      if (!providerPaymentId || !providerStatus || providerAmountMinor !== Number(checkout.amount_minor) || providerCurrency !== String(plan.currency).toUpperCase()) {
+        return json({ code: 'MERCADO_PAGO_RESPONSE_MISMATCH' }, 502);
+      }
+      const { data: persisted, error: persistError } = await sb.rpc('persist_billing_checkout_payment', {
+        p_checkout_id: checkout.id, p_company_id: companyId,
+        p_provider_payment_id: providerPaymentId, p_provider_status: providerStatus,
+        p_currency: providerCurrency,
+      });
+      if (persistError || persisted?.code !== 'OK') {
+        console.error(JSON.stringify({ event: 'BILLING_CHECKOUT_PROVIDER_STATE_FAILED', database_code: /^[0-9A-Z]{5}$/.test(String(persistError?.code || '')) ? persistError.code : 'UNKNOWN' }));
+        return json({ code: 'CHECKOUT_STATE_RETRYABLE' }, 503);
+      }
+      return json({ code: 'OK', checkout: { id: checkout.id, status: 'pending', amount_minor: checkout.amount_minor },
+        payment: { id: providerPaymentId, status: providerStatus, status_detail: clean(paymentResult.status_detail, 80) || null } });
     }
     const orderBody = { type: 'online', external_reference: checkout.id, total_amount: amount, processing_mode: 'automatic', payer, transactions: { payments: [{ amount, payment_method: { id: 'pix', type: 'bank_transfer' } }] } };
     let response: Response;

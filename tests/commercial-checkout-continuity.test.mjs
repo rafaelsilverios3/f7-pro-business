@@ -28,8 +28,10 @@ test('company creation navigates directly to the sanitized return target and blo
   assert.match(companyContext, /setCompany\(created\)/);
 });
 
-test('checkout leaves tenant authorization on the server and recurring payment disabled', () => {
-  assert.match(checkout, /const recurringBillingEnabled = false/);
+test('checkout keeps authorization server-side and exposes both explicit billing models', () => {
+  assert.match(checkout, /value="one_time"/);
+  assert.match(checkout, /value="recurring"/);
+  assert.match(checkout, /billingModel, billingPeriod/);
   assert.match(checkoutFunction, /auth\.getUser\(jwt\)/);
   assert.match(checkoutFunction, /company_users/);
   assert.match(checkoutFunction, /!member\?\.active \|\| !\['admin', 'gestor'\]\.includes\(member\.role\)/);

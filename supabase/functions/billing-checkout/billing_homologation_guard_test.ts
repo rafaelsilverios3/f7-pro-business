@@ -3,7 +3,7 @@ import { handleBillingSubscriptionManageRequest } from "../billing-subscription-
 import { handleBillingWebhookRequest } from "../billing-webhook/index.ts";
 import {
   blocksLiveBillingInHomologation,
-  blocksRecurringCardInHomologation,
+  blocksRecurringBillingInHomologation,
 } from "../_shared/billingEnvironment.ts";
 
 const HOMOLOG_URL = "https://vwylnjmapixtzhryiutt.supabase.co";
@@ -151,13 +151,14 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
       "sandbox mode was incorrectly blocked",
     );
     assert(
-      blocksRecurringCardInHomologation("card"),
-      "homologation did not keep recurring card checkout disabled",
+      blocksRecurringBillingInHomologation("recurring", "production"),
+      "homologation did not block recurring billing with production credentials",
     );
     assert(
-      !blocksRecurringCardInHomologation("pix"),
-      "homologation incorrectly blocked PIX along with recurring card",
+      !blocksRecurringBillingInHomologation("one_time", "production"),
+      "one-time contract was incorrectly classified as recurring",
     );
+    assert(!blocksRecurringBillingInHomologation("recurring", "test"), "verified test recurring mode was blocked");
     Deno.env.set("SUPABASE_URL", "https://other-project.supabase.co");
     assert(
       !blocksLiveBillingInHomologation("production"),
@@ -182,6 +183,8 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
           company_id: companyId,
           plan_code: "pro",
           method: "pix",
+          billing_model: "one_time",
+          billing_period: "month",
         }),
       }),
       { adminClient: client, providerFetch },
@@ -262,10 +265,11 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
   });
 });
 
-Deno.test("Billing homologation: recurring card is closed before persistence or provider calls", async () => {
+Deno.test("Billing homologation: live recurring is closed before persistence or provider calls", async () => {
   await withEnv({
     SUPABASE_URL: HOMOLOG_URL,
-    MERCADO_PAGO_ENVIRONMENT: "test",
+    MERCADO_PAGO_ENVIRONMENT: "production",
+    MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: "true",
     MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-synthetic-test-only",
     MERCADO_PAGO_WEBHOOK_SECRET: "local-only-secret",
   }, async () => {
@@ -282,7 +286,9 @@ Deno.test("Billing homologation: recurring card is closed before persistence or 
           company_id: companyId,
           plan_code: "pro",
           method: "card",
-          card_token_id: "synthetic-card-token",
+          billing_model: "recurring",
+          billing_period: "month",
+          card_payment: { token: "synthetic-card-token" },
         }),
       }),
       {
@@ -295,8 +301,8 @@ Deno.test("Billing homologation: recurring card is closed before persistence or 
     );
     assert(
       response.status === 409 &&
-        (await response.json()).code === "HOMOLOGATION_RECURRING_CARD_DISABLED",
-      "recurring card checkout was not blocked in homologation",
+        (await response.json()).code === "HOMOLOGATION_RECURRING_BILLING_TEST_ONLY",
+      "live recurring checkout was not blocked in homologation",
     );
     assert(
       providerCalls === 0 && client.rpcCalls === 0,
@@ -318,7 +324,7 @@ Deno.test("Billing checkout denies an unauthorized company role before provider 
       new Request("https://local.invalid/functions/v1/billing-checkout", {
         method: "POST",
         headers: { authorization: "Bearer synthetic", "content-type": "application/json" },
-        body: JSON.stringify({ company_id: companyId, plan_code: "pro", method: "pix" }),
+        body: JSON.stringify({ company_id: companyId, plan_code: "pro", method: "pix", billing_model: "one_time", billing_period: "month" }),
       }),
       {
         adminClient: client,
@@ -343,8 +349,8 @@ Deno.test("Billing sandbox checkout accepts a verified APP_USR test account and 
   }, async () => {
     const checkoutId = "44444444-4444-4444-8444-444444444444";
     const client = makeAdminClient("authorized", "admin", {
-      get_or_create_billing_checkout: {
-        data: [{ id: checkoutId, amount_minor: 12500, expires_at: "2030-01-01T00:00:00.000Z" }],
+      get_or_create_billing_checkout_v2: {
+        data: [{ id: checkoutId, amount_minor: 12500, billing_model: "one_time", billing_period_snapshot: "month", expires_at: "2030-01-01T00:00:00.000Z" }],
         error: null,
       },
       persist_billing_checkout_order: { data: { code: "OK" }, error: null },
@@ -354,7 +360,7 @@ Deno.test("Billing sandbox checkout accepts a verified APP_USR test account and 
       new Request("https://local.invalid/functions/v1/billing-checkout", {
         method: "POST",
         headers: { authorization: "Bearer synthetic", "content-type": "application/json" },
-        body: JSON.stringify({ company_id: companyId, plan_code: "pro", method: "pix" }),
+        body: JSON.stringify({ company_id: companyId, plan_code: "pro", method: "pix", billing_model: "one_time", billing_period: "month" }),
       }),
       {
         adminClient: client,

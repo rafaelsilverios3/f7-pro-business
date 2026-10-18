@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { invokeEdgeFunction } from '@/services/integrationsService';
 import { buildActivePlanCatalog, planCatalogUnavailable } from '@/services/billingPlanCatalog';
+import { priceForBillingPeriod } from '@/services/billingPricing';
 
 const FALLBACK_PLANS = [
   { code: 'free', name: 'FREE', description: 'Para começar e conhecer o sistema.', price_minor: null, billing_period: 'month', highlighted: false, sort_order: 1, features: [] },
@@ -25,9 +26,10 @@ export const billingService = {
       throw planCatalogUnavailable();
     }
   },
-  createCheckout: (companyId, planCode, method = 'pix', cardTokenId = undefined) => invokeEdgeFunction('billing-checkout', {
-    company_id: companyId, plan_code: planCode, method,
-    ...(method === 'card' && cardTokenId ? { card_token_id: cardTokenId } : {}),
+  createCheckout: (companyId, planCode, billingModel, billingPeriod, method, cardPayment = undefined) => invokeEdgeFunction('billing-checkout', {
+    company_id: companyId, plan_code: planCode, billing_model: billingModel,
+    billing_period: billingPeriod, method,
+    ...(method === 'card' && cardPayment ? { card_payment: cardPayment } : {}),
   }),
   manageSubscription: (companyId, subscriptionId, action) => invokeEdgeFunction('billing-subscription-manage', {
     company_id: companyId, subscription_id: subscriptionId, action,
@@ -36,3 +38,4 @@ export const billingService = {
 };
 
 export { FALLBACK_PLANS };
+export { priceForBillingPeriod };

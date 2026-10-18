@@ -19,10 +19,9 @@ export function blocksLiveBillingInHomologation(environment: string): boolean {
     environment.trim().toLowerCase() === "production";
 }
 
-/**
- * Card checkout currently creates a recurring preapproval. Keep that path
- * closed in homologation until its Mercado Pago sandbox contract is verified.
- */
-export function blocksRecurringCardInHomologation(method: string): boolean {
-  return isF7HomologationProject() && method.trim().toLowerCase() === "card";
+/** Recurring billing in homologation is permitted only with the verified test
+ * environment; production credentials remain blocked by the separate guard. */
+export function blocksRecurringBillingInHomologation(model: string, environment: string): boolean {
+  return isF7HomologationProject() && model.trim().toLowerCase() === "recurring" &&
+    environment.trim().toLowerCase() !== "test";
 }

@@ -13,7 +13,7 @@ if (!local || !['localhost', '127.0.0.1', '[::1]'].includes(local.hostname) || !
 }
 
 const admin = createClient(baseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-const previousEnv = new Map(['MERCADO_PAGO_ENVIRONMENT', 'MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'MERCADO_PAGO_ACCESS_TOKEN', 'MERCADO_PAGO_WEBHOOK_SECRET'].map((key) => [key, Deno.env.get(key)]));
+const previousEnv = new Map(['MERCADO_PAGO_ENVIRONMENT', 'MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'MERCADO_PAGO_ACCESS_TOKEN', 'MERCADO_PAGO_WEBHOOK_SECRET', 'APP_URL', 'APP_ORIGIN'].map((key) => [key, Deno.env.get(key)]));
 const createdUsers: string[] = [];
 const createdCompanies: string[] = [];
 const createdEvents: string[] = [];
@@ -57,6 +57,8 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
   Deno.env.set('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'false');
   Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'APP_USR-local-only-recurring-test-token');
   Deno.env.set('MERCADO_PAGO_WEBHOOK_SECRET', secret);
+  Deno.env.set('APP_ORIGIN', 'http://127.0.0.1:54321');
+  Deno.env.set('APP_URL', 'http://127.0.0.1:54321/checkout');
   let owner: Awaited<ReturnType<typeof makeOwner>> | undefined;
   const nonce = crypto.randomUUID().replaceAll('-', '');
   const providerSubscriptionId = `local-sub-${nonce}`;
@@ -102,7 +104,7 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
     owner = await makeOwner();
     const checkout = await handleBillingCheckoutRequest(new Request('http://127.0.0.1/functions/v1/billing-checkout', {
       method: 'POST', headers: { Authorization: `Bearer ${owner.jwt}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id: owner.companyId, plan_code: 'pro', method: 'card', card_token_id: token }),
+      body: JSON.stringify({ company_id: owner.companyId, plan_code: 'pro', method: 'card', billing_model: 'recurring', billing_period: 'month', card_payment: { token, payment_method_id: 'visa', installments: 1, payer: { email: 'test@example.invalid', identification: { type: 'CPF', number: '12345678909' } } } }),
     }), { adminClient: admin, providerFetch });
     const checkoutBody = await checkout.json();
     assert(checkout.status === 200 && checkoutBody.code === 'OK' && checkoutBody.subscription?.id, `card subscription checkout failed (http=${checkout.status}, code=${checkoutBody.code})`);
@@ -184,7 +186,7 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
     const canceled = await handleBillingWebhookRequest(await webhookRequest(secret, 'subscription_preapproval', providerSubscriptionId, cancelEventId), { adminClient: admin, providerFetch });
     assert(canceled.status === 200 && (await canceled.json()).status === 'cancelled', 'provider cancellation event was not recorded');
     const canceledSubscription = await admin.from('company_subscriptions').select('status').eq('company_id', owner.companyId).single();
-    assert(canceledSubscription.data?.status === 'cancelled', 'cancellation webhook did not cancel the local plan');
+    assert(canceledSubscription.data?.status === 'active', 'cancellation webhook did not preserve the prepaid period');
     const duplicateCancellation = await handleBillingSubscriptionManageRequest(new Request('http://127.0.0.1/functions/v1/billing-subscription-manage', {
       method: 'POST', headers: { Authorization: `Bearer ${owner.jwt}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id: owner.companyId, subscription_id: localSubscription.data.id, action: 'cancel' }),
@@ -202,8 +204,8 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
     const latePaid = await handleBillingWebhookRequest(await webhookRequest(secret, 'subscription_authorized_payment', lateInvoiceId, lateEventId), { adminClient: admin, providerFetch: lateFetch });
     const lateBody = await latePaid.json();
     assert(latePaid.status === 200 && lateBody.status === 'approved' && lateBody.access_granted === false, `late payment after cancellation did not return the safe result (http=${latePaid.status}, code=${String(lateBody.code)}, status=${String(lateBody.status)}, access=${String(lateBody.access_granted)})`);
-    const stillCancelled = await admin.from('company_subscriptions').select('status').eq('company_id', owner.companyId).single();
-    assert(stillCancelled.data?.status === 'cancelled', 'late invoice reactivated a cancelled subscription');
+    const stillCancelled = await admin.from('company_subscriptions').select('status,current_period_end').eq('company_id', owner.companyId).single();
+    assert(stillCancelled.data?.status === 'active' && new Date(stillCancelled.data.current_period_end).getTime() > Date.now(), 'late invoice changed prepaid access or reactivated billing');
     const storedLatePayment = await admin.from('billing_payments').select('status').eq('provider_payment_id', latePaymentId).single();
     assert(storedLatePayment.data?.status === 'approved', 'paid-but-not-reinstated invoice was not retained for reconciliation');
 
