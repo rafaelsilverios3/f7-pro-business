@@ -36,6 +36,7 @@ test('backend remains the final authority for WhatsApp management', () => {
 
 test('AI remains disabled and WhatsApp actions stay feature-flagged', () => {
   assert.doesNotMatch(page, /VITE_AI_ENABLED/);
-  assert.match(page, /VITE_WHATSAPP_ENABLED/);
+  assert.doesNotMatch(page, /VITE_WHATSAPP_ENABLED/);
+  assert.match(page, /getWhatsAppIntegrationState\(whatsappHealth, whatsapp\)/);
   assert.match(page, /assistantMode|company_has_feature/);
 });
