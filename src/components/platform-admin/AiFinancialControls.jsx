@@ -29,7 +29,7 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
   const [companyLookupError, setCompanyLookupError] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [form, setForm] = useState({ rate_kind: 'model_tokens', provider_key: 'https://api.openai.com', model_key: '', rate_version: '', currency: '', input_cost_per_1k: '', output_cost_per_1k: '', cost_per_query: '', source_reference: '', effective_from: new Date(Date.now() + 60_000).toISOString().slice(0, 16), enabled: false, reason: '' });
+  const [form, setForm] = useState({ rate_kind: 'model_tokens', provider_key: '', model_key: '', rate_version: '', currency: '', input_cost_per_1k: '', output_cost_per_1k: '', cost_per_query: '', source_reference: '', effective_from: new Date(Date.now() + 60_000).toISOString().slice(0, 16), enabled: false, reason: '' });
   const isModel = form.rate_kind === 'model_tokens';
   const load = useCallback(async () => {
     if (!canRead) return;
@@ -95,7 +95,7 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
       {!canManage && <Notice>Modo somente leitura. Apenas o owner global pode cadastrar ou habilitar tarifas.</Notice>}
       {canManage && <form onSubmit={submit} className="grid gap-3 md:grid-cols-3">
         <SelectField label="Tipo de tarifa" value={form.rate_kind} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, rate_kind: event.target.value })}><option value="model_tokens">Tokens de modelo</option><option value="external_query">Consulta externa</option></SelectField>
-        <Field label="Origem do provedor (sem caminho ou segredo)" value={form.provider_key} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, provider_key: event.target.value })} placeholder="https://api.openai.com" />
+        <Field label="Origem do provedor (sem caminho ou segredo)" value={form.provider_key} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, provider_key: event.target.value })} placeholder="https://api.provedor.com" />
         {isModel && <Field label="Modelo exato" value={form.model_key} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, model_key: event.target.value })} placeholder="Identificador do modelo" />}
         <Field label="Versão da tarifa" value={form.rate_version} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, rate_version: event.target.value })} placeholder="Ex.: 2026-10-16-v1" />
         <SelectField label="Moeda suportada" value={form.currency} disabled={!canManage || busy} onChange={(event) => setForm({ ...form, currency: event.target.value })}><option value="">Selecione</option>{aiCurrencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</SelectField>
