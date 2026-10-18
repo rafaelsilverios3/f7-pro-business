@@ -3,7 +3,12 @@ import path from 'node:path';
 
 const directory = path.resolve('supabase/migrations');
 const files = (await readdir(directory)).filter((name) => /^(?:\d{4}|\d{14})_.+\.sql$/.test(name)).sort();
+const rollbackCatalogPath = path.resolve('docs/migration-rollbacks.json');
+const rollbackCatalog = JSON.parse(await readFile(rollbackCatalogPath, 'utf8'));
 const seen = new Set();
+for (const migration of Object.keys(rollbackCatalog)) {
+  if (!files.includes(migration)) throw new Error(`${rollbackCatalogPath}: unknown migration ${migration}`);
+}
 for (const file of files) {
   const version = file.slice(0, file.indexOf('_'));
   if (seen.has(version)) throw new Error(`Duplicate migration number: ${version}`);
@@ -16,7 +21,9 @@ for (const file of files) {
   const hasConceptualRollback = /conceptual rollback|rollback conceitual/i.test(sql);
   const hasPaidAIShutdownRollback = file === '20261014234651_ai_budget_reservations_and_settlement.sql'
     && /rollback requires paid AI to be disabled first/i.test(sql);
-  if (!hasConceptualRollback && !hasPaidAIShutdownRollback && Number(version) >= 45) {
+  const hasDocumentedRollback = typeof rollbackCatalog[file] === 'string'
+    && rollbackCatalog[file].trim().length >= 40;
+  if (!hasConceptualRollback && !hasPaidAIShutdownRollback && !hasDocumentedRollback && Number(version) >= 42) {
     throw new Error(`${file}: missing conceptual rollback`);
   }
 }

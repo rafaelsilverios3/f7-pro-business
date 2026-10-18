@@ -35,7 +35,7 @@ export function roleHasAiSalesPermissions(role, permissions = ['ai_sales.use']) 
   return granted.includes('*') || permissions.every((permission) => granted.includes(permission));
 }
 
-export function providerConfiguration({ enabled, apiKey, apiUrl }) {
+export function providerConfiguration({ enabled, apiKey, apiUrl, model }) {
   if (String(enabled ?? '').trim().toLowerCase() !== 'true') return { configured: false, reason: 'disabled' };
   if (!String(apiKey || '').trim()) return { configured: false, reason: 'missing_key' };
   const endpoint = String(apiUrl || 'https://api.openai.com/v1/chat/completions').trim();
@@ -45,6 +45,9 @@ export function providerConfiguration({ enabled, apiKey, apiUrl }) {
   } catch {
     return { configured: false, reason: 'invalid_endpoint' };
   }
+  // Never silently fall back to a model that may have been retired or whose
+  // tariff has not been approved in the company budget ledger.
+  if (!String(model || '').trim()) return { configured: false, reason: 'missing_model' };
   return { configured: true, reason: 'configured_unverified' };
 }
 

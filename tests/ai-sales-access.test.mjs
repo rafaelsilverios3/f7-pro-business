@@ -16,7 +16,8 @@ test('configuração do provedor exige opt-in explícito e nunca equivale a test
   assert.deepEqual(providerConfiguration({ enabled: 'false', apiKey: 'secret', apiUrl: '' }), { configured: false, reason: 'disabled' });
   assert.deepEqual(providerConfiguration({ enabled: 'true', apiKey: '', apiUrl: '' }), { configured: false, reason: 'missing_key' });
   assert.deepEqual(providerConfiguration({ enabled: 'true', apiKey: 'secret', apiUrl: 'http://example.test' }), { configured: false, reason: 'invalid_endpoint' });
-  assert.deepEqual(providerConfiguration({ enabled: 'true', apiKey: 'secret', apiUrl: '' }), { configured: true, reason: 'configured_unverified' });
+  assert.deepEqual(providerConfiguration({ enabled: 'true', apiKey: 'secret', apiUrl: '' }), { configured: false, reason: 'missing_model' });
+  assert.deepEqual(providerConfiguration({ enabled: 'true', apiKey: 'secret', apiUrl: '', model: 'approved-model' }), { configured: true, reason: 'configured_unverified' });
 });
 
 test('contexto enviado ao provedor exclui PII, IDs comerciais e fontes privadas', () => {

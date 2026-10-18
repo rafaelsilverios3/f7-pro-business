@@ -227,6 +227,18 @@ Deno.test('AI Sales: Auth real local, ferramentas comerciais/RLS, mock de geraç
     assert(!providerCustomerRequest.includes(`privacy-${ownerA.marker}@example.invalid`) && !providerCustomerRequest.includes('+5500000000000'), 'customer PII reached the provider mock payload');
 
     Deno.env.set('AI_ENABLED', 'false');
+    const factualStatus = await invoke(ownerA.jwt, companyA, { action: 'status' });
+    const factualStatusBody = await factualStatus.json();
+    assert(factualStatus.status === 200 && factualStatusBody.can_use === true && factualStatusBody.generation_mode === 'factual_only', 'authorized company did not remain available in factual-only mode when generation was disabled');
+    const factualCallsBefore = providerRequests.length;
+    const factualRequestId = crypto.randomUUID();
+    const factualStock = await invoke(ownerA.jwt, companyA, { message: `Quanto temos em estoque do SKU ${product.sku}?`, request_id: factualRequestId });
+    const factualStockBody = await factualStock.json();
+    assert(factualStock.status === 200 && factualStockBody.tool === 'consultar_estoque' && factualStockBody.generation_mode === 'factual_fallback' && factualStockBody.data.stock === 20, 'authorized commercial lookup did not return a grounded factual answer with generation disabled');
+    assert(providerRequests.length === factualCallsBefore, 'factual-only lookup unexpectedly called the provider mock');
+    const factualReservation = await localSql(`select count(*)::text from public.ai_budget_reservations where company_id='${companyA}' and request_key='${factualRequestId}:ai-sales'`);
+    assert(factualReservation === '0', 'factual-only lookup unexpectedly reserved paid AI budget');
+
     const sellerOffer = await invoke(sellerA.jwt, companyA, { message: `Compare ofertas de fornecedor para o SKU ${product.sku}`, request_id: crypto.randomUUID() });
     assert(sellerOffer.status === 403 && (await sellerOffer.json()).code === 'TOOL_PERMISSION_DENIED', 'seller could access an ungranted purchase/pricing tool');
     const sellerStock = await invoke(sellerA.jwt, companyA, { message: `Quanto temos em estoque do SKU ${product.sku}?`, request_id: crypto.randomUUID() });

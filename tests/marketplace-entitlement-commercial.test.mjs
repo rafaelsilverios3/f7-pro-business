@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { platformAdminCanAccessAction } from '../supabase/functions/_shared/platformAdminAccess.js';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const entitlement = read('supabase/migrations/0085_tenant_commercial_access_hardening.sql');
 const catalog = read('supabase/migrations/20261016151752_plan_marketplace_integrations_entitlements.sql');
 const admin = read('supabase/functions/platform-admin/index.ts');
+const platformAccess = read('supabase/functions/_shared/platformAdminAccess.js');
 const ui = read('src/pages/PlatformAdmin.jsx');
 const access = read('supabase/functions/_shared/mercadolivreAccess.ts');
 
@@ -37,8 +39,13 @@ test('browser plan projection agrees with the commercial marketplace matrix', as
 });
 
 test('company override remains behind platform-admin role authorization and audited server update', () => {
-  assert.match(admin, /function isWrite\(action: string\).*update_feature/);
-  assert.match(admin, /const WRITE_ROLES = \['owner', 'admin'\]/);
+  assert.match(admin, /assertCapability\(adminRow\.data\.role, action\)/);
+  assert.match(platformAccess, /const WRITE_ACTIONS = new Set\([\s\S]*?'update_feature'[\s\S]*?\)/);
+  assert.equal(platformAdminCanAccessAction('owner', 'update_feature'), true);
+  assert.equal(platformAdminCanAccessAction('admin', 'update_feature'), true);
+  assert.equal(platformAdminCanAccessAction('support', 'update_feature'), false);
+  assert.equal(platformAdminCanAccessAction('readonly', 'update_feature'), false);
+  assert.equal(platformAdminCanAccessAction('company_admin', 'update_feature'), false);
   assert.match(admin, /company_feature_overrides'\)\.upsert/);
   assert.match(admin, /company\.feature\.enabled/);
   assert.match(admin, /company\.feature\.removed/);
