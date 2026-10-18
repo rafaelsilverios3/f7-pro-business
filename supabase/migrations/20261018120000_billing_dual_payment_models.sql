@@ -2,6 +2,13 @@
 -- Local candidate only until separately reviewed and authorized for remote application.
 -- Existing server-owned plan price is monthly; annual is exactly 12 x monthly (no discount).
 -- Each checkout snapshots its model, period and total; history migrations remain immutable.
+-- Conceptual rollback: first stop new checkout/webhook processing and reconcile all pending
+-- payments and recurring contracts. Restore the pre-migration RPC definitions from the
+-- reviewed parent revision, then remove the v2 settlement/control RPCs and added model,
+-- period and checkout-reference columns in reverse dependency order. Preserve billing
+-- payment/webhook/audit rows and any already-settled access periods; do not drop snapshots
+-- or rewrite subscription history until it is reconciled against provider records and a
+-- verified backup. If settlement has occurred, prefer a forward fix over schema rollback.
 begin;
 alter table public.billing_checkout_sessions add column if not exists billing_model text not null default 'one_time' check (billing_model in ('one_time','recurring')), add column if not exists billing_period_snapshot text;
 update public.billing_checkout_sessions c set billing_model='recurring'
