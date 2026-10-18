@@ -14,8 +14,10 @@ Deno.serve(async (req) => {
   const { data: { user }, error: userError } = await sb.auth.getUser(token);
   if (userError || !user) return json({ code: 'AUTH_REQUIRED' }, 401);
   const body = await req.json().catch(() => ({})); const companyId = typeof body?.company_id === 'string' ? body.company_id : '';
-  const membership = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
-  if (membership.error || membership.data?.active === false || !roles.has(String(membership.data?.role || '').toLowerCase())) return json({ code: 'FORBIDDEN' }, 403);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companyId)) return json({ code: 'COMPANY_CONTEXT_REQUIRED' }, 400);
+  const membership = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).eq('active', true).maybeSingle();
+  if (membership.error) return json({ code: 'COMPANY_MEMBERSHIP_LOOKUP_FAILED' }, 500);
+  if (!membership.data || !roles.has(String(membership.data.role || '').toLowerCase())) return json({ code: 'FORBIDDEN' }, 403);
   const events = await sb.from('integration_logs').select('provider,event,status,created_at').eq('company_id', companyId).in('provider', ['assistant','product_intelligence','whatsapp']).order('created_at', { ascending: false }).limit(200);
   if (events.error) return json({ code: 'HEALTH_LOOKUP_FAILED', internal_code: String(events.error.code || '').slice(0, 80) }, 500);
   const rows = events.data || [];
@@ -29,6 +31,7 @@ Deno.serve(async (req) => {
     realtime: { state: 'UNKNOWN', reason_code: 'client_evidence_required' },
     edge_functions: { state: 'HEALTHY', reason_code: 'health_function_running' },
   };
-  await sb.from('integration_health_snapshots').upsert(Object.entries(services).map(([service, value]) => ({ company_id: companyId, service, state: value.state, reason_code: value.reason_code, evidence_at: new Date().toISOString(), checked_at: new Date().toISOString() })), { onConflict: 'company_id,service' });
+  const { error: snapshotError } = await sb.from('integration_health_snapshots').upsert(Object.entries(services).map(([service, value]) => ({ company_id: companyId, service, state: value.state, reason_code: value.reason_code, evidence_at: new Date().toISOString(), checked_at: new Date().toISOString() })), { onConflict: 'company_id,service' });
+  if (snapshotError) return json({ code: 'HEALTH_SNAPSHOT_WRITE_FAILED' }, 500);
   return json({ services, checked_at: new Date().toISOString() }, 200);
 });

@@ -40,10 +40,10 @@ export function periodKeyPrev(saleDate, period) {
   if (!current.start_date || !current.end_date) return false;
   const start = new Date(`${current.start_date}T12:00:00Z`);
   const end = new Date(`${current.end_date}T12:00:00Z`);
-  const days = Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
   const previousEnd = new Date(start); previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
   const previousStart = new Date(previousEnd); previousStart.setUTCDate(previousStart.getUTCDate() - days + 1);
-  return matchesPeriod(saleDate, { period_key: 'custom', start_date: previousStart.toISOString().slice(0, 10), end_date: previousEnd.toISOString().slice(0, 10), timezone: current.timezone });
+  return matchesPeriod(saleDate, { company_id: '__legacy__', period_key: 'custom', start_date: previousStart.toISOString().slice(0, 10), end_date: previousEnd.toISOString().slice(0, 10), timezone: current.timezone });
 }
 
 // Cria uma venda e integra estoque, financeiro e cliente automaticamente

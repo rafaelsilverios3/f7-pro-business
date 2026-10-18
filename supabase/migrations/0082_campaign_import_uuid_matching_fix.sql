@@ -310,3 +310,7 @@ $$;
 
 revoke all on function public.import_commercial_campaign_atomic(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb) from public, anon;
 grant execute on function public.import_commercial_campaign_atomic(uuid,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb) to authenticated;
+-- Conceptual rollback: restore the exact 0081 import RPC definition and grants.
+-- This is a function-only fix; committed imports, matching results, and any
+-- created/related business records remain. Review and reconcile those records
+-- from import provenance/backups rather than deleting them during code rollback.

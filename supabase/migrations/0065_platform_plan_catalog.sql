@@ -69,3 +69,8 @@ begin
 end; $$;
 revoke all on function public.company_has_feature(uuid, text) from public, anon;
 grant execute on function public.company_has_feature(uuid, text) to authenticated, service_role;
+-- Conceptual rollback: restore plan and plan_features values from a verified
+-- pre-migration snapshot, including values overwritten by UPDATE/UPSERT, and
+-- restore the preceding company_has_feature function/grants. No lossless SQL
+-- inverse exists without that snapshot; later entitlement changes may also
+-- depend on these values, so prefer an audited forward correction if uncertain.

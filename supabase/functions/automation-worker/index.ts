@@ -4,6 +4,10 @@ import { runRadarDetector } from '../_shared/radarDetector.ts';
 import { CRM_AUTOMATION_TRIGGERS, activityMatchesTrigger, isActiveOpportunity, minimalActivitySignal, minimalOpportunitySignal, minimalQuoteSignal, safeTimezone, signalWindowKey } from '../_shared/crmAutomation.ts';
 
 const safe = (value: unknown, max = 160) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max);
+const safeErrorCode = (error: unknown) => {
+  const candidate = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  return typeof candidate.code === 'string' && /^[A-Za-z0-9_.-]{1,80}$/.test(candidate.code) ? candidate.code : 'INTERNAL_ERROR';
+};
 const CRM_TRIGGER_SET = new Set(CRM_AUTOMATION_TRIGGERS);
 const CRM_LABELS: Record<string, { stage: string; title: string; message: string }> = {
   crm_activity_due_soon: { stage: 'CRM_ACTIVITY_DUE_SOON_DETECTED', title: 'Follow-up se aproximando', message: 'Você possui um follow-up comercial se aproximando.' },
@@ -120,7 +124,7 @@ Deno.serve(async (req) => {
   const eventData = body?.event_data && typeof body.event_data === 'object' && !Array.isArray(body.event_data) ? body.event_data : {};
   const sb = admin();
   if (!(await authorized(req, companyId, sb))) return json({ code: 'FORBIDDEN' }, 403);
-  const { data: automationAllowed, error: automationGateError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'automations' });
+  const { data: automationAllowed, error: automationGateError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'automations' });
   if (automationGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
   if (!automationAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'Automações estão disponíveis a partir do plano BUSINESS.' }, 403);
   let rulesQuery = sb.from('automations').select('id,company_id,name,active,trigger_type,conditions,actions,timezone').eq('company_id', companyId).eq('trigger_type', triggerType).eq('active', true).is('deleted_at', null).limit(100);
@@ -131,12 +135,12 @@ Deno.serve(async (req) => {
   const results = [];
   for (const rule of rules.data || []) {
     if (CRM_TRIGGER_SET.has(triggerType)) {
-      try { const crm = await processCrmRule(sb, rule, { companyId, triggerType, eventId, eventData, traceId }); results.push({ automation_id: rule.id, status: 'completed', ...crm }); } catch (error) { results.push({ automation_id: rule.id, status: 'error', code: safe(error?.code || error?.message, 80) }); }
+      try { const crm = await processCrmRule(sb, rule, { companyId, triggerType, eventId, eventData, traceId }); results.push({ automation_id: rule.id, status: 'completed', ...crm }); } catch (error) { results.push({ automation_id: rule.id, status: 'error', code: safeErrorCode(error) }); }
       continue;
     }
     let detectorResult = { signals_count: 0, opportunities_created: 0, opportunities_updated: 0 };
     if (['stock_below_min', 'client_inactive'].includes(triggerType)) {
-      try { detectorResult = await runRadarDetector(sb, companyId, triggerType); } catch (error) { return json({ code: 'RADAR_DETECTOR_FAILED', internal_code: safe(error?.code || error?.message, 80) }, 500); }
+      try { detectorResult = await runRadarDetector(sb, companyId, triggerType); } catch (error) { return json({ code: 'RADAR_DETECTOR_FAILED', internal_code: safeErrorCode(error) }, 500); }
     }
     const idempotencyKey = `${triggerType}:${eventId}`;
     const plan = buildAutomationPlan(rule, { company_id: companyId, trigger_type: triggerType, event_id: eventId, event_data: eventData });

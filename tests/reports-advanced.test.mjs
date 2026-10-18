@@ -31,7 +31,7 @@ test('reports cover all supported period contracts and reject inverted custom ra
 
 test('reports keep tenant scoping, cancelled-sale exclusion, comparison and stale-request protections', () => {
   assert.match(service, /row\?\.company_id === companyId/);
-  assert.match(service, /status !== 'cancelled'/);
+  assert.match(service, /isRevenueSale/);
   assert.match(service, /previousPeriodContext/);
   assert.match(page, /requestId/);
   assert.match(page, /current !== requestId\.current/);

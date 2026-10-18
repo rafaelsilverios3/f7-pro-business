@@ -29,3 +29,7 @@ begin
 end; $$;
 revoke all on function public.company_has_feature(uuid, text) from public, anon;
 grant execute on function public.company_has_feature(uuid, text) to authenticated, service_role;
+-- Conceptual rollback: restore the 0066 company_has_feature body and its grants.
+-- This is a function-definition rollback only; it changes entitlement behavior
+-- and does not restore or reverse trial/subscription data or access decisions
+-- already consumed. Check current subscription states before changing the gate.

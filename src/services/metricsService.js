@@ -1,7 +1,8 @@
 import { buildCrmFunnel, buildRevenueSeries, createPeriodContext, filterByPeriod, metricMeta, matchesPeriod, previousPeriodContext, projectionForPeriod, safeMargin, compareMetric } from '../lib/metrics.js';
+import { isRevenueSale } from '../lib/saleStatus.js';
 
 const scoped = (rows, companyId) => rows.filter((row) => row?.company_id === companyId);
-const validSales = (rows) => rows.filter((row) => row?.status !== 'cancelled');
+const validSales = (rows) => rows.filter(isRevenueSale);
 const sum = (rows, field) => rows.reduce((total, row) => total + (Number(row?.[field]) || 0), 0);
 const openOpportunity = (row) => {
   const state = String(row?.metadata?.radar_state || row?.stage || row?.status || '').trim().toLocaleLowerCase('pt-BR');
@@ -166,7 +167,7 @@ export function getNoTurnoverProductMetrics(companyId, products = [], sales = []
   const rows = scoped(products, companyId).filter((product) => product.item_type !== 'service' && finiteNumber(product.stock) > 0).filter((product) => {
     const history = productHistory.get(product.id) || []; return !history.some((date) => { const day = dateOnlyValue(date); return day && day >= window.start && day <= window.end; });
   }).map((product) => ({ product_id: product.id, name: product.name || 'Produto', stock: finiteNumber(product.stock), last_sale: (productHistory.get(product.id) || []).filter(Boolean).sort().at(-1) || null, opportunity: opportunityMap.get(`product:${product.id}`) || null }));
-  return { rows: rows.slice(0, 5), available: rows.length > 0, window_days: Math.max(1, Math.round((new Date(`${window.end}T12:00:00Z`) - new Date(`${window.start}T12:00:00Z`)) / dayMs) + 1), meta: metricMeta('supabase.sales+products', context, 'snapshot_no_turnover') };
+  return { rows: rows.slice(0, 5), available: rows.length > 0, window_days: Math.max(1, Math.round((new Date(`${window.end}T12:00:00Z`).getTime() - new Date(`${window.start}T12:00:00Z`).getTime()) / dayMs) + 1), meta: metricMeta('supabase.sales+products', context, 'snapshot_no_turnover') };
 }
 
 export function getCriticalStockMetrics(companyId, products = [], sales = [], opportunities = [], periodContext) {

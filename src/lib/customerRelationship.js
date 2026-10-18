@@ -1,3 +1,5 @@
+import { isRevenueSale } from './saleStatus.js';
+
 const DAY_MS = 86_400_000;
 export const INACTIVITY_DAYS = 90;
 export const RECENT_PURCHASE_DAYS = 30;
@@ -15,7 +17,7 @@ const dateOnly = (value) => {
   return parsed === null ? null : new Date(parsed).toISOString().slice(0, 10);
 };
 const saleDate = (sale) => sale?.sale_date || sale?.created_at || sale?.created_date || null;
-const validSale = (sale) => sale?.status !== 'cancelled';
+const validSale = isRevenueSale;
 const daysSince = (value, nowMs) => {
   const from = dateMs(value);
   return from === null ? null : Math.max(0, Math.floor((nowMs - from) / DAY_MS));
@@ -33,10 +35,16 @@ const median = (values) => {
 };
 const closedOpportunity = new Set(['won', 'lost', 'descartada', 'descartado', 'converted', 'convertida_em_produto', 'resolvida', 'resolved', 'closed', 'encerrada', 'encerrado']);
 
+/** @typedef {import('../types/f7Domain').Customer} Customer */
+/** @typedef {import('../types/f7Domain').Sale} Sale */
+/** @typedef {import('../types/f7Domain').CrmActivity} CrmActivity */
+/** @typedef {import('../types/f7Domain').Opportunity} Opportunity */
+
 /**
  * Derives post-sale facts from already loaded tenant data. This is advisory
  * only: it never changes customer status/tags and never creates contact work.
  */
+/** @param {{customer?: Customer, sales?: Sale[], activities?: CrmActivity[], opportunities?: Opportunity[], now?: Date, recentDays?: number, inactiveDays?: number}} [options] */
 export function buildCustomerRelationshipFacts({ customer, sales = [], activities = [], opportunities = [], now = new Date(), recentDays = RECENT_PURCHASE_DAYS, inactiveDays = INACTIVITY_DAYS } = {}) {
   const nowMs = dateMs(now) || Date.now();
   const history = sales.filter((sale) => validSale(sale) && sale.customer_id === customer?.id && dateMs(saleDate(sale)) !== null).sort((a, b) => dateMs(saleDate(a)) - dateMs(saleDate(b)));
@@ -97,6 +105,7 @@ export function buildCustomerRelationshipFacts({ customer, sales = [], activitie
 }
 
 /** Builds all customer facts in one pass over sales/activities/opportunities. */
+/** @param {{companyId?: string, customers?: Customer[], sales?: Sale[], activities?: CrmActivity[], opportunities?: Opportunity[], now?: Date}} [options] */
 export function buildCustomerRelationshipIndex({ companyId, customers = [], sales = [], activities = [], opportunities = [], now = new Date() } = {}) {
   const scopedCustomers = customers.filter((customer) => !companyId || customer?.company_id === companyId);
   const scopedSales = sales.filter((sale) => !companyId || sale?.company_id === companyId).filter(validSale);

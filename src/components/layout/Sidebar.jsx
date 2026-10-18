@@ -34,6 +34,7 @@ const NAV = [
       { to: '/vendas', label: 'Vendas', icon: ShoppingCart, permission: 'sales.view' },
       { to: '/pdv', label: 'PDV', icon: ScanLine, permission: 'pdv.use' },
       { to: '/producao', label: 'Produção', icon: Factory, permission: 'production.view' },
+      { to: '/f7-commerce', label: 'F7 Commerce', icon: Store, permission: 'sales_channels.view' },
     ],
   },
   {

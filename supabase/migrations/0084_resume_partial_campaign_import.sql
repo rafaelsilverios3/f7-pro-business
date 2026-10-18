@@ -207,3 +207,8 @@ $$;
 
 revoke all on function public.resume_commercial_campaign_import_atomic(uuid,text,text,jsonb,jsonb) from public, anon;
 grant execute on function public.resume_commercial_campaign_import_atomic(uuid,text,text,jsonb,jsonb) to authenticated;
+-- Conceptual rollback: revoke the RPC's authenticated EXECUTE grant and drop
+-- resume_commercial_campaign_import_atomic after disabling its callers. It may
+-- have added facts/targets and updated import counters; dropping the function
+-- cannot undo those writes. Preserve import history and reconcile data from a
+-- backup/provenance record; do not delete shared customer/product records.

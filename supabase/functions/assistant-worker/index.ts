@@ -1,4 +1,5 @@
 import { corsHeaders, json, admin } from '../_shared/core.ts';
+import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { createAssistantHandoff } from '../_shared/assistantHandoff.ts';
 import { classifyActionRisk } from '../_shared/actionRisk.ts';
 
@@ -19,6 +20,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   if (!serviceAuthorized(req)) return json({ code: 'FORBIDDEN' }, 403);
+  const maintenance = aiMaintenanceResponse(Deno.env.get('AI_MAINTENANCE_MODE'), corsHeaders);
+  if (maintenance) return maintenance;
   const startedAt = Date.now();
   const sb = admin();
   const body = await req.json().catch(() => ({}));
@@ -70,6 +73,11 @@ Deno.serve(async (req) => {
   const suggestion = await assistantResponse.json().catch(() => null);
   if (!assistantResponse.ok || !suggestion?.success) {
     const code = safeCode(suggestion?.code || suggestion?.error);
+    if (code === 'AI_MAINTENANCE') {
+      await finish(sb, job.id, 'queued', code, 'maintenance');
+      await sb.from('intelligence_events').update({ status: 'PENDING', processed_at: null, safe_error_code: code }).eq('company_id', job.company_id).eq('id', job.intelligence_event_id);
+      return json({ code, retry_scheduled: true }, 503);
+    }
     const retry = job.attempt_count < MAX_ATTEMPTS && [429,500,502,503,504].includes(assistantResponse.status);
     if (!retry) await createAssistantHandoff({ sb, company_id: job.company_id, conversation_id: job.conversation_id, job_id: job.id, trace_id: eventResult.data.correlation_id, reason: code, summary: 'A análise autônoma falhou de modo seguro e precisa de revisão humana.' });
     await finish(sb, job.id, retry ? 'queued' : 'handed_off', code, safeCode(suggestion?.stage || 'assistant_request'));

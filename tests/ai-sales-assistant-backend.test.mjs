@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { productSearchTerm, supplierOfferProductSearchTerm } from '../supabase/functions/_shared/productSearchTerm.js';
+import { buildAiSalesHistory } from '../src/lib/aiSalesHistory.js';
+import { aiSalesStatusFromError, aiSalesStatusPresentation } from '../src/lib/aiSalesStatus.js';
 
 const fn = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
 const page = fs.readFileSync('src/pages/AiSalesAssistant.jsx', 'utf8');
+const status = fs.readFileSync('src/lib/aiSalesStatus.js', 'utf8');
 const gate = fs.readFileSync('supabase/migrations/0062_ai_sales_assistant_gate.sql', 'utf8');
+const draftRpc = fs.readFileSync('supabase/migrations/0086_ai_sales_draft_rpc.sql', 'utf8');
 
 test('Sales Assistant usa gate da empresa e membership server-side', () => {
   assert.match(fn, /company_has_feature/);
   assert.match(fn, /feature: 'ai_sales'/);
   assert.match(fn, /company_users/);
-  assert.match(fn, /ROLES/);
+  assert.match(fn, /roleHasAiSalesPermissions/);
   assert.match(gate, /ai_sales/);
 });
 
@@ -20,22 +25,136 @@ test('ferramentas comerciais são explícitas e tenant-scoped', () => {
   assert.doesNotMatch(fn, /body\.sql|query\(body/);
 });
 
-test('rascunho exige confirmação e não baixa estoque', () => {
-  assert.match(fn, /confirmed !== true/);
-  assert.match(fn, /status: 'draft'/);
-  assert.match(fn, /audit_logs/);
-  assert.doesNotMatch(fn, /stock_movements.*insert/);
+test('consultas genéricas de produtos reconhecem o plural e não viram busca literal', () => {
+  assert.match(fn, /productSearchTerm\(message\)/);
+  assert.equal(productSearchTerm('Quais produtos temos?'), '');
+  assert.equal(productSearchTerm('HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Qual o estoque do HOMOLOG-A-QA-20261011?'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Quanto tem de estoque do HOMOLOG-A-QA-20261011?'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('Quanto temos em estoque?'), '');
+  assert.equal(productSearchTerm('Crie um rascunho de 2 unidades para o SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(productSearchTerm('temos o produto F7?'), 'F7');
 });
 
-test('UI ativa conversa, fallback factual e confirmação humana', () => {
-  assert.match(page, /Assistente ativo/);
+test('rascunho exige confirmação e passa por RPC autenticada sem DML direto', () => {
+  assert.match(fn, /confirmed !== true/);
+  assert.match(fn, /createDraft\(userClient\(jwt\)/);
+  assert.match(fn, /\.rpc\('create_draft_sale'/);
+  assert.doesNotMatch(fn, /from\('sales'\)\.insert/);
+  assert.match(draftRpc, /security definer/i);
+  assert.match(draftRpc, /auth\.uid\(\) is null/i);
+  assert.match(draftRpc, /is_company_member\(company\)/i);
+  assert.match(draftRpc, /current_company_role\(company\) not in \('admin', 'gestor', 'comercial', 'vendedor'\)/i);
+  assert.match(draftRpc, /company_has_feature\(company, 'ai_sales'\)/i);
+  assert.match(draftRpc, /'draft'/);
+  assert.match(draftRpc, /revoke all on function public\.create_draft_sale\(jsonb\) from public, anon, service_role/i);
+  assert.match(page, /idempotency_key: crypto\.randomUUID\(\)/);
+  assert.match(page, /idempotency_key: visiblePendingDraft\.idempotency_key/);
+});
+
+test('UI só habilita conversa depois de confirmar status no backend e distingue fallback factual', () => {
+  assert.match(page, /aiSalesService\.status\(company\.id\)/);
+  assert.match(status, /provider_configured_unverified/);
+  assert.match(page, /Resposta factual do sistema · não gerada por IA/);
+  assert.doesNotMatch(page, /Assistente ativo para/);
   assert.match(page, /aiSalesService\.chat/);
   assert.match(page, /Confirmar criação do rascunho/);
   assert.match(page, /open_supplier_intelligence/);
 });
 
+test('estado transitório fica no indicador de status e não permanece como mensagem inicial da conversa', () => {
+  const checking = aiSalesStatusPresentation({ state: 'checking' });
+  const ready = aiSalesStatusPresentation({ state: 'ready' });
+  const denied = aiSalesStatusPresentation({ state: 'denied', status_message: 'Plano não habilitado.' });
+  assert.match(checking.message, /Validando acesso/);
+  assert.equal(ready.label, 'Modo factual · sem geração por IA');
+  assert.doesNotMatch(ready.message, /Verificando|Validando/);
+  assert.equal(denied.message, 'Plano não habilitado.');
+  assert.doesNotMatch(page, /Verificando acesso, plano e disponibilidade deste ambiente/);
+  assert.match(page, /const \[messages, setMessages\] = useState\(\[\]\)/);
+});
+
+test('UI distingue manutenção e erro de configuração sem expor detalhes internos nem habilitar conversa', () => {
+  const maintenance = aiSalesStatusFromError({ code: 'AI_MAINTENANCE' }, 'company-a', 'admin-a');
+  const maintenanceView = aiSalesStatusPresentation(maintenance);
+  assert.equal(maintenance.state, 'maintenance');
+  assert.equal(maintenance.errorCode, 'AI_MAINTENANCE');
+  assert.equal(maintenanceView.label, 'Em manutenção');
+  assert.match(maintenanceView.message, /Nenhuma consulta comercial ou geração por IA foi iniciada/);
+
+  const invalid = aiSalesStatusFromError({ code: 'AI_MAINTENANCE_CONFIGURATION_INVALID', message: 'secret details' }, 'company-a', 'admin-a');
+  const invalidView = aiSalesStatusPresentation(invalid);
+  assert.equal(invalid.state, 'configuration_error');
+  assert.doesNotMatch(invalidView.message, /secret details/);
+
+  const forbidden = aiSalesStatusFromError({ code: 'FORBIDDEN', message: 'Sem permissão.' }, 'company-a', 'seller-a');
+  assert.equal(forbidden.state, 'denied');
+  assert.equal(forbidden.status_message, 'Sem permissão.');
+
+  const network = aiSalesStatusFromError(new TypeError('Failed to fetch'), 'company-a', 'admin-a');
+  assert.equal(network.state, 'unavailable');
+  assert.equal(aiSalesStatusPresentation(network).label, 'Não verificado');
+});
+
+test('backend valida a permissão específica antes de consultar cada ferramenta', () => {
+  assert.match(fn, /roleHasAiSalesPermissions\(member\.role\)/);
+  assert.match(fn, /permissionsForTool\(intent\)/);
+  assert.match(fn, /TOOL_PERMISSION_DENIED/);
+  assert.match(fn, /target_metric: metric/);
+  assert.match(fn, /reserveAIModelBudget/);
+  assert.match(fn, /feature: 'ai_sales'/);
+  assert.match(fn, /consumeRateLimit\(sb, companyId, userData\.user\.id, 'ai-sales-status', 30\)/);
+  assert.match(fn, /const rateLimit = await consumeRateLimit\(sb, companyId, userData\.user\.id\)/);
+});
+
+test('respostas de cliente e fornecedor não selecionam documentos, telefone ou e-mail', () => {
+  assert.doesNotMatch(fn, /select\('id,company_id,name,email,phone,document,created_at'\)/);
+  assert.match(fn, /Encontrei \$\{result\.length\} cliente\(s\) correspondente/);
+  assert.match(fn, /Encontrei \$\{result\.length\} perfil\(is\) de Supplier Intelligence/);
+  assert.match(fn, /sanitizeAiSalesProviderData/);
+  assert.match(fn, /providerData, factualAnswer/);
+  assert.doesNotMatch(fn, /generateStructured\('openai_compatible', \{ message, tool, result, factualAnswer, history, context \}\)/);
+});
+
+test('análise Supplier Offers reusa cálculo Pricing e restringe consulta ao produto e à empresa ativa', () => {
+  assert.match(fn, /classifySupplierOffersForPricing/);
+  assert.match(fn, /assessDeclaredSupplierAvailability/);
+  assert.match(fn, /parseRequestedSupplierQuantity/);
+  assert.match(fn, /buildSupplierOfferPricingScenario/);
+  assert.match(fn, /supplierOfferProductSearchTerm\(message\)/);
+  assert.match(fn, /from\('supplier_offers'\)/);
+  assert.match(fn, /\.eq\('company_id', companyId\)\.eq\('product_id', product\.id\)/);
+  assert.match(fn, /supplier_quantity,minimum_order_quantity[^']*observed_at/);
+  assert.match(fn, /canPresentSupplierOfferScenario\(\{ availability, scenario: base \}\)/);
+  assert.match(fn, /parseRequestedSupplierQuantity\(message\)/);
+  assert.match(fn, /Não atende integralmente e não calculei margem nem investimento/);
+  assert.match(fn, /status: offer\.status/);
+  assert.match(fn, /select\('channel_id,fee_rate,status'\)/);
+  assert.match(fn, /não validada pelo marketplace/);
+  assert.match(fn, /supplier_quantity_note: 'quantidade declarada pelo fornecedor; não é estoque próprio nem disponibilidade confirmada'/);
+  assert.match(fn, /generation_mode: generationMode/);
+  assert.match(fn, /from\('supplier_intelligence_profiles'\)/);
+  assert.match(fn, /from\('sales_channels'\)/);
+  assert.doesNotMatch(fn, /from\('company_integrations'\)|from\('suppliers'\)/);
+});
+
+test('busca de ofertas reconhece um SKU precedido pelo rótulo SKU sem perder o código', () => {
+  assert.equal(productSearchTerm('SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(supplierOfferProductSearchTerm('26 unidades, compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011'), 'HOMOLOG-A-QA-20261011');
+  assert.equal(supplierOfferProductSearchTerm('Compare ofertas de fornecedor para o SKU HOMOLOG-A-QA-20261011; solicito 8 unidades'), 'HOMOLOG-A-QA-20261011');
+});
+
 test('contexto de produto e cliente é reaproveitado somente como contexto de seguimento', () => {
   assert.match(fn, /previousProduct/);
   assert.match(fn, /previousCustomer/);
-  assert.match(page, /context: messages\[index \+ 1\]/);
+  const product = { id: 'p1', name: 'Produto fictício', sku: 'TEST-1' };
+  const history = buildAiSalesHistory([
+    { role: 'assistant', answer: 'Olá' },
+    { role: 'user', answer: 'Quais produtos temos?' },
+    { role: 'assistant', answer: 'Encontrei um produto', tool: 'buscar_produto', data: [product], context: {} },
+    { role: 'user', answer: 'Quanto temos em estoque?' },
+  ]);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].message, 'Quais produtos temos?');
+  assert.equal(history[0].data[0].id, 'p1');
 });

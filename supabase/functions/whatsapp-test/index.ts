@@ -12,6 +12,9 @@ Deno.serve(async (req) => {
     if (!member?.active || !['admin', 'gestor'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
     const { data: allowed } = await viewer.rpc('company_has_feature', { target_company: companyId, feature: 'whatsapp' });
     if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
+    if ((Deno.env.get('WHATSAPP_PROVIDER_ENABLED') || '').trim().toLowerCase() !== 'true') {
+      return json({ code: 'WHATSAPP_PROVIDER_DISABLED', api_reachable: false, send_ready: false }, 503);
+    }
     const { data: integration } = await sb.from('company_integrations').select('external_phone_id,status').eq('company_id', companyId).eq('provider', 'whatsapp').maybeSingle();
     if (!integration?.external_phone_id) return json({ api_reachable: false, number_configured: false, webhook_configured: 'unknown', send_ready: false, receive_ready: 'unknown', status: 'not_configured' });
     const meta = await graphRequest(`${integration.external_phone_id}?fields=id,display_phone_number,verified_name,quality_rating`);

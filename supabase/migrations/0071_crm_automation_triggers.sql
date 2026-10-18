@@ -23,3 +23,8 @@ alter table public.automations
       'crm_opportunity_without_next_action'
     )
   );
+-- Conceptual rollback: restore the exact prior automations_trigger_type_check
+-- constraint from the database/migration history. This requires first finding
+-- and migrating any automations using the new CRM trigger values; changing
+-- those values is a data decision and is not losslessly reversible without a
+-- snapshot. The DROP/ADD constraint operation itself changes no rows.

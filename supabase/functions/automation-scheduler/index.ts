@@ -1,4 +1,6 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
+import { waitUntilEdgeTask } from '../_shared/edgeRuntime.ts';
+import { schedulerPolicy } from '../_shared/schedulerPolicy.js';
 
 const clean = (value: unknown, max = 160) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, max);
 const validSchedulerRequest = (req: Request) => {
@@ -7,17 +9,38 @@ const validSchedulerRequest = (req: Request) => {
   const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   return Boolean((configured && provided && provided === configured) || (service && req.headers.get('Authorization') === `Bearer ${service}`));
 };
+function dispatchMeliNotificationSweep() {
+  const url = Deno.env.get('SUPABASE_URL') || '';
+  const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  if (!url || !service) return;
+  const task = fetch(`${url}/functions/v1/mercadolivre-notification-worker`, {
+    method: 'POST', headers: { Authorization: `Bearer ${service}`, apikey: service, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit: 20, remaining_batches: 2, trigger: 'scheduler' }),
+  }).then(() => undefined).catch(() => undefined);
+  waitUntilEdgeTask(task);
+}
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   if (!validSchedulerRequest(req)) return json({ code: 'FORBIDDEN' }, 403);
+  const policy = schedulerPolicy({
+    F7_SCHEDULER_ENABLED: Deno.env.get('F7_SCHEDULER_ENABLED'),
+    F7_AUTOMATION_SCHEDULER_ENABLED: Deno.env.get('F7_AUTOMATION_SCHEDULER_ENABLED'),
+    F7_MELI_QUEUE_RECOVERY_ENABLED: Deno.env.get('F7_MELI_QUEUE_RECOVERY_ENABLED'),
+  });
+  if (!policy.enabled) return json({ status: 'disabled', code: 'SCHEDULER_DISABLED' }, 200);
+  if (!policy.automations && !policy.meliRecovery) return json({ status: 'idle', code: 'NO_SCHEDULED_WORK_ENABLED' }, 200);
+  // Reuse the existing scheduler tick as a retry/recovery sweep. The queue
+  // remains durable if the worker is unavailable; webhook dispatch is separate.
+  if (policy.meliRecovery) dispatchMeliNotificationSweep();
+  if (!policy.automations) return json({ status: 'recovery_dispatched', meli_recovery: true }, 202);
   const sb = admin(); const tickId = crypto.randomUUID(); const started = Date.now();
   const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   await sb.from('automation_runs').update({ status: 'failed', safe_error_code: 'SCHEDULER_STALLED', error_message: 'Execução interrompida pelo scheduler após 20 minutos.', finished_at: new Date().toISOString(), stalled_at: new Date().toISOString() }).eq('status', 'processing').lt('started_at', cutoff);
   const emit = async (companyId: string, stage: string, status = 'success', counts: Record<string, unknown> = {}) => { try { await sb.from('ai_run_events').insert({ company_id: companyId, trace_id: tickId, stage, status, counts }); } catch { /* observabilidade não pode impedir o despacho */ } };
   const claimed = await sb.rpc('claim_due_automations', { batch_size: 50 });
   if (claimed.error) return json({ code: 'SCHEDULER_CLAIM_FAILED' }, 500);
-  const companies = [...new Set((claimed.data || []).map((row: any) => row.company_id))];
+  const companies: string[] = [...new Set<string>((claimed.data || []).map((row: any) => String(row.company_id)).filter(Boolean))];
   await Promise.all(companies.map((companyId) => emit(companyId, 'SCHEDULER_TICK_STARTED')));
   const results: any[] = [];
   for (const automation of claimed.data || []) {

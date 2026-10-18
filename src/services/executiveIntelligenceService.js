@@ -76,7 +76,7 @@ export async function generateExecutiveSummary(companyId, context) {
   const fallback = buildDeterministicExecutiveSummary(context);
   if (!hasExecutiveEvidence(context)) return { ...fallback, reason: 'NO_DATA' };
   try {
-    const response = await invokeEdgeFunction('intelligence-query', { company_id: companyId, operation: 'executive_summary', executive_context: context });
+    const response = await invokeEdgeFunction('intelligence-query', { company_id: companyId, operation: 'executive_summary', executive_context: context, request_id: crypto.randomUUID() });
     const normalized = normalizeExecutiveSummary(response?.summary, context);
     return normalized ? { ...normalized, confidence: response.confidence || normalized.confidence, source: response.source || normalized.source, fallback_used: Boolean(response.fallback_used) } : fallback;
   } catch (error) {

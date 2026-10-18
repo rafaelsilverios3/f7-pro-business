@@ -12,12 +12,13 @@ export function isDueToday(activity, now = new Date()) {
   const due = new Date(activity.due_at); const current = new Date(now);
   return due.getFullYear() === current.getFullYear() && due.getMonth() === current.getMonth() && due.getDate() === current.getDate();
 }
+/** @param {{title?: unknown, activity_type?: unknown, description?: unknown, due_at?: unknown, [key: string]: unknown}} input @returns {{title: string, activity_type: string, description: string | null, due_at: unknown, [key: string]: unknown}} */
 export function validateActivityInput(input = {}) {
   const title = String(input.title || '').trim();
   if (!title) throw new Error('Informe um título para a atividade.');
-  if (!ACTIVITY_TYPES.includes(input.activity_type)) throw new Error('Tipo de atividade inválido.');
+  if (typeof input.activity_type !== 'string' || !ACTIVITY_TYPES.includes(input.activity_type)) throw new Error('Tipo de atividade inválido.');
   if (input.due_at && !Number.isFinite(dateTime(input.due_at))) throw new Error('Data e hora inválidas.');
-  return { ...input, title, description: String(input.description || '').trim() || null, due_at: input.due_at || null };
+  return { ...input, activity_type: input.activity_type, title, description: String(input.description || '').trim() || null, due_at: input.due_at || null };
 }
 export function deriveNextAction(activities = [], now = new Date()) {
   return activities.filter(isPending).filter((row) => row.due_at && Number.isFinite(dateTime(row.due_at))).sort((a, b) => dateTime(a.due_at) - dateTime(b.due_at))[0] || null;

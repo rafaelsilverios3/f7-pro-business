@@ -1,10 +1,64 @@
 project_id = "f7-pro-business"
 
 [db]
-major_version = 15
+major_version = 17
 
 [auth]
 enabled = true
 
 [functions.billing-webhook]
 verify_jwt = false
+
+[functions.billing-plans]
+verify_jwt = false
+
+[functions.billing-health]
+verify_jwt = true
+
+[functions.ai-run-inspector]
+verify_jwt = true
+
+[functions.platform-health]
+verify_jwt = true
+
+[functions.automation-scheduler]
+verify_jwt = false
+
+[functions.automation-worker]
+verify_jwt = true
+
+[functions.billing-subscription-manage]
+verify_jwt = true
+
+[functions.whatsapp-connect]
+verify_jwt = true
+
+[functions.whatsapp-disconnect]
+verify_jwt = true
+
+[functions.whatsapp-send]
+verify_jwt = true
+
+[functions.whatsapp-test]
+verify_jwt = true
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.integration-health]
+verify_jwt = true
+
+[functions.mercadolivre-connect]
+verify_jwt = true
+
+[functions.mercadolivre-callback]
+verify_jwt = false
+
+[functions.mercadolivre-api]
+verify_jwt = true
+
+[functions.mercadolivre-webhook]
+verify_jwt = false
+
+[functions.mercadolivre-notification-worker]
+verify_jwt = true

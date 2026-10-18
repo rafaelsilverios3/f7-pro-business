@@ -1,17 +1,20 @@
 // Platform administration is always deployed with JWT verification enabled.
-import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
+import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
+import { validateAiRateCard, validateAiRateCardEnabled, validateCompanyAiBudget } from '../_shared/platformAiFinancialPolicy.js';
+import { isPlatformAdminCurrent, normalizePlatformAdminExpiry, platformAdminCanAccessAction, PLATFORM_ROLES } from '../_shared/platformAdminAccess.js';
 
 const PLANS = ['free', 'pro', 'business', 'premium'];
 const STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'];
 const COMPANY_ROLES = ['admin', 'gestor', 'financeiro', 'comercial', 'vendedor', 'estoque', 'atendimento'];
-const PLATFORM_ROLES = ['owner', 'admin', 'support', 'readonly'];
-const WRITE_ROLES = ['owner', 'admin'];
 
 function clean(value: unknown, max = 500) { return String(value ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max); }
-function isWrite(action: string) { return ['update_company_plan', 'update_company_status', 'create_warning', 'resolve_warning', 'update_company_user', 'update_feature', 'update_ai', 'disable_whatsapp', 'create_platform_admin', 'update_platform_admin'].includes(action); }
 function assertCapability(role: string, action: string) {
-  if (isWrite(action) && !WRITE_ROLES.includes(role)) throw Object.assign(new Error('PLATFORM_ADMIN_FORBIDDEN'), { status: 403 });
-  if (['create_platform_admin', 'update_platform_admin'].includes(action) && role !== 'owner') throw Object.assign(new Error('PLATFORM_OWNER_REQUIRED'), { status: 403 });
+  if (platformAdminCanAccessAction(role, action)) return;
+  const message = role === 'support' ? 'PLATFORM_SUPPORT_SCOPE_DENIED'
+    : role === 'readonly' ? 'PLATFORM_READ_SCOPE_DENIED'
+    : ['create_platform_admin', 'update_platform_admin'].includes(action) ? 'PLATFORM_OWNER_REQUIRED'
+    : 'PLATFORM_ADMIN_FORBIDDEN';
+  throw Object.assign(new Error(message), { status: 403 });
 }
 async function one(client: any, table: string, columns: string, id: string) {
   const result = await client.from(table).select(columns).eq('id', id).maybeSingle();
@@ -19,7 +22,7 @@ async function one(client: any, table: string, columns: string, id: string) {
   return result.data;
 }
 async function audit(client: any, input: { admin_user_id: string; company_id?: string | null; action: string; entity: string; entity_id?: string | null; before_data?: unknown; after_data?: unknown; reason?: string }, req: Request) {
-  const { error } = await client.from('platform_admin_audit_logs').insert({ ...input, reason: clean(input.reason, 1000) || null, ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null, user_agent: clean(req.headers.get('user-agent'), 300) || null });
+  const { error } = await client.from('platform_admin_audit_logs').insert({ ...input, actor_kind: 'platform_admin', actor_reference: null, reason: clean(input.reason, 1000) || null, ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null, user_agent: clean(req.headers.get('user-agent'), 300) || null });
   if (error) throw error;
 }
 async function companySummary(client: any, company: any) {
@@ -47,13 +50,19 @@ Deno.serve(async (req) => {
     const identity = await service.auth.getUser(jwt);
     if (identity.error || !identity.data.user) return json({ error: 'AUTH_REQUIRED' }, 401);
     const actor = identity.data.user;
-    const adminRow = await service.from('platform_admins').select('id,role,status').eq('user_id', actor.id).eq('status', 'active').maybeSingle();
+    const adminRow = await service.from('platform_admins').select('id,role,status,expires_at').eq('user_id', actor.id).eq('status', 'active').maybeSingle();
     if (adminRow.error) throw adminRow.error;
-    if (!adminRow.data) return json({ error: 'PLATFORM_ADMIN_REQUIRED' }, 403);
+    if (!adminRow.data || !isPlatformAdminCurrent(adminRow.data)) return json({ error: 'PLATFORM_ADMIN_REQUIRED' }, 403);
     await service.from('platform_admins').update({ last_access_at: new Date().toISOString() }).eq('id', adminRow.data.id);
     const input = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const action = clean(input.action || 'access', 80);
     assertCapability(adminRow.data.role, action);
+    if (['support', 'readonly'].includes(adminRow.data.role)) {
+      await audit(service, { admin_user_id: actor.id, action: 'platform_admin.read', entity: 'platform_admin_api', entity_id: action, after_data: { action }, reason: 'Scoped read access' }, req);
+    }
+    if (['ai_financial_rates', 'ai_financial_usage'].includes(action) && !['support', 'readonly'].includes(adminRow.data.role)) {
+      await audit(service, { admin_user_id: actor.id, company_id: action === 'ai_financial_usage' ? clean(input.company_id, 80) || null : null, action: 'platform_admin.ai_financial.read', entity: 'ai_financial_admin', entity_id: action, after_data: { action }, reason: 'Financial AI data read' }, req);
+    }
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
     if (action === 'overview') {
@@ -68,7 +77,7 @@ Deno.serve(async (req) => {
       ]);
       const firstError = [companies, members, subscriptions, integrations, ai, warnings, logs].find((item) => item.error);
       if (firstError) throw firstError.error;
-      const plans = new Map(subscriptions.data.map((row: any) => [row.company_id, row]));
+      const plans = new Map((subscriptions.data || []).map((row: any) => [row.company_id, row]));
       const rows = (companies.data || []).map((company: any) => ({ ...company, subscription: plans.get(company.id) || null, user_count: (members.data || []).filter((row: any) => row.company_id === company.id && row.active).length, whatsapp: (integrations.data || []).some((row: any) => row.company_id === company.id && row.provider === 'whatsapp' && ['connected', 'active', 'enabled'].includes(row.status)), ai_enabled: (ai.data || []).some((row: any) => row.company_id === company.id), open_warning_count: (warnings.data || []).filter((row: any) => row.company_id === company.id).length }));
       return json({ role: adminRow.data.role, metrics: { companies: companies.count || 0, users: (members.data || []).filter((row: any) => row.active).length, active_companies: rows.filter((row: any) => ['active', 'trial'].includes(row.subscription?.status)).length, trials: rows.filter((row: any) => row.subscription?.status === 'trial').length, suspended: rows.filter((row: any) => row.subscription?.status === 'suspended').length, cancelled: rows.filter((row: any) => row.subscription?.status === 'cancelled').length, whatsapp: (integrations.data || []).filter((row: any) => row.provider === 'whatsapp' && ['connected', 'active', 'enabled'].includes(row.status)).length, ai: (ai.data || []).filter((row: any) => row.automatic_reply_enabled || row.mode).length, warnings: warnings.count || 0, errors: (logs.data || []).filter((row: any) => ['error', 'failed'].includes(String(row.status).toLowerCase())).length }, companies: rows });
     }
@@ -119,7 +128,7 @@ Deno.serve(async (req) => {
       const result = await query; if (result.error) throw result.error; return json({ rows: result.data || [], total: result.count || 0 });
     }
     if (action === 'audit') {
-      const result = await service.from('platform_admin_audit_logs').select('id,admin_user_id,company_id,action,entity,entity_id,before_data,after_data,reason,created_at').order('created_at', { ascending: false }).limit(100);
+      const result = await service.from('platform_admin_audit_logs').select('id,admin_user_id,actor_kind,actor_reference,company_id,action,entity,entity_id,before_data,after_data,reason,created_at').order('created_at', { ascending: false }).limit(100);
       if (result.error) throw result.error; return json({ rows: result.data || [] });
     }
     if (action === 'update_company_plan' || action === 'update_company_status') {
@@ -145,15 +154,93 @@ Deno.serve(async (req) => {
     if (action === 'features') { let query = service.from('company_feature_overrides').select('company_id,feature,enabled,reason,updated_at'); if (input.company_id) query = query.eq('company_id', clean(input.company_id, 80)); const result = await query; if (result.error) throw result.error; if (!input.company_id) { const companies = await service.from('companies').select('id,name'); if (companies.error) throw companies.error; const names = new Map((companies.data || []).map((row: any) => [row.id, row.name])); return json({ rows: (result.data || []).map((row: any) => ({ ...row, company_name: names.get(row.company_id) || '—' })) }); } return json({ rows: result.data || [] }); }
     if (action === 'update_feature') { const companyId = clean(input.company_id, 80); const feature = clean(input.feature, 80).toLowerCase(); if (!feature) return json({ error: 'INVALID_FEATURE' }, 422); if (input.enabled === null) { const removed = await service.from('company_feature_overrides').delete().eq('company_id', companyId).eq('feature', feature); if (removed.error) throw removed.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: 'company.feature.removed', entity: 'company_feature_overrides', entity_id: feature, reason: input.reason }, req); return json({ removed: true }); } const result = await service.from('company_feature_overrides').upsert({ company_id: companyId, feature, enabled: Boolean(input.enabled), reason: clean(input.reason, 500) || null, updated_at: new Date().toISOString() }, { onConflict: 'company_id,feature' }).select('*').single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: input.enabled ? 'company.feature.enabled' : 'company.feature.disabled', entity: 'company_feature_overrides', entity_id: feature, after_data: result.data, reason: input.reason }, req); return json({ override: result.data }); }
     if (action === 'ai') { let query = service.from('company_assistant_settings').select('company_id,mode,automatic_reply_enabled,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,allow_customer_lookup,allow_quote_draft,max_daily_ai_calls,max_daily_web_queries,max_tokens_per_request'); if (input.company_id) { const result = await query.eq('company_id', clean(input.company_id, 80)).maybeSingle(); if (result.error) throw result.error; return json({ settings: result.data }); } const result = await query; if (result.error) throw result.error; const companies = await service.from('companies').select('id,name'); if (companies.error) throw companies.error; const names = new Map((companies.data || []).map((row: any) => [row.id, row.name])); return json({ rows: (result.data || []).map((row: any) => ({ ...row, company_name: names.get(row.company_id) || '—' })) }); }
-    if (action === 'update_ai') { const companyId = clean(input.company_id, 80); const allowed = ['mode','automatic_reply_enabled','allow_web_research','allow_product_lookup','allow_price_lookup','allow_stock_lookup','allow_customer_lookup','allow_quote_draft','max_daily_ai_calls','max_daily_web_queries','max_tokens_per_request']; const payload: any = {}; for (const field of allowed) if (input[field] !== undefined) payload[field] = ['max_daily_ai_calls','max_daily_web_queries','max_tokens_per_request'].includes(field) ? Math.max(0, Number(input[field]) || 0) : input[field]; const before = await service.from('company_assistant_settings').select(allowed.join(',')).eq('company_id', companyId).maybeSingle(); if (before.error) throw before.error; const result = await service.from('company_assistant_settings').update(payload).eq('company_id', companyId).select(allowed.join(',')).single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: 'company.ai_limit.changed', entity: 'company_assistant_settings', entity_id: companyId, before_data: before.data, after_data: result.data, reason: input.reason }, req); return json({ settings: result.data }); }
+    if (action === 'update_ai') { const companyId = clean(input.company_id, 80); const allowed = ['mode','automatic_reply_enabled','allow_web_research','allow_product_lookup','allow_price_lookup','allow_stock_lookup','allow_customer_lookup','allow_quote_draft']; const payload: any = {}; for (const field of allowed) if (input[field] !== undefined) payload[field] = input[field]; if (!Object.keys(payload).length) return json({ error: 'AI_FINANCIAL_CONTROLS_REQUIRE_FINANCIAL_ACTION' }, 422); const before = await service.from('company_assistant_settings').select(allowed.join(',')).eq('company_id', companyId).maybeSingle(); if (before.error) throw before.error; const result = await service.from('company_assistant_settings').update(payload).eq('company_id', companyId).select(allowed.join(',')).single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: 'company.ai_settings.changed', entity: 'company_assistant_settings', entity_id: companyId, before_data: before.data, after_data: result.data, reason: input.reason }, req); return json({ settings: result.data }); }
+    if (action === 'ai_financial_rates' || action === 'ai_financial_usage' || action === 'ai_financial_budget' || action === 'ai_financial_rate_create' || action === 'ai_financial_rate_enable') {
+      // Keep the source tables revoked from service_role. The caller JWT reaches
+      // tightly-scoped SECURITY DEFINER RPCs that re-check owner/admin in SQL.
+      const caller = userClient(jwt);
+      if (action === 'ai_financial_budget') {
+        const validation = validateCompanyAiBudget({ ...input, reason: clean(input.reason, 500) });
+        if (!validation.allowed) return json({ error: validation.reason }, 422);
+      }
+      if (action === 'ai_financial_rate_create') {
+        const validation = validateAiRateCard({ ...input, reason: clean(input.reason, 500) });
+        if (!validation.allowed) return json({ error: validation.reason }, 422);
+      }
+      if (action === 'ai_financial_rate_enable') {
+        const validation = validateAiRateCardEnabled({ ...input, reason: clean(input.reason, 500) });
+        if (!validation.allowed) return json({ error: validation.reason }, 422);
+      }
+      const procedures: Record<string, [string, Record<string, unknown>]> = {
+        ai_financial_rates: ['platform_admin_ai_list_rate_cards', {}],
+        ai_financial_usage: ['platform_admin_ai_company_financial_usage', { target_company: clean(input.company_id, 80) }],
+        ai_financial_budget: ['platform_admin_ai_set_company_budget', { target_company: clean(input.company_id, 80), consumption_enabled: input.consumption_enabled, target_daily_calls: input.daily_calls, target_daily_web_queries: input.daily_web_queries, target_daily_budget: input.daily_budget, target_currency: input.currency, target_max_tokens: input.max_tokens_per_request, audit_reason: clean(input.reason, 500) }],
+        ai_financial_rate_create: ['platform_admin_ai_create_rate_card', { target_rate_kind: input.rate_kind, target_provider: input.provider_key, target_model: input.model_key || null, target_version: input.rate_version, target_currency: input.currency, target_input_cost: input.input_cost_per_1k ?? null, target_output_cost: input.output_cost_per_1k ?? null, target_query_cost: input.cost_per_query ?? null, target_source_reference: input.source_reference, target_effective_from: input.effective_from, target_effective_until: input.effective_until || null, target_enabled: input.enabled, audit_reason: clean(input.reason, 500) }],
+        ai_financial_rate_enable: ['platform_admin_ai_set_rate_card_enabled', { target_rate_card: clean(input.rate_card_id, 80), target_enabled: input.enabled, audit_reason: clean(input.reason, 500) }],
+      };
+      const [procedure, args] = procedures[action];
+      const { data, error } = await caller.rpc(procedure, args);
+      if (error) {
+        const code = error.code === '42501' ? 403 : error.code === 'P0002' ? 404 : error.code === '23505' ? 409 : error.code === '22023' ? 422 : 500;
+        const allowedErrors = ['PLATFORM_ADMIN_FORBIDDEN','AI_FINANCIAL_COMPANY_REQUIRED','AI_FINANCIAL_COMPANY_NOT_FOUND','AI_FINANCIAL_REASON_REQUIRED','AI_FINANCIAL_CONFIG_INVALID','AI_FINANCIAL_ACTIVE_RATE_REQUIRED','AI_FINANCIAL_RATE_OVERLAP','AI_FINANCIAL_RATE_NOT_FOUND','AI_FINANCIAL_RATE_NOT_EFFECTIVE'];
+        const message = allowedErrors.includes(error.message) ? error.message : 'AI_FINANCIAL_OPERATION_FAILED';
+        return json({ error: message }, code);
+      }
+      if (action === 'ai_financial_rates') return json({ rows: data || [] });
+      if (action === 'ai_financial_usage') return json({ usage: data });
+      if (action === 'ai_financial_budget') return json({ settings: data });
+      if (action === 'ai_financial_rate_create') return json({ rate_card: data });
+      return json({ rate_card: data });
+    }
     if (action === 'whatsapp') { let query = service.from('company_integrations').select('company_id,provider,status,external_phone_id,external_account_id,external_business_id,updated_at').eq('provider', 'whatsapp'); if (input.company_id) { const result = await query.eq('company_id', clean(input.company_id, 80)).maybeSingle(); if (result.error) throw result.error; return json({ integration: result.data }); } const result = await query; if (result.error) throw result.error; const companies = await service.from('companies').select('id,name'); if (companies.error) throw companies.error; const names = new Map((companies.data || []).map((row: any) => [row.id, row.name])); return json({ rows: (result.data || []).map((row: any) => ({ ...row, company_name: names.get(row.company_id) || '—' })) }); }
     if (action === 'disable_whatsapp') { const companyId = clean(input.company_id, 80); const before = await service.from('company_integrations').select('provider,status,external_phone_id,external_account_id,external_business_id').eq('company_id', companyId).eq('provider', 'whatsapp').maybeSingle(); if (before.error) throw before.error; const result = await service.from('company_integrations').update({ status: input.enabled === false ? 'disabled' : 'active', updated_at: new Date().toISOString() }).eq('company_id', companyId).eq('provider', 'whatsapp').select('provider,status,external_phone_id,external_account_id,external_business_id').maybeSingle(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: input.enabled === false ? 'company.whatsapp.disabled' : 'company.whatsapp.enabled', entity: 'company_integrations', entity_id: companyId, before_data: before.data, after_data: result.data, reason: input.reason }, req); return json({ integration: result.data }); }
     if (action === 'finance') return json({ available: false, source: 'platform_billing', reason: 'BILLING_INTEGRATION_REQUIRED', message: 'Dados de faturamento da plataforma estarão disponíveis após a integração do sistema de cobrança.', summary: null, rows: [] });
     if (action === 'usage') { const companyId = clean(input.company_id, 80); const [aiRuns, integrationLogs, automations] = await Promise.all([service.from('ai_runs').select('id,status,created_at,cost_usd,tokens_used').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100), service.from('integration_logs').select('provider,status,created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100), service.from('automation_runs').select('id,status,created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100)]); const firstError = [aiRuns, integrationLogs, automations].find((item) => item.error); if (firstError) throw firstError.error; return json({ ai_runs: aiRuns.data || [], integration_logs: integrationLogs.data || [], automation_runs: automations.data || [] }); }
     if (action === 'health') { const [companies, errors, integrations] = await Promise.all([service.from('companies').select('id', { count: 'exact', head: true }), service.from('integration_logs').select('id,status,created_at').in('status', ['error', 'failed']).order('created_at', { ascending: false }).limit(20), service.from('company_integrations').select('provider,status,updated_at').limit(500)]); const firstError = [companies, errors, integrations].find((item) => item.error); if (firstError) throw firstError.error; return json({ checks: [{ key: 'database', status: 'ok' }, { key: 'companies', status: (companies.count || 0) >= 0 ? 'ok' : 'unknown' }, { key: 'integrations', status: (integrations.data || []).some((row: any) => row.status === 'error') ? 'attention' : 'ok' }], recent_errors: errors.data || [] }); }
     if (action === 'data') { const allowedTables: Record<string, string> = { companies: 'id,name,created_at,updated_at', company_users: 'id,company_id,user_id,role,active,created_at', company_subscriptions: 'company_id,plan,status,trial_ends_at,updated_at', company_feature_overrides: 'company_id,feature,enabled,reason,updated_at', company_assistant_settings: 'company_id,mode,automatic_reply_enabled,allow_web_research,max_daily_ai_calls,max_daily_web_queries', products: 'id,company_id,name,sku,price,cost,stock,minimum_stock,active', customers: 'id,company_id,name,email,phone,created_at', sales: 'id,company_id,status,total,sale_date,created_at' }; const table = clean(input.entity, 50); if (!allowedTables[table]) return json({ error: 'ENTITY_NOT_ALLOWED' }, 403); let query = service.from(table).select(allowedTables[table], { count: 'exact' }).limit(100); if (input.company_id && table !== 'companies') query = query.eq('company_id', clean(input.company_id, 80)); const result = await query; if (result.error) throw result.error; return json({ entity: table, rows: result.data || [], total: result.count || 0 }); }
-    if (action === 'create_platform_admin' || action === 'update_platform_admin') { if (adminRow.data.role !== 'owner') return json({ error: 'PLATFORM_OWNER_REQUIRED' }, 403); if (action === 'create_platform_admin') { const userId = clean(input.user_id, 80); const role = clean(input.role || 'readonly', 20); if (!userId || !['admin','support','readonly'].includes(role)) return json({ error: 'INVALID_PLATFORM_ADMIN' }, 422); const result = await service.from('platform_admins').insert({ user_id: userId, role, status: 'active', created_by: actor.id }).select('id,user_id,role,status,created_at,last_access_at').single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, action: 'platform_admin.created', entity: 'platform_admins', entity_id: result.data.id, after_data: result.data, reason: input.reason }, req); return json({ admin: result.data }); } const id = clean(input.id, 80); const before = await service.from('platform_admins').select('id,user_id,role,status').eq('id', id).maybeSingle(); if (before.error) throw before.error; if (!before.data) return json({ error: 'PLATFORM_ADMIN_NOT_FOUND' }, 404); if (before.data.role === 'owner' && (input.role !== 'owner' || input.status === 'disabled')) { const owners = await service.from('platform_admins').select('id', { count: 'exact', head: true }).eq('role', 'owner').eq('status', 'active'); if (owners.error) throw owners.error; if ((owners.count || 0) <= 1) return json({ error: 'LAST_OWNER_PROTECTED' }, 409); } const result = await service.from('platform_admins').update({ role: clean(input.role || before.data.role, 20), status: clean(input.status || before.data.status, 20) }).eq('id', id).select('id,user_id,role,status,created_at,last_access_at').single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, action: 'platform_admin.updated', entity: 'platform_admins', entity_id: id, before_data: before.data, after_data: result.data, reason: input.reason }, req); return json({ admin: result.data }); }
-    if (action === 'platform_admins') { if (!['owner','admin'].includes(adminRow.data.role)) throw Object.assign(new Error('PLATFORM_ADMIN_FORBIDDEN'), { status: 403 }); const result = await service.from('platform_admins').select('id,user_id,role,status,created_at,created_by,last_access_at').order('created_at', { ascending: true }); if (result.error) throw result.error; return json({ rows: result.data || [] }); }
+    if (action === 'create_platform_admin' || action === 'update_platform_admin') {
+      if (adminRow.data.role !== 'owner') return json({ error: 'PLATFORM_OWNER_REQUIRED' }, 403);
+      if (action === 'create_platform_admin') {
+        const userId = clean(input.user_id, 80);
+        const role = clean(input.role || 'readonly', 20);
+        const permanent = input.permanent === true;
+        const expiry = normalizePlatformAdminExpiry(input.expires_at, { required: !permanent, allowPermanent: permanent });
+        const permanentRequestValid = !permanent || (role === 'admin' && Object.hasOwn(input, 'expires_at') && input.expires_at === null);
+        if (!userId || !['admin', 'support', 'readonly'].includes(role) || !expiry.valid || (!permanent && !expiry.value) || !permanentRequestValid) return json({ error: 'INVALID_PLATFORM_ADMIN_TERM' }, 422);
+        const result = await service.from('platform_admins').insert({ user_id: userId, role, status: 'active', expires_at: expiry.value, created_by: actor.id }).select('id,user_id,role,status,expires_at,created_at,last_access_at').single();
+        if (result.error) throw result.error;
+        await audit(service, { admin_user_id: actor.id, action: permanent ? 'platform_admin.permanent_admin.created' : 'platform_admin.temporary_admin.created', entity: 'platform_admins', entity_id: result.data.id, after_data: result.data, reason: input.reason }, req);
+        return json({ admin: result.data });
+      }
+      const id = clean(input.id, 80);
+      const before = await service.from('platform_admins').select('id,user_id,role,status,expires_at').eq('id', id).maybeSingle();
+      if (before.error) throw before.error;
+      if (!before.data) return json({ error: 'PLATFORM_ADMIN_NOT_FOUND' }, 404);
+      const role = clean(input.role ?? before.data.role, 20);
+      const status = clean(input.status ?? before.data.status, 20);
+      const permanent = input.permanent === true;
+      const expiry = normalizePlatformAdminExpiry(input.expires_at, { allowPermanent: permanent || role === 'owner' || status === 'disabled' });
+      const expiryProvided = Object.hasOwn(input, 'expires_at');
+      const permanentRequestValid = !permanent || (role === 'admin' && expiryProvided && input.expires_at === null);
+      const expiresAt = permanent ? null : expiry.value === undefined ? before.data.expires_at : expiry.value;
+      if (!PLATFORM_ROLES.includes(role) || !['active', 'disabled'].includes(status) || !expiry.valid) return json({ error: 'INVALID_PLATFORM_ADMIN' }, 422);
+      if (!permanentRequestValid || (expiryProvided && input.expires_at === null && !permanent && role !== 'owner' && status === 'active')) return json({ error: 'INVALID_PLATFORM_ADMIN_TERM' }, 422);
+      if (role === 'owner' && expiresAt !== null) return json({ error: 'PLATFORM_OWNER_MUST_BE_PERMANENT' }, 422);
+      const explicitlyBecomingPermanent = permanent && role === 'admin' && expiresAt === null;
+      const preservesExistingPermanentAdmin = before.data.role === 'admin' && before.data.status === 'active' && before.data.expires_at == null && role === 'admin' && !expiryProvided;
+      if (role === 'admin' && status === 'active' && expiresAt === null && !explicitlyBecomingPermanent && !preservesExistingPermanentAdmin) return json({ error: 'PERMANENT_ADMIN_REQUIRES_OWNER_CONFIRMATION' }, 422);
+      if (role !== 'owner' && status === 'active' && !explicitlyBecomingPermanent && !preservesExistingPermanentAdmin && !isPlatformAdminCurrent({ role, status, expires_at: expiresAt })) return json({ error: 'ACTIVE_PLATFORM_ADMIN_REQUIRES_FUTURE_EXPIRY' }, 422);
+      if (before.data.role === 'owner' && (role !== 'owner' || status !== 'active' || expiresAt !== null)) {
+        const owners = await service.from('platform_admins').select('id', { count: 'exact', head: true }).eq('role', 'owner').eq('status', 'active').is('expires_at', null);
+        if (owners.error) throw owners.error;
+        if ((owners.count || 0) <= 1) return json({ error: 'LAST_OWNER_PROTECTED' }, 409);
+      }
+      const result = await service.from('platform_admins').update({ role, status, expires_at: expiresAt }).eq('id', id).select('id,user_id,role,status,expires_at,created_at,last_access_at').single();
+      if (result.error) throw result.error;
+      await audit(service, { admin_user_id: actor.id, action: 'platform_admin.updated', entity: 'platform_admins', entity_id: id, before_data: before.data, after_data: result.data, reason: input.reason }, req);
+      return json({ admin: result.data });
+    }
+    if (action === 'platform_admins') { if (!['owner','admin'].includes(adminRow.data.role)) throw Object.assign(new Error('PLATFORM_ADMIN_FORBIDDEN'), { status: 403 }); const result = await service.from('platform_admins').select('id,user_id,role,status,expires_at,created_at,created_by,last_access_at').order('created_at', { ascending: true }); if (result.error) throw result.error; return json({ rows: result.data || [] }); }
     return json({ error: 'UNKNOWN_ACTION' }, 400);
   } catch (error) {
     const status = Number((error as any)?.status) || (String((error as any)?.message) === 'AUTH_REQUIRED' ? 401 : 500);

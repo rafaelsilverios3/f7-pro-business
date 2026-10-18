@@ -144,3 +144,8 @@ begin
 end; $$;
 revoke all on function public.company_has_feature(uuid, text) from public, anon;
 grant execute on function public.company_has_feature(uuid, text) to authenticated, service_role;
+-- Conceptual rollback: restore the previous company_has_feature definition,
+-- policies, and grants, then remove the billing objects in FK dependency order.
+-- This is destructive to plans/features and customer, payment, checkout, and
+-- webhook history; export/backup all rows first. The plan seed rows also require
+-- restoring their prior contents, not merely dropping schema objects.

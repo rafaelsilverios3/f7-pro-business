@@ -11,6 +11,10 @@ Secrets usados:
 
 Em `test`, a flag de produção não interfere no sandbox. Em `production`, `billing-health` pode consultar `GET /users/me`, mas `billing-checkout` retorna `PRODUCTION_PAYMENTS_DISABLED` antes de criar checkout ou chamar `POST /v1/orders` enquanto a flag não for exatamente `true`. Assim, o retorno para produção pode ser validado sem criar PIX ou cobrança.
 
+O checkout também confere o tipo do token antes de chamar a API: `test` exige prefixo `TEST-`; `production` exige `APP_USR-` e a trava explícita acima. O webhook exige a mesma correspondência entre ambiente, tipo do token e `live_mode`; notificações incompatíveis são recusadas antes de persistir o evento ou consultar o provedor. Os testes locais usam token e provedor sintéticos; nenhuma chamada Mercado Pago real foi feita.
+
+A versão local do protocolo de billing usa `get_or_create_billing_checkout` para serializar checkouts e `persist_billing_checkout_order` para gravar a ordem e o pagamento pendente na mesma transação. `settle_billing_webhook_event` valida e liquida a confirmação em uma transação separada. Essas RPCs são exclusivas de `service_role`. A migration `20261015154213_billing_webhook_atomic_settlement.sql` está preparada e validada apenas no banco Supabase local isolado; ela ainda precisa de aprovação e aplicação em homologação antes de publicar handlers que a invoquem.
+
 O projeto Supabase mantém um único conjunto ativo de secrets por projeto. Para alternar entre ambientes, o operador deve substituir os três valores Mercado Pago no ambiente server-side; não há seleção de token pelo cliente. O webhook permanece na URL da Edge Function e deve usar a assinatura secreta do mesmo ambiente. O webhook continua exigindo HMAC e consulta o recurso real do provedor antes de qualquer ativação.
 
 Não há configuração de produção aplicada nesta etapa e nenhum pagamento real deve ser criado. A reversão para sandbox consiste em restaurar `MERCADO_PAGO_ENVIRONMENT=test` e os secrets de teste.

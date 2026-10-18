@@ -19,10 +19,15 @@ const commercialMigration = fs.readFileSync('supabase/migrations/0065_platform_p
 const trialMigration = fs.readFileSync('supabase/migrations/0066_trial_lifecycle.sql', 'utf8');
 const trialGateMigration = fs.readFileSync('supabase/migrations/0067_trial_gate_fail_closed.sql', 'utf8');
 const ordersMigration = fs.readFileSync('supabase/migrations/0068_billing_orders_support.sql', 'utf8');
+const atomicBillingMigration = fs.readFileSync('supabase/migrations/20261015154213_billing_webhook_atomic_settlement.sql', 'utf8');
+const recurringBillingMigration = fs.readFileSync('supabase/migrations/20261015172611_billing_recurring_subscriptions.sql', 'utf8');
+const dualBillingMigration = fs.readFileSync('supabase/migrations/20261018180049_billing_dual_payment_models.sql', 'utf8');
+const subscriptionManageEdge = fs.readFileSync('supabase/functions/billing-subscription-manage/index.ts', 'utf8');
 const intelligenceEdge = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
 const supplierEdge = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
 const automationEdge = fs.readFileSync('supabase/functions/automation-worker/index.ts', 'utf8');
 const billingHealth = fs.readFileSync('supabase/functions/billing-health/index.ts', 'utf8');
+const integrationsService = fs.readFileSync('src/services/integrationsService.js', 'utf8');
 const radarService = fs.readFileSync('src/services/opportunityRadarService.js', 'utf8');
 const subscriptionService = fs.readFileSync('src/services/subscriptionService.js', 'utf8');
 const supabaseConfig = fs.readFileSync('supabase/config.toml', 'utf8');
@@ -42,35 +47,114 @@ test('plans are backend-controlled and never require fictitious prices', () => {
   assert.doesNotMatch(plansSection, /R\$\s*\d/);
 });
 
+test('checkout waits for server-backed plans and handles loading errors before reporting a missing plan', () => {
+  const loadingState = page.indexOf('if (plansLoading)');
+  const errorState = page.indexOf('if (plansError)');
+  const missingPlanState = page.indexOf('if (!plan)');
+  assert.ok(loadingState >= 0 && loadingState < errorState && errorState < missingPlanState, 'loading and fetch failures must not be mistaken for an invalid plan');
+  assert.match(page, /setPlansLoading\(true\)/);
+  assert.match(page, /setPlansLoading\(false\)/);
+  assert.match(page, /billingService\.listPlans\(\)/);
+  assert.match(page, /Tentar novamente/);
+});
+
+test('public plan comparison distinguishes loading, service failure and an empty catalog', () => {
+  const publicPlans = site.match(/function Plans\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(publicPlans, /Carregando planos/);
+  assert.match(publicPlans, /Não foi possível carregar os planos agora/);
+  assert.match(publicPlans, /Os planos não estão disponíveis no momento/);
+  assert.match(publicPlans, /setReloadKey\(\(key\) => key \+ 1\)/);
+  assert.match(publicPlans, /\.catch\(\(\) =>/);
+});
+
 test('checkout resolves amount from the active plan and keeps provider secrets server-side', () => {
   assert.match(checkout, /eq\('code', planCode\)\.eq\('active', true\)/);
   assert.match(checkout, /MERCADO_PAGO_ACCESS_TOKEN/);
   assert.match(checkout, /X-Idempotency-Key/);
+  assert.match(checkout, /INVALID_PAYMENT_METHOD/);
   assert.match(checkout, /v1\/orders/);
+  assert.match(checkout, /verifyMercadoPagoCredentialEnvironment\(token, environment as 'test' \| 'production', providerFetch\)/);
+  assert.doesNotMatch(checkout, /token\.startsWith\(['\"](?:TEST-|APP_USR-)/);
   assert.match(checkout, /processing_mode: 'automatic'/);
   assert.match(checkout, /payment_method: \{ id: 'pix', type: 'bank_transfer' \}/);
+  assert.match(checkout, /api\.mercadopago\.com\/v1\/payments/);
+  assert.match(checkout, /back_url: appBackUrl/);
+  assert.match(dualBillingMigration, /get_or_create_billing_checkout_v2/);
+  assert.match(dualBillingMigration, /billing_period_snapshot/);
+  assert.match(dualBillingMigration, /ACTIVE_CONTRACT_MUST_END_OR_CANCEL_BEFORE_SWITCH/);
+  assert.match(dualBillingMigration, /pg_advisory_xact_lock/);
+  assert.match(dualBillingMigration, /grant execute on function public\.get_or_create_billing_checkout_v2[\s\S]*to service_role/);
+  assert.match(dualBillingMigration, /select coalesce\(s\.plan, 'free'\), s\.status, s\.current_period_end[\s\S]*period_end <= now\(\)/);
   assert.doesNotMatch(service + page, /MERCADO_PAGO_ACCESS_TOKEN|WEBHOOK_SECRET/);
+});
+
+test('checkout rejects missing provider credentials and invalid card token before persisting an intent', () => {
+  const credentialGate = checkout.indexOf("if (!token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409)");
+  const cardGate = checkout.indexOf("return json({ code: 'CARD_PAYMENT_DATA_INVALID' }, 422)");
+  const checkoutReservation = checkout.indexOf("rpc('get_or_create_billing_checkout_v2'");
+  assert.ok(credentialGate >= 0 && credentialGate < checkoutReservation, 'missing credentials must be detected before checkout reservation');
+  assert.ok(cardGate >= 0 && cardGate < checkoutReservation, 'invalid card tokens must be rejected before checkout reservation');
+  assert.match(checkout, /token: cardTokenId/);
+  assert.match(checkout, /payment_method_id: paymentMethodId/);
+  assert.match(checkout, /installments/);
+  assert.match(checkout, /api\.mercadopago\.com\/preapproval/);
+  assert.match(checkout, /X-Idempotency-Key': `f7-subscription-/);
+  assert.match(checkout, /frequency: billingPeriod === 'year' \? 12 : 1/);
+  assert.match(checkout, /CHECKOUT_PRICE_CHANGED/);
+  assert.match(atomicBillingMigration, /get_or_create_billing_checkout/);
+  assert.match(atomicBillingMigration, /persist_billing_checkout_order/);
+  assert.match(atomicBillingMigration, /pg_advisory_xact_lock/);
+  assert.match(atomicBillingMigration, /grant execute on function public\.get_or_create_billing_checkout[\s\S]*to service_role/);
+  assert.match(atomicBillingMigration, /grant execute on function public\.persist_billing_checkout_order[\s\S]*to service_role/);
+  assert.match(atomicBillingMigration, /CHECKOUT_PROVIDER_REFERENCE_CONFLICT/);
+  assert.match(atomicBillingMigration, /PROVIDER_PAYMENT_REFERENCE_CONFLICT/);
+  assert.match(recurringBillingMigration, /settle_billing_recurring_event/);
+  assert.match(recurringBillingMigration, /amount_minor bigint not null/);
+  assert.match(recurringBillingMigration, /billing_period_snapshot/);
+  assert.match(recurringBillingMigration, /grant execute on function public\.settle_billing_recurring_event[\s\S]*to service_role/);
 });
 
 test('PIX exposes provider evidence and payment activation only comes from webhook', () => {
   assert.match(checkout, /qr_code/);
   assert.match(checkout, /qr_code_base64/);
-  assert.match(page, /webhook do Mercado Pago/);
+  assert.match(page, /webhook/);
+  assert.match(page, /não há renovação automática/);
   assert.match(webhook, /validateSignature/);
   assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
   assert.match(webhook, /billing_webhook_events/);
   assert.match(webhook, /duplicate/);
-  assert.match(webhook, /status === 'approved'/);
+  assert.match(atomicBillingMigration, /if payment_status = 'approved' then/);
+  assert.match(webhook, /settle_billing_webhook_event/);
+  assert.match(webhook, /PROVIDER_RESPONSE_INCOMPLETE/);
   assert.match(webhook, /type === 'order'/);
   assert.match(webhook, /v1\/orders/);
   assert.match(webhook, /provider_order_id/);
-  assert.match(webhook, /billing_period/);
+  assert.match(atomicBillingMigration, /plan_row\.billing_period/);
+  assert.match(recurringBillingMigration, /billing_period_snapshot/);
   assert.doesNotMatch(webhook, /30 \* 86_400_000/);
+});
+
+test('recurring subscription controls are tenant scoped, authenticated and explicitly confirmed by the provider', () => {
+  assert.match(subscriptionManageEdge, /company_users/);
+  assert.match(subscriptionManageEdge, /\['admin', 'gestor'\]/);
+  assert.match(subscriptionManageEdge, /billing_subscriptions/);
+  assert.match(subscriptionManageEdge, /claim_billing_subscription_control/);
+  assert.match(subscriptionManageEdge, /record_billing_subscription_control/);
+  assert.match(subscriptionManageEdge, /MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED/);
+  assert.match(subscriptionManageEdge, /SUBSCRIPTION_RESULT_UNCERTAIN/);
+  assert.match(recurringBillingMigration, /control_lease_expires_at=now\(\)\+interval '5 minutes'/);
+  assert.match(recurringBillingMigration, /revoke all on function public\.record_billing_subscription_control[\s\S]*from public, anon, authenticated/);
+  assert.match(recurringBillingMigration, /grant execute on function public\.record_billing_subscription_control[\s\S]*to service_role/);
+  assert.match(supabaseConfig, /\[functions\.billing-subscription-manage\][\s\S]*verify_jwt = true/);
+  assert.match(subscriptionPage, /Pausar renovação/);
+  assert.match(subscriptionPage, /Retomar renovação/);
+  assert.match(subscriptionPage, /Cancelar assinatura/);
+  assert.match(subscriptionPage, /window\.confirm/);
 });
 
 test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remains mandatory', () => {
   assert.match(supabaseConfig, /\[functions\.billing-webhook\][\s\S]*verify_jwt\s*=\s*false/);
-  assert.doesNotMatch(supabaseConfig, /\[functions\.(billing-checkout|billing-health)\][\s\S]*verify_jwt\s*=\s*false/);
+  assert.doesNotMatch(supabaseConfig, /^\[functions\.(billing-checkout|billing-health)\]\r?\nverify_jwt\s*=\s*false$/m);
   assert.match(webhook, /req\.headers\.get\('x-signature'\)/);
   assert.match(webhook, /req\.headers\.get\('x-request-id'\)/);
   assert.match(webhook, /MERCADO_PAGO_WEBHOOK_SECRET/);
@@ -82,6 +166,9 @@ test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remai
   assert.match(webhook, /constantTimeEqual/);
   assert.match(webhook, /received_digest_length/);
   assert.match(webhook, /v1\/orders/);
+  assert.match(webhook, /body\.live_mode !== \(environment === 'production'\)/);
+  assert.match(webhook, /verifyMercadoPagoCredentialEnvironment\(providerToken, environment as 'test' \| 'production', providerFetch\)/);
+  assert.doesNotMatch(webhook, /providerToken\.startsWith\(['\"](?:TEST-|APP_USR-)/);
 });
 
 test('billing webhook validates Mercado Pago timestamps in Unix seconds and fails closed', () => {
@@ -111,10 +198,10 @@ test('Orders API normalizer requires accredited evidence and keeps legacy paymen
   assert.match(webhook, /normalizeOrdersPaymentStatus/);
   assert.match(webhook, /provider_order_status_detail/);
   assert.match(webhook, /provider_transaction_status_detail/);
-  assert.match(webhook, /trial_used: true/);
+  assert.match(atomicBillingMigration, /trial_used = true/);
   assert.match(webhook, /legacyEventNeedsReconciliation/);
 
-  const helperSource = webhook.match(/const normalizeOrdersPaymentStatus[\s\S]*?\nconst periodEnd/)?.[0].replace(/\nconst periodEnd[\s\S]*$/, '');
+  const helperSource = webhook.match(/const normalizeOrdersPaymentStatus[\s\S]*?\nexport async function handleBillingWebhookRequest/)?.[0].replace(/\nexport async function handleBillingWebhookRequest[\s\S]*$/, '').replace('(input: { orderStatus?: unknown; orderStatusDetail?: unknown; transactionStatus?: unknown; transactionStatusDetail?: unknown })', '(input)');
   assert.ok(helperSource, 'Orders normalizer must remain isolated and testable');
   const context = {};
   vm.runInNewContext(`${helperSource}; this.normalize = normalizeOrdersPaymentStatus;`, context);
@@ -134,22 +221,38 @@ test('Orders API normalizer requires accredited evidence and keeps legacy paymen
 });
 
 test('Orders activation is tenant, checkout, money and idempotency safe', () => {
-  for (const marker of ['providerAmountMinor', 'providerCurrency', 'companyMismatch', 'referenceMismatch', 'orderMismatch', 'PLAN_REFERENCE_MISMATCH', 'PAYMENT_AMOUNT_MISMATCH', 'PAYMENT_CURRENCY_MISMATCH', 'duplicate: true']) assert.match(webhook, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(webhook, /checkout\.provider_order_id !== resourceId/);
-  assert.match(webhook, /checkout\.company_id !== local\.company_id/);
-  assert.match(webhook, /externalReference !== String\(checkout\.id\)/);
+  for (const marker of ['p_provider_amount_minor', 'p_provider_currency', 'PAYMENT_AMOUNT_MISMATCH', 'PAYMENT_CURRENCY_MISMATCH', 'PAYMENT_REFERENCE_MISMATCH', 'PROVIDER_ORDER_MISMATCH', 'duplicate: true']) assert.match(`${webhook}\n${atomicBillingMigration}`, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(atomicBillingMigration, /checkout_row\.provider_order_id is distinct from p_provider_order_id/);
+  assert.match(atomicBillingMigration, /p_external_reference is distinct from checkout_row\.id::text/);
+  assert.match(atomicBillingMigration, /checkout_row\.company_id is distinct from v_company_id/);
   assert.match(webhook, /normalized\.activationEligible/);
+  assert.match(atomicBillingMigration, /on conflict \(company_id\) do update set plan = excluded\.plan/);
+  assert.match(atomicBillingMigration, /event_row\.metadata->>'processing_token' is distinct from p_processing_token/);
 });
 
-test('Orders PIX test contract uses the official deterministic payer without exposing secrets', () => {
-  assert.match(checkout, /test_user_br@testuser\.com/);
+test('Orders PIX uses the documented Orders test payer data and never exposes secrets', () => {
+  assert.match(checkout, /test@testuser\.com/);
   assert.match(checkout, /first_name: 'APRO'/);
+  assert.doesNotMatch(checkout, /test_user_br@testuser\.com/);
   assert.match(checkout, /BILLING_PROVIDER_REQUEST_FAILED/);
-  assert.match(checkout, /provider_code/);
-  assert.match(checkout, /provider_causes/);
+  assert.match(checkout, /request_id_present: Boolean\(details\.request_id_present\)/);
+  assert.match(checkout, /database_code:/);
+  assert.doesNotMatch(checkout, /database_message|provider_message/);
   assert.doesNotMatch(checkout, /console\.error\([^\n]*(?:token|Authorization|qr_code)/i);
+  assert.doesNotMatch(checkout, /providerError\(|provider_message|provider_causes/);
   assert.match(ordersMigration, /provider_order_id/);
   assert.match(ordersMigration, /error_message/);
+});
+
+test('billing operational logs omit provider identifiers, payload messages, and signature values', () => {
+  const signatureLogger = webhook.match(/const diagnostics = \{[\s\S]*?\};/)?.[0] || '';
+  const failedProviderLogger = webhook.match(/console\.error\(JSON\.stringify\(\{ event: 'BILLING_PROVIDER_REQUEST_FAILED'[\s\S]*?\}\)\);/)?.[0] || '';
+  const normalizedLogger = webhook.match(/console\.error\(JSON\.stringify\(\{ event: 'BILLING_WEBHOOK_STATUS_NORMALIZED'[\s\S]*?\}\)\);/)?.[0] || '';
+  assert.ok(signatureLogger && failedProviderLogger && normalizedLogger);
+  assert.doesNotMatch(signatureLogger, /\b(?:dataId|requestId|ts|v1)\s*[,}:]/);
+  assert.doesNotMatch(failedProviderLogger, /endpoint|provider_message|provider_resource_id|resourceId|resource\?\./);
+  assert.doesNotMatch(normalizedLogger, /provider_resource_id|resourceId/);
+  assert.match(webhook, /safeProviderLabel/);
 });
 
 test('billing authorization and tenant ownership are checked server-side', () => {
@@ -157,8 +260,9 @@ test('billing authorization and tenant ownership are checked server-side', () =>
   assert.match(checkout, /\['admin', 'gestor'\]/);
   assert.match(checkout, /AUTH_REQUIRED.*401/);
   assert.match(checkout, /company_id/);
-  assert.match(webhook, /billing_payments/);
-  assert.match(webhook, /eq\('company_id', local\.company_id\)/);
+  assert.match(atomicBillingMigration, /billing_payments/);
+  assert.match(atomicBillingMigration, /company_id = v_company_id/);
+  assert.match(atomicBillingMigration, /revoke all on function public\.settle_billing_webhook_event[\s\S]*from public, anon, authenticated/);
 });
 
 test('public plans and authenticated checkout routes are wired without changing Smart Atendimento', () => {
@@ -167,6 +271,20 @@ test('public plans and authenticated checkout routes are wired without changing 
   assert.match(app, /returnTo=.*location\.pathname/);
   assert.match(site, /PlansSection/);
   assert.match(site, /Assinar/);
+});
+
+test('both models are explicit, annual prices are backend-checked and cards use single-use tokenization', () => {
+  assert.match(page, /Assinatura recorrente/);
+  assert.match(page, /Pagamento avulso/);
+  assert.match(page, /priceForBillingPeriod\(plan, billingPeriod\)/);
+  assert.match(page, /sem desconto/);
+  assert.match(page, /Esta compra não autoriza cobranças futuras/);
+  assert.match(checkout, /billingModel === 'recurring'/);
+  assert.match(checkout, /X-Idempotency-Key': `f7-payment-/);
+  assert.match(checkout, /persist_billing_checkout_payment/);
+  assert.match(dualBillingMigration, /current_period_end > now\(\)/);
+  assert.match(dualBillingMigration, /record_billing_subscription_control[\s\S]*access_row\.current_period_end>now\(\)/);
+  assert.match(dualBillingMigration, /billing_model='one_time' and s\.current_period_end > now\(\)/);
 });
 
 test('landing hero separates trial and plan discovery CTAs', () => {
@@ -273,23 +391,25 @@ test('active trial cannot be entitled by overrides or plan features', () => {
 });
 
 test('checkout reuses open intent and webhook validates money before activation', () => {
-  assert.match(checkout, /billing_checkout_sessions.*select/);
-  assert.match(checkout, /in\('status', \['created', 'pending'\]\)/);
-  assert.match(checkout, /reused: true/);
-  assert.match(webhook, /PAYMENT_AMOUNT_MISMATCH/);
+  assert.match(atomicBillingMigration, /s\.status in \('created','pending'\)/);
+  assert.match(atomicBillingMigration, /pg_advisory_xact_lock/);
+  assert.match(checkout, /X-Idempotency-Key/);
+  assert.match(checkout, /MERCADO_PAGO_RESPONSE_MISMATCH/);
+  assert.match(checkout, /rpc\('persist_billing_checkout_order'/);
+  assert.match(atomicBillingMigration, /PAYMENT_AMOUNT_MISMATCH/);
   assert.match(webhook, /transaction_amount/);
   assert.match(webhook, /currency_id/);
-  assert.match(webhook, /PAYMENT_REFERENCE_MISMATCH/);
+  assert.match(atomicBillingMigration, /PAYMENT_REFERENCE_MISMATCH/);
 });
 
-test('billing health never returns provider secrets and radar is gated server-side', () => {
-  assert.match(billingHealth, /access_token_configured/);
-  assert.match(billingHealth, /users\/me/);
-  assert.match(billingHealth, /environment_confirmed/);
-  assert.match(billingHealth, /credential_environment/);
+test('billing health requires tenant-scoped role authorization and only returns sanitized status', () => {
+  assert.match(billingHealth, /company_id/);
+  assert.match(billingHealth, /company_users/);
+  assert.match(billingHealth, /!member\?\.active \|\| !\['admin', 'gestor'\]\.includes\(member\.role\)/);
   assert.match(billingHealth, /MERCADO_PAGO_ENVIRONMENT/);
-  assert.match(billingHealth, /configured_environment/);
-  assert.match(billingHealth, /pix_allowed/);
+  assert.match(billingHealth, /safeHealthResponse/);
+  assert.match(billingHealth, /card_enabled: false/);
+  assert.doesNotMatch(billingHealth, /provider_user_id|provider_site_id|environment_evidence|credentials_configured|access_token_configured/);
   assert.match(checkout, /MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED/);
   assert.match(checkout, /PRODUCTION_PAYMENTS_DISABLED/);
   assert.match(checkout, /MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED/);
@@ -305,19 +425,18 @@ test('production billing is server-controlled and fail-closed without creating a
   assert.match(checkout, /environment === 'production' && !productionPaymentsEnabled/);
   assert.match(checkout, /code: 'PRODUCTION_PAYMENTS_DISABLED'/);
   const guardIndex = checkout.indexOf("code: 'PRODUCTION_PAYMENTS_DISABLED'");
-  const fetchIndex = checkout.indexOf("fetch(providerUrl");
+  const fetchIndex = checkout.indexOf("providerFetch(providerUrl");
   assert.ok(guardIndex >= 0 && guardIndex < fetchIndex, 'production gate must run before POST /v1/orders');
   assert.match(checkout, /const isTest = environment === 'test'/);
   assert.doesNotMatch(checkout, /import\.meta\.env|localStorage.*MERCADO_PAGO|window\..*MERCADO_PAGO/);
 });
 
-test('billing health reports production readiness without enabling payments by default', () => {
-  for (const field of ['configured_environment', 'provider_reachable', 'credentials_configured', 'webhook_secret_configured', 'payments_enabled', 'production_payments_enabled']) {
-    assert.match(billingHealth, new RegExp(`${field}:`));
-  }
-  assert.match(billingHealth, /productionReady/);
-  assert.match(billingHealth, /const environmentConfirmed = configuredEnvironment === 'test' \? sandboxAllowed : productionReady/);
-  assert.match(billingHealth, /configuredEnvironment === 'test' \? sandboxAllowed : productionReady && productionPaymentsEnabled/);
+test('billing health explicitly requires JWT verification in Supabase config', () => {
+  assert.match(fs.readFileSync('supabase/config.toml', 'utf8'), /\[functions\.billing-health\]\s+verify_jwt = true/);
+  assert.match(billingHealth, /auth\.getUser\(jwt\)/);
+  assert.match(billingHealth, /blocksLiveBillingInHomologation/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_ACCESS_TOKEN/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_WEBHOOK_SECRET/);
+  assert.match(service, /health: \(companyId\) => invokeEdgeFunction\('billing-health', null, \{ method: 'GET', query: \{ company_id: companyId \} \}\)/);
+  assert.match(integrationsService, /endpoint\.searchParams\.set\(key, value\)/);
 });

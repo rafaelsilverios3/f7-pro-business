@@ -19,6 +19,10 @@ test('product price edits use one canonical numeric payload and preserve zero', 
   assert.match(productDialog, /if \(!form\.name\.trim\(\) \|\| saving\)/);
 });
 
+test('blank product duration remains optional instead of failing numeric coercion', () => {
+  assert.match(productsService, /duration_minutes: data\.duration_minutes == null \|\| data\.duration_minutes === '' \? undefined : Number\(data\.duration_minutes\)/);
+});
+
 test('referenced products are archived instead of breaking historical foreign keys', () => {
   assert.match(productsService, /no DELETE grant/);
   assert.match(productsService, /archived: true/);

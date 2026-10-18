@@ -1,11 +1,24 @@
 import { matchesPeriod, previousPeriodContext } from '@/lib/metrics';
 import { activitySummary, deriveNextAction, isDueToday, isOverdue, isPending } from '@/lib/crmActivities';
 import { buildCustomerRelationshipIndex } from '@/lib/customerRelationship';
+import { isRevenueSale } from './saleStatus.js';
+
+/** @typedef {import('../types/f7Domain').Customer} Customer */
+/** @typedef {import('../types/f7Domain').Product} Product */
+/** @typedef {import('../types/f7Domain').Sale} Sale */
+/** @typedef {import('../types/f7Domain').Opportunity} Opportunity */
+/** @typedef {import('../types/f7Domain').Quote} Quote */
+/** @typedef {import('../types/f7Domain').Conversation} Conversation */
+/** @typedef {import('../types/f7Domain').SalesChannel} SalesChannel */
+/** @typedef {import('../types/f7Domain').ChannelMetric} ChannelMetric */
+/** @typedef {import('../types/f7Domain').CrmActivity} CrmActivity */
+/** @typedef {import('../types/f7Domain').Notification} Notification */
+/** @typedef {import('../types/f7Domain').PeriodContext} PeriodContext */
 
 const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const dateOf = (row) => row?.sale_date || row?.created_at || row?.created_date || null;
 const dateTime = (value) => value ? new Date(value).getTime() : NaN;
-const valid = (row) => row?.status !== 'cancelled';
+const valid = isRevenueSale;
 const scoped = (rows = [], companyId) => rows.filter((row) => !companyId || row?.company_id === companyId);
 const labelPriority = (value) => {
   const normalized = String(value || '').toLowerCase();
@@ -93,15 +106,18 @@ function buildAttention({ customers, opportunities, activities = [], notificatio
   return [...unique.values()];
 }
 
+/** @param {{companyId?: string, customers?: Customer[], products?: Product[], sales?: Sale[], opportunities?: Opportunity[], quotes?: Quote[], radarOpportunities?: Opportunity[], conversations?: Conversation[], channels?: SalesChannel[], metrics?: ChannelMetric[], activities?: CrmActivity[], notifications?: Notification[], periodContext?: PeriodContext | null, links?: Array<Record<string, unknown>>, now?: Date}} [options] */
 export function buildSalesHubModel({ companyId, customers = [], products = [], sales = [], opportunities = [], quotes = [], radarOpportunities = [], conversations = [], channels = [], metrics = [], activities = [], notifications = [], periodContext, now = new Date() } = {}) {
   const scopedCustomers = scoped(customers, companyId);
   const scopedSales = scoped(sales, companyId).filter(valid);
   const scopedQuotes = scoped(quotes, companyId);
   const scopedActivities = scoped(activities, companyId);
-  const combined = [...new Map([
-    ...scoped(opportunities, companyId).map((item) => [item.id, normalizeOpportunity(item, 'crm')]),
-    ...scoped(radarOpportunities, companyId).map((item) => [item.id, normalizeOpportunity(item, 'radar')]),
-  ]).values()];
+  /** @type {Array<[string, ReturnType<typeof normalizeOpportunity>]>} */
+  const combinedEntries = [
+    ...scoped(opportunities, companyId).map((item) => /** @type {[string, ReturnType<typeof normalizeOpportunity>]} */ ([item.id, normalizeOpportunity(item, 'crm')])),
+    ...scoped(radarOpportunities, companyId).map((item) => /** @type {[string, ReturnType<typeof normalizeOpportunity>]} */ ([item.id, normalizeOpportunity(item, 'radar')])),
+  ];
+  const combined = [...new Map(combinedEntries).values()];
   const relationshipIndex = buildCustomerRelationshipIndex({ companyId, customers: scopedCustomers, sales: scopedSales, activities: scopedActivities, opportunities: combined, now });
   const customerRows = scopedCustomers.map((customer) => customerSummary(customer, scopedSales, combined, scopedActivities, periodContext, now, relationshipIndex.get(customer.id))).sort((a, b) => b.revenue - a.revenue);
   const periodSales = scopedSales.filter((sale) => matchesPeriod(dateOf(sale), periodContext));

@@ -15,8 +15,8 @@ import { resolveSubscriptionHeaderState } from '@/lib/subscriptionHeaderState';
 import { notificationsService } from '@/services/notificationsService';
 import NotificationBell from './NotificationBell';
 import { searchGlobal } from '@/services/globalSearchService';
-import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import ModuleHelp from '@/components/training/ModuleHelp';
+import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 // Estados neutros do header: Sem plano ativo, Teste grátis e Teste encerrado.
 function SubscriptionSummary({ subscription, loading, error, onRetry }) {
@@ -45,17 +45,10 @@ function GlobalSearch({ company, user, subscription }) {
   const [selected, setSelected] = useState(0);
   const inputRef = React.useRef(null);
   const requestRef = React.useRef(0);
-  const [role, setRole] = useState(() => String(user?.role || 'admin').toLowerCase());
-
-  useEffect(() => {
-    let cancelled = false;
-    const fallback = String(user?.user_metadata?.role || user?.app_metadata?.role || user?.role || 'admin').toLowerCase();
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.id || !user?.id) { setRole(fallback === 'authenticated' ? 'admin' : fallback); return undefined; }
-    getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => {
-      if (!cancelled) setRole(String(data?.role || fallback || 'admin').toLowerCase());
-    }).catch(() => { if (!cancelled) setRole(fallback === 'authenticated' ? 'admin' : fallback); });
-    return () => { cancelled = true; };
-  }, [company?.id, user?.id, user?.role, user?.user_metadata?.role, user?.app_metadata?.role]);
+  const membership = useCompanyMembership(company?.id);
+  const role = import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+    ? (membership.active ? membership.role : '')
+    : String(user?.role || '').toLowerCase();
 
   const focusSearch = () => {
     setOpen(true);
@@ -141,6 +134,7 @@ export default function Layout() {
   const location = useLocation();
   const { company, loading } = useCompany();
   const { user, logout } = useAuth();
+  const membership = useCompanyMembership(company?.id);
   const [unread, setUnread] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -159,7 +153,12 @@ export default function Layout() {
     comercial: 'Comercial', vendedor: 'Vendedor', estoque: 'Estoque', atendimento: 'Atendimento',
   };
   const displayName = user?.full_name || user?.name || user?.email || 'Usuário';
-  const role = roleLabels[String(user?.role || '').toLowerCase()] || (user?.role && user.role !== 'authenticated' ? user.role : 'Administrador');
+  const roleKey = import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+    ? (membership.active ? membership.role : '')
+    : String(user?.role || '').toLowerCase();
+  const role = membership.loading && import.meta.env.VITE_DATA_PROVIDER === 'supabase'
+    ? 'Carregando função'
+    : roleLabels[roleKey] || (roleKey && roleKey !== 'authenticated' ? roleKey : 'Função indisponível');
 
   useEffect(() => {
     let cancelled = false;
@@ -265,7 +264,7 @@ export default function Layout() {
         </div>
         <Outlet context={{ company, subscription, subscriptionLoading, subscriptionError, retrySubscription: () => setSubscriptionRequestKey((value) => value + 1), profileName }} />
       </main>
-      <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} company={company} role={String(user?.role || '').toLowerCase()} profileName={profileName} theme={theme} onThemeChange={setTheme} onSaved={setProfileName} />
+      <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} user={user} company={company} role={roleKey} profileName={profileName} theme={theme} onThemeChange={setTheme} onSaved={setProfileName} />
     </div>
   );
 }

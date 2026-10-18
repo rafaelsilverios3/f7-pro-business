@@ -1,5 +1,6 @@
 import { base44 } from '@/api/base44Client';
 import { fmtMoney, fmtMoneyShort, periodKey, periodKeyPrev } from '@/lib/business';
+import { isRevenueSale } from './saleStatus.js';
 
 export async function generateInsights(companyId, period = 'month') {
   const [sales, products, customers, financials, goals] = await Promise.all([
@@ -10,7 +11,7 @@ export async function generateInsights(companyId, period = 'month') {
     base44.entities.Goal.filter({ company_id: companyId, active: true }, '-created_date', 100),
   ]);
 
-  const validSales = sales.filter((s) => s.status !== 'cancelled');
+  const validSales = sales.filter(isRevenueSale);
   const current = validSales.filter((s) => periodKey(s.sale_date, period));
   const previous = validSales.filter((s) => periodKeyPrev(s.sale_date, period));
 

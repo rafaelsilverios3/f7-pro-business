@@ -8,7 +8,7 @@ const service = fs.readFileSync('src/services/conversationsService.js', 'utf8');
 
 test('connected WhatsApp status is not downgraded by the frontend feature flag', () => {
   assert.match(integrations, /whatsappConnected/);
-  assert.match(integrations, /status=\{whatsappConnected \? 'connected'/);
+  assert.match(integrations, /status=\{whatsappHealth\?\.provider_enabled === false \? 'disabled' : whatsappConnected \? 'connected'/);
   assert.match(integrations, /whatsappConnected \|\| whatsappEnabled/);
   assert.match(integrations, /webhook === 'ok' \? 'Funcionando'/);
   assert.match(integrations, /receive === 'ready' \? 'Funcionando'/);

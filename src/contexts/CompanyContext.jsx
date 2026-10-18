@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getDataProvider } from '@/data/providerSelector';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -10,6 +10,7 @@ export function CompanyProvider({ children }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const createCompanyInFlight = useRef(null);
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -31,7 +32,26 @@ export function CompanyProvider({ children }) {
     if (!isAuthenticated || !user?.id) { setCompany(null); setCompanies([]); setLoading(false); return; }
     load();
   }, [authChecked, isAuthenticated, user?.id, load]);
-  const createCompany = useCallback(async (name) => { const created = await getDataProvider().rpc('create_company_with_owner', { company_name: name }); await load(); return created; }, [load]);
+  const createCompany = useCallback((name) => {
+    if (createCompanyInFlight.current) return createCompanyInFlight.current;
+    const pending = (async () => {
+      const result = await getDataProvider().rpc('create_company_with_owner', { company_name: name });
+      const created = Array.isArray(result) ? result[0] : result;
+      if (!created?.id) throw new Error('Não foi possível confirmar a empresa criada.');
+      localStorage.setItem('f7_company_id', created.id);
+      await load();
+      // The RPC is idempotent per authenticated user and returns the existing
+      // active company on retry. Keep that authoritative row selected even if
+      // the follow-up list request temporarily fails.
+      setCompanies((current) => current.some((item) => item.id === created.id)
+        ? current
+        : [...current, created]);
+      setCompany(created);
+      return created;
+    })();
+    createCompanyInFlight.current = pending;
+    return pending.finally(() => { createCompanyInFlight.current = null; });
+  }, [load]);
   const value = useMemo(() => ({ company, companyId: company?.id || null, companies, loading, error, switchCompany: (next) => { localStorage.setItem('f7_company_id', next.id); setCompany(next); }, createCompany, refresh: load }), [company, companies, loading, error, load, createCompany]);
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 }

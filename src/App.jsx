@@ -54,13 +54,33 @@ import SubscriptionBilling from './pages/SubscriptionBilling.jsx';
 import TrialExpired from './pages/TrialExpired.jsx';
 import FeatureLocked from './pages/FeatureLocked.jsx';
 import PublicSite from './pages/PublicSite.jsx';
+import Commerce from './pages/Commerce.jsx';
+import MercadoLivreListings from './pages/MercadoLivreListings.jsx';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useCompany } from '@/lib/useCompany';
+import { useCompanyMembership } from '@/hooks/useCompanyMembership';
+import { companyMembershipGateState } from '@/lib/companyMembershipGate';
 import { can } from '@/lib/permissions';
-import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { trialActive, trialExpired, TRIAL_ALLOWED_PATHS, FEATURE_REQUIREMENTS } from '@/services/subscriptionService';
 import { canUseFeature } from '@/services/planService';
 import { resolveSubscriptionGate } from '@/lib/subscriptionGate';
+
+const HOMOLOGATION_SUPABASE_URL = 'https://vwylnjmapixtzhryiutt.supabase.co';
+const HOMOLOGATION_VERCEL_BRANCH = 'codex/harden-multi-tenant-isolation';
+const HomologationRestRunner = import.meta.env.VERCEL_ENV === 'preview'
+  && import.meta.env.VERCEL_GIT_COMMIT_REF === HOMOLOGATION_VERCEL_BRANCH
+  ? React.lazy(() => import('./pages/HomologationRestRunner.jsx'))
+  : null;
+const isHomologationRestRunnerEnabled = () => {
+  if (import.meta.env.VERCEL_ENV !== 'preview') return false;
+  if (import.meta.env.VERCEL_GIT_COMMIT_REF !== HOMOLOGATION_VERCEL_BRANCH) return false;
+  if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return false;
+  try {
+    return new URL(import.meta.env.VITE_SUPABASE_URL).origin === HOMOLOGATION_SUPABASE_URL;
+  } catch {
+    return false;
+  }
+};
 
 const CompanyGuard = () => {
   const { company, loading } = useCompany();
@@ -84,20 +104,12 @@ function Forbidden() {
 }
 
 function RoleGuard({ permission, children }) {
-  const { user } = useAuth();
   const { company } = useCompany();
-  const [role, setRole] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? '' : String(user?.role || ''));
-  const [checking, setChecking] = React.useState(import.meta.env.VITE_DATA_PROVIDER === 'supabase');
-  React.useEffect(() => {
-    let cancelled = false;
-    if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase') { setRole(String(user?.role || '')); setChecking(false); return undefined; }
-    if (!company?.id || !user?.id) return undefined;
-    setChecking(true);
-    getSupabaseClient().from('company_users').select('role').eq('company_id', company.id).eq('user_id', user.id).eq('active', true).maybeSingle().then(({ data }) => { if (!cancelled) { setRole(data?.role || ''); setChecking(false); } }).catch(() => { if (!cancelled) { setRole(''); setChecking(false); } });
-    return () => { cancelled = true; };
-  }, [company?.id, user?.id, user?.role]);
-  if (checking) return <div className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
-  return can({ role }, permission) ? children : <Forbidden />;
+  const membership = useCompanyMembership(company?.id);
+  const membershipState = companyMembershipGateState(membership, company?.id);
+  if (membershipState === 'loading') return <div role="status" className="fixed inset-0 flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" /></div>;
+  if (membershipState === 'error') return <div role="alert" className="mx-auto mt-20 max-w-lg rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center"><h1 className="text-xl font-semibold text-rose-900">Não foi possível verificar seu vínculo</h1><p className="mt-2 text-sm text-rose-800">A permissão não foi confirmada. Nenhum acesso foi liberado.</p><button type="button" onClick={membership.refresh} className="mt-4 rounded-lg border border-rose-300 px-4 py-2 text-sm font-medium text-rose-900">Tentar novamente</button></div>;
+  return membershipState === 'active' && can({ role: membership.role }, permission) ? children : <Forbidden />;
 }
 
 const AuthenticatedApp = () => {
@@ -146,6 +158,13 @@ const AuthenticatedApp = () => {
 
   if (!authChecked || !isAuthenticated) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
 
+  // A read-only security probe is available only when this build targets the
+  // explicitly approved homologation project. It reuses the existing browser
+  // session and is never routed in Production.
+  if (location.pathname === '/__homologation/rest-check' && isHomologationRestRunnerEnabled()) {
+    return <React.Suspense fallback={<div className="p-8">Carregando verificação...</div>}><HomologationRestRunner /></React.Suspense>;
+  }
+
   if (location.pathname === '/administracao-f7' || location.pathname.startsWith('/administracao-f7/')) {
     return <Routes><Route path="/administracao-f7" element={<PlatformAdmin />} /><Route path="/administracao-f7/empresas/:companyId" element={<PlatformAdmin />} /></Routes>;
   }
@@ -185,6 +204,8 @@ const AuthenticatedApp = () => {
           <Route path="/supplier-intelligence" element={<RoleGuard permission="supplier_intelligence.view"><SupplierIntelligence /></RoleGuard>} />
           <Route path="/market-intelligence" element={<RoleGuard permission="market_intelligence.view"><MarketIntelligence /></RoleGuard>} />
           <Route path="/sales-hub" element={<RoleGuard permission="sales_channels.view"><SalesHub /></RoleGuard>} />
+          <Route path="/f7-commerce" element={<RoleGuard permission="sales_channels.view"><Commerce /></RoleGuard>} />
+          <Route path="/f7-commerce/anuncios" element={<RoleGuard permission="sales_channels.view"><MercadoLivreListings /></RoleGuard>} />
           <Route path="/ai-sales" element={<RoleGuard permission="ai_sales.view"><AiSalesAssistant /></RoleGuard>} />
           <Route path="/opportunity-radar" element={<RoleGuard permission="opportunity_radar.view"><OpportunityRadar /></RoleGuard>} />
           <Route path="/ai-observability" element={<RoleGuard permission="ai_observability.view"><AIObservability /></RoleGuard>} />

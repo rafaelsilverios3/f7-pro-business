@@ -1,6 +1,10 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
 import { conductWebResearch } from '../_shared/webResearch.ts';
 import { buildSupplierCandidates, safeSupplierPayload } from '../_shared/supplierResearch.ts';
+import { markAIReservationUncertain, reserveAIExternalBudget, settleAIReservation } from '../_shared/aiObservability.ts';
+import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
+import { persistAIRunEvent } from '../_shared/aiRunPersistence.js';
+import { normalizeRequestKey } from '../_shared/aiBudgetPolicy.js';
 
 const ROLES = new Set(['admin', 'gestor', 'comercial']);
 const clean = (value: unknown, max = 600) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -8,7 +12,7 @@ const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9
 const sanitizeContext = (value: any) => { if (!value || typeof value !== 'object' || Array.isArray(value)) return {}; const result: Record<string, unknown> = {}; for (const key of ['opportunity_id', 'product_id', 'customer_id', 'supplier_id', 'entity_id']) { const parsed = uuid(value[key]); if (parsed) result[key] = parsed; } for (const key of ['source_module', 'entity_type', 'intent', 'return_path']) { const parsed = clean(value[key], 80); if (parsed) result[key] = parsed; } if (value.evidence && typeof value.evidence === 'object' && !Array.isArray(value.evidence)) result.evidence = JSON.parse(JSON.stringify(value.evidence).slice(0, 4000)); return result; };
 
 async function event(sb: any, companyId: string, traceId: string, stage: string, status = 'success', counts: Record<string, unknown> = {}, code?: string) {
-  try { await sb.from('ai_run_events').insert({ company_id: companyId, trace_id: traceId, stage, status, counts, safe_error_code: code || null }); } catch { /* observability is best effort */ }
+  await persistAIRunEvent(sb, { companyId, traceId, event: { company_id: companyId, trace_id: traceId, stage, status, counts, safe_error_code: code || null } });
 }
 
 async function saveCandidate(sb: any, companyId: string, candidate: any) {
@@ -31,18 +35,23 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   const traceId = crypto.randomUUID();
   let companyId: string | null = null;
+  let activeReservation: { id: string; requestKey: string; companyId: string } | null = null;
+  let sb: any;
   try {
-    const jwt = auth(req); const sb = admin();
+    const jwt = auth(req); sb = admin();
     const { data: userData } = await sb.auth.getUser(jwt);
     if (!userData?.user) return json({ code: 'AUTH_REQUIRED' }, 401);
     const body = await req.json().catch(() => ({}));
+    const requestId = normalizeRequestKey(body?.request_id);
     companyId = uuid(body?.company_id);
     if (!companyId) return json({ code: 'INVALID_REQUEST' }, 422);
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle();
     if (!member?.active || !ROLES.has(member.role)) return json({ code: 'FORBIDDEN' }, 403);
-    const { data: supplierAllowed, error: supplierGateError } = await sb.rpc('company_has_feature', { target_company: companyId, feature: 'supplier_intelligence' });
+    const { data: supplierAllowed, error: supplierGateError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'supplier_intelligence' });
     if (supplierGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
     if (!supplierAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'Supplier Intelligence está disponível a partir do plano PREMIUM.' }, 403);
+    const maintenance = aiMaintenanceResponse(Deno.env.get('AI_MAINTENANCE_MODE'), corsHeaders);
+    if (maintenance) return maintenance;
     if (body?.action === 'save') {
       const saved = await saveCandidate(sb, companyId, body.candidate);
       if (!saved.ok) return json(saved, 422);
@@ -57,12 +66,23 @@ Deno.serve(async (req) => {
     const contextQuery = [...history, query].join(' ').slice(-900);
     const settings = await sb.from('company_assistant_settings').select('allow_web_research,max_daily_web_queries,max_research_rounds').eq('company_id', companyId).maybeSingle();
     if (settings.error || settings.data?.allow_web_research === false) return json({ code: 'EXTERNAL_RESEARCH_NOT_ALLOWED', trace_id: traceId, candidates: [], sources: [] }, 403);
-    const requestedQueries = depth === 'detailed' ? 3 : 1;
-    const budget = await sb.rpc('reserve_ai_budget', { target_company: companyId, requested_ai_calls: 0, requested_web_queries: requestedQueries, requested_tokens: 0, requested_cost: 0 });
-    if (budget.error || budget.data?.allowed === false) return json({ code: 'EXTERNAL_RESEARCH_BUDGET_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 429);
+    const dailyQueryLimit = Number(settings.data.max_daily_web_queries);
+    const requestedQueries = Math.min(depth === 'detailed' ? 3 : 1, Number.isSafeInteger(dailyQueryLimit) ? Math.max(0, dailyQueryLimit) : 0);
+    if (!requestId || requestedQueries < 1) return json({ code: !requestId ? 'AI_IDEMPOTENCY_KEY_REQUIRED' : 'EXTERNAL_RESEARCH_BUDGET_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 429);
+    const requestKey = `${requestId}:supplier-research`;
+    const budget = await reserveAIExternalBudget(sb, { company_id: companyId, settings: settings.data, web_queries: requestedQueries, request_key: requestKey });
+    if (!budget.allowed) return json({ code: 'EXTERNAL_RESEARCH_BUDGET_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 429);
+    if (budget.reservation_id) activeReservation = { id: budget.reservation_id, requestKey, companyId };
     await event(sb, companyId, traceId, 'SUPPLIER_SEARCH_STARTED', 'success', { depth, query_length: query.length, opportunity_id: context.opportunity_id || null, product_id: context.product_id || null });
     await event(sb, companyId, traceId, 'EXTERNAL_RESEARCH_STARTED', 'success', { depth });
-    const research = await conductWebResearch({ sb, company_id: companyId, query: { query: `${contextQuery} fornecedores distribuidores atacado`, application: query, locale: 'pt-BR', country: 'BR', market: 'brazil', region: 'south_america', max_results: depth === 'detailed' ? 8 : 5 }, limits: { max_rounds: depth === 'detailed' ? Math.min(2, Number(settings.data?.max_research_rounds || 2)) : 1, max_web_queries: depth === 'detailed' ? 3 : 1, max_total_results: depth === 'detailed' ? 10 : 5, max_page_fetches: depth === 'detailed' ? 3 : 1 }, onQuery: async (kind, details) => event(sb, companyId!, traceId, kind, kind === 'WEB_SEARCH_QUERY_FAILED' ? 'error' : 'success', details as any, details.code) });
+    const research = await conductWebResearch({ sb, company_id: companyId, query: { query: `${contextQuery} fornecedores distribuidores atacado`, application: query, locale: 'pt-BR', country: 'BR', market: 'brazil', region: 'south_america', max_results: depth === 'detailed' ? 8 : 5 }, limits: { max_rounds: depth === 'detailed' ? Math.min(2, Math.max(1, Number(settings.data?.max_research_rounds || 2))) : 1, max_web_queries: requestedQueries, max_total_results: depth === 'detailed' ? 10 : 5, max_page_fetches: depth === 'detailed' ? 3 : 1 }, onQuery: async (kind, details) => event(sb, companyId!, traceId, kind, kind === 'WEB_SEARCH_QUERY_FAILED' ? 'error' : 'success', details as any, details.code) });
+    if (activeReservation) {
+      const actualQueries = research.cache_hit ? 0 : research.queries_executed;
+      const usageReliable = Number.isSafeInteger(actualQueries) && actualQueries >= 0 && !(research.failure_codes || []).length;
+      const settlement = await settleAIReservation(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, external_queries: usageReliable ? actualQueries : null, usage_reliable: usageReliable });
+      if (!settlement.settled) await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usageReliable ? 'settlement_unavailable' : 'provider_usage_incomplete' });
+      activeReservation = null;
+    }
     const candidates = buildSupplierCandidates(research?.results || [], query);
     const sources = (research?.results || []).map((item: any) => ({ title: clean(item.title, 240), domain: item.domain, url: item.url, evidence: clean(item.snippet, 1000), source_type: item.source_type, retrieved_at: item.retrieved_at }));
     await event(sb, companyId, traceId, 'EXTERNAL_RESEARCH_COMPLETED', research?.status === 'FAILED' ? 'error' : 'success', { results: sources.length, candidates: candidates.length }, research?.failure_codes?.[0]);
@@ -72,7 +92,10 @@ Deno.serve(async (req) => {
     await event(sb, companyId, traceId, 'SUPPLIER_SEARCH_COMPLETED', 'success', { results: sources.length, candidates: candidates.length });
     return json({ code: 'OK', trace_id: traceId, query, depth, context, status: research?.status || 'INSUFFICIENT_DATA', candidates, sources, research: { provider: research?.provider, cache_hit: research?.cache_hit || false, queries_executed: research?.queries_executed || 0, failure_codes: research?.failure_codes || [] } });
   } catch (error) {
-    if (companyId) await event(admin(), companyId, traceId, 'ERROR', 'error', {}, error?.code || 'SUPPLIER_RESEARCH_FAILED');
-    return json({ code: error?.message === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'SUPPLIER_RESEARCH_FAILED', trace_id: traceId }, error?.message === 'AUTH_REQUIRED' ? 401 : 500);
+    if (sb && activeReservation) await markAIReservationUncertain(sb, { company_id: activeReservation.companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: 'supplier_research_result_unknown' });
+    const errorMessage = error instanceof Error ? error.message : '';
+    const errorCode = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+    if (companyId && sb) await event(sb, companyId, traceId, 'ERROR', 'error', {}, errorCode || 'SUPPLIER_RESEARCH_FAILED');
+    return json({ code: errorMessage === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'SUPPLIER_RESEARCH_FAILED', trace_id: traceId }, errorMessage === 'AUTH_REQUIRED' ? 401 : 500);
   }
 });

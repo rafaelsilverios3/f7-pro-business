@@ -24,5 +24,5 @@ export const intelligenceService = {
   },
   list: (companyId) => insightRepository.list(companyId, '-created_at'),
   create: (companyId, data) => insightRepository.create(data, companyId),
-  query: (companyId, query, history = [], context = {}) => invokeEdgeFunction('intelligence-query', { company_id: companyId, query, history, context }),
+  query: (companyId, query, history = [], context = {}) => invokeEdgeFunction('intelligence-query', { company_id: companyId, query, history, context, request_id: crypto.randomUUID() }),
 };
