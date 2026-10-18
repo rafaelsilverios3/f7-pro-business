@@ -1,5 +1,17 @@
 # F7 PRO Business: consolidação para a nova produção
 
+## Execução candidata — 18/10/2026
+
+Commit local: `6b9295e691ef68fb8a6235bd685988fe4477dc50` (branch `codex/harden-multi-tenant-isolation`; sem push e sem Vercel deploy).
+
+No Supabase candidato `vwylnjmapixtzhryiutt` foram publicadas as versões: `ai-run-inspector` v1 (JWT), `platform-health` v1 (JWT), `billing-plans` v1 (catálogo público read-only), `automation-worker` v1 (JWT), `mercadolivre-notification-worker` v7 (JWT/service-only) e `automation-scheduler` v1 (JWT gateway off, segredo próprio exigido no handler). As seis estão `ACTIVE`. O worker do Mercado Livre e os schedulers permanecem desabilitados por padrão; não há `pg_cron`, `pg_net` ou job ativo na candidata.
+
+O Owner Global autorizado foi inserido para a identidade Auth confirmada `rafaelsilverio.s3@gmail.com`, UUID `afb40240-2a34-42eb-982c-1d4dc30011a2`: role `owner`, status `active`, sem expiração. A ação foi gravada em `platform_admin_audit_logs` como `bootstrap_operator`; o admin operacional `f7group7@gmail.com` permaneceu inalterado. Um teste SQL somente de leitura confirmou que a identidade resolve como platform admin e que existe exatamente um owner permanente. **Ainda não foi possível validar uma chamada autenticada real de Owner ao endpoint `platform-admin`**, pois não havia uma sessão Auth legítima do Owner disponível; a chamada sem autenticação foi rejeitada com HTTP 401.
+
+Probes HTTP remotos sem credenciais de usuário: endpoints protegidos rejeitaram chamadas sem JWT (401); `automation-scheduler` rejeitou sem segredo (403); `mercadolivre-notification-worker` rejeitou a chave pública como identidade interna (403); `billing-plans` respondeu HTTP 200 com catálogo ativo. Nenhuma rotina externa, pagamento, geração paga, envio WhatsApp ou sincronização comercial foi iniciada.
+
+Vercel recusou as leituras de projeto por HTTP 403; o CLI não está disponível. Nenhuma permissão foi contornada. A validação e remoção dos deployments Preview antigos permanecem manuais no Dashboard, conforme o resumo final da execução.
+
 Escopo desta preparação: manter a candidata Supabase `vwylnjmapixtzhryiutt` como futura produção, sem alterar o projeto antigo `izakmtgezocbneilopwr`, sem trocar domínio/deploy, sem alterar secrets e sem ativar operações externas.
 
 ## Edge Functions exclusivas do projeto antigo
