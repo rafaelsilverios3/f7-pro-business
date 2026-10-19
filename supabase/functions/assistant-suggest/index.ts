@@ -4,7 +4,8 @@ import { mergeProductIntelligenceCandidates, resolveProductOrPart } from '../_sh
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains, resolveResearchRegion } from '../_shared/webResearch.ts';
 import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from '../_shared/specialists/agriculturalParts.ts';
-import { markAIReservationUncertain, recordAIStage, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation } from '../_shared/aiObservability.ts';
+import { markAIReservationUncertain, recordAIStage, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation, type AIReservationResult } from '../_shared/aiObservability.ts';
+import { aiCreditRequestHash, reserveAICredits, settleAICredits, releaseAICredits } from '../_shared/aiCredits.ts';
 import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { conservativeInputTokenUpperBound, normalizeRequestKey, readProviderUsage } from '../_shared/aiBudgetPolicy.js';
 import { filterProductsForAssistant, filterSourcesForAssistant, filterSourcesForCustomer } from '../_shared/assistantCapabilities.ts';
@@ -16,6 +17,7 @@ import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 import { buildResearchQuery, normalizeIntentMessages, resolveConversationIntent } from '../_shared/conversationIntent.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
+const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
 const MAX_CONTEXT_MESSAGES = 20;
 const MAX_PROVIDER_OUTPUT_TOKENS = 768;
 const MAX_MESSAGE_CONTEXT_CHARS = 8000;
@@ -591,13 +593,22 @@ Deno.serve(async (req) => {
     // verified knowledge), not only the message/catalog subset.
     const estimatedTokens = conservativeInputTokenUpperBound(providerInput, 3000);
     const requestKey = requestId ? `${requestId}:model` : '';
-    const aiBudget = estimatedTokens && requestKey
+    const creditActorId = internalJobRequest ? uuid(intelligenceEvent?.actor_id) : user?.id;
+    const creditHash = await aiCreditRequestHash({ company_id: conversation.company_id, request_id: requestId, model, provider_input: providerInput, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS });
+    const creditResult = estimatedTokens && requestKey && creditActorId
+      ? await reserveAICredits(sb, { company_id: conversation.company_id, user_id: creditActorId, request_key: requestKey, request_hash: creditHash, model_key: model, input_tokens: estimatedTokens, output_token_limit: MAX_PROVIDER_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true })
+      : { allowed: false, code: 'AI_CREDITS_ACTOR_REQUIRED' };
+    if (creditResult.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: creditResult.code, ai_credit_quote: creditResult, requires_human: true }, 409);
+    let creditOperationId = creditResult.allowed && typeof creditResult.operation_id === 'string' ? creditResult.operation_id : null;
+    const financialBudget: AIReservationResult = creditResult.allowed && estimatedTokens && requestKey
       ? await reserveAIModelBudget(sb, { company_id: conversation.company_id, request_key: requestKey, model_key: model, settings, input_tokens: estimatedTokens, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS })
-      : { allowed: false, reason: requestKey ? 'AI_INPUT_BOUND_INVALID' : 'AI_IDEMPOTENCY_KEY_REQUIRED' };
+      : { allowed: false, reason: creditResult.code || (requestKey ? 'AI_INPUT_BOUND_INVALID' : 'AI_IDEMPOTENCY_KEY_REQUIRED') };
+    const aiBudget: AIReservationResult = creditResult.allowed ? financialBudget : { allowed: false, reason: creditResult.code || 'AI_CREDITS_UNAVAILABLE' };
     const estimatedCost = Number(aiBudget.estimated_cost || 0);
     if (!aiBudget.allowed) {
+      if (creditOperationId) await releaseAICredits(sb, { company_id: conversation.company_id, operation_id: creditOperationId });
       await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', safe_error_code: aiBudget.reason, duration_ms: Date.now() - requestStartedAt });
-      return json({ success: false, code: 'AI_BUDGET_EXCEEDED', error: 'AI_BUDGET_EXCEEDED', message: 'Limite de uso da IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
+      return json({ success: false, code: aiBudget.reason === 'AI_CREDITS_INSUFFICIENT' ? 'AI_CREDITS_INSUFFICIENT' : 'AI_BUDGET_EXCEEDED', error: aiBudget.reason, message: 'Limite de créditos ou orçamento de IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
     }
     if (aiBudget.reservation_id) activeReservation = { id: aiBudget.reservation_id, requestKey, companyId: conversation.company_id };
     await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'BUDGET_RESERVED', model, reserved_tokens: aiBudget.reserved_tokens, reserved_cost: estimatedCost });
@@ -615,6 +626,8 @@ Deno.serve(async (req) => {
       if (!settlement.settled) await markAIReservationUncertain(sb, { company_id: conversation.company_id, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: providerSuggestion.ok ? usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' : providerSuggestion.code || 'provider_result_unknown' });
       activeReservation = null;
     }
+    if (creditOperationId && providerSuggestion.ok) await settleAICredits(sb, { company_id: conversation.company_id, operation_id: creditOperationId, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
+    else if (creditOperationId) await settleAICredits(sb, { company_id: conversation.company_id, operation_id: creditOperationId, input_tokens: 0, output_tokens: 0, usage_reliable: false });
     const recordedCost = settlement.settled ? Number(settlement.actual_cost || 0) : estimatedCost;
     if (providerSuggestion.ok) await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESPONSE_CREATED', provider_usage_reported: usage.reported, input_tokens: recordedInputTokens, output_tokens: recordedOutputTokens });
     if (!providerSuggestion.ok) {

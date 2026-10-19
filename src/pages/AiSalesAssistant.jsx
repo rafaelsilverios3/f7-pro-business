@@ -8,6 +8,9 @@ import { buildAiSalesHistory } from '@/lib/aiSalesHistory';
 import { aiSalesStatusFromError, aiSalesStatusPresentation } from '@/lib/aiSalesStatus';
 import { AI_TOOL_NAMES } from '@/services/aiSalesTools';
 import { aiSalesService } from '@/services/aiSalesService';
+import AICreditConfirmationDialog from '@/components/ai/AICreditConfirmationDialog';
+import AICreditsWallet from '@/components/ai/AICreditsWallet';
+import { aiCreditsService } from '@/services/aiCreditsService';
 
 const SUGGESTIONS = ['Quais produtos temos?', 'Quanto temos em estoque?', 'Qual produto está sem estoque?', 'Procure um cliente pelo nome', 'Quais oportunidades comerciais tenho hoje?', 'Compare ofertas de fornecedores'];
 function assistantModeLabel(mode) {
@@ -33,6 +36,8 @@ export default function AiSalesAssistant() {
   const [savedDraft, setSavedDraft] = useState(null);
   const [routeContext, setRouteContext] = useState({});
   const [aiStatus, setAiStatus] = useState({ state: 'checking', companyId: null, userId: null });
+  const [creditQuote, setCreditQuote] = useState(null);
+  const [pendingCreditRequest, setPendingCreditRequest] = useState(null);
 
   const currentStatus = aiStatus.companyId === company?.id && aiStatus.userId === user?.id ? aiStatus : { state: 'checking' };
   const canUse = Boolean(user?.id && company?.id && currentStatus.state === 'ready' && currentStatus.can_use === true);
@@ -79,26 +84,36 @@ export default function AiSalesAssistant() {
     if (prefill || Object.keys(incomingContext).length) navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.search, location.state, navigate]);
 
-  const send = async (value = input) => {
-    const message = String(value || '').trim();
+  const send = async (value = input, approved = null) => {
+    const pending = approved || { message: String(value || '').trim(), requestId: crypto.randomUUID(), history, context: routeContext };
+    const message = pending.message;
     if (!message || busy || !canUse || ownerRef.current !== ownerKey) return;
     setConversationOwner(ownerKey);
     setBusy(true);
     setError('');
     setInput('');
-    setMessages((current) => [...(conversationOwner === ownerKey ? current : []), { role: 'user', answer: message }]);
+    if (!approved) setMessages((current) => [...(conversationOwner === ownerKey ? current : []), { role: 'user', answer: message }]);
     try {
-      const response = await aiSalesService.chat(company.id, message, history, routeContext);
+      const response = await aiSalesService.chat(company.id, message, pending.history, pending.context, { requestId: pending.requestId, ...(approved ? { quoteId: approved.quoteId, confirmed: true } : {}) });
       if (ownerRef.current !== ownerKey) return;
       const item = { role: 'assistant', answer: response.answer, tool: response.tool, data: response.data, context: response.context, actions: response.actions, generation_mode: response.generation_mode };
       setMessages((current) => [...current, item]);
       if (response.actions?.can_create_draft) setPendingDraft({ ...response.data, ...response.context, idempotency_key: crypto.randomUUID() });
       if (response.actions?.open_supplier_intelligence) navigate('/supplier-intelligence', { state: { query: message, context: { ...routeContext, ...response.context, source_module: 'ai_sales', intent: 'supplier_research' } } });
+      setPendingCreditRequest(null); setCreditQuote(null);
     } catch (cause) {
-      if (ownerRef.current === ownerKey) setError(cause.message || 'Não foi possível consultar o assistente.');
+      if (ownerRef.current === ownerKey && cause.code === 'AI_CREDITS_CONFIRMATION_REQUIRED' && cause.aiCreditQuote?.quote_id) {
+        setPendingCreditRequest({ ...pending, quoteId: cause.aiCreditQuote.quote_id }); setCreditQuote(cause.aiCreditQuote);
+      } else if (ownerRef.current === ownerKey) setError(cause.message || 'Não foi possível consultar o assistente.');
     } finally {
       if (ownerRef.current === ownerKey) setBusy(false);
     }
+  };
+
+  const cancelCreditQuote = async () => {
+    const quoteId = pendingCreditRequest?.quoteId;
+    setCreditQuote(null); setPendingCreditRequest(null);
+    if (quoteId && company?.id) { try { await aiCreditsService.cancelQuote(company.id, quoteId); } catch { /* unused quotes expire server-side */ } }
   };
 
   const confirmDraft = async () => {
@@ -131,6 +146,8 @@ export default function AiSalesAssistant() {
   };
 
   return <div className="mx-auto max-w-5xl px-5 py-8">
+    <AICreditsWallet companyId={company?.id} email={user?.email} />
+    <AICreditConfirmationDialog quote={creditQuote} busy={busy} onCancel={cancelCreditQuote} onConfirm={() => pendingCreditRequest && send('', pendingCreditRequest)} />
     <PageHeader title="F7 AI Sales Assistant" subtitle="Análise comercial com dados autorizados da empresa ativa." />
     <div className={`mb-5 flex items-start gap-3 rounded-2xl border p-4 text-sm ${presentation.tone}`}>
       <Bot className="mt-0.5 h-5 w-5 shrink-0" />

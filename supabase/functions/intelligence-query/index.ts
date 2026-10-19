@@ -3,6 +3,7 @@ import { classifyIntelligenceMode, type IntelligenceMode } from '../_shared/inte
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 import { conductWebResearch } from '../_shared/webResearch.ts';
 import { markAIReservationUncertain, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation, type AIReservationResult } from '../_shared/aiObservability.ts';
+import { aiCreditRequestHash, reserveAICredits, settleAICredits, releaseAICredits } from '../_shared/aiCredits.ts';
 import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { persistAIRun, persistAIRunEvent } from '../_shared/aiRunPersistence.js';
 import { conservativeInputTokenUpperBound, normalizeRequestKey, readProviderUsage } from '../_shared/aiBudgetPolicy.js';
@@ -307,10 +308,17 @@ Deno.serve(async (req) => {
       const modelReady = Deno.env.get('AI_ENABLED')?.trim().toLowerCase() === 'true' && Boolean(Deno.env.get('AI_API_KEY')) && Boolean(providerEndpoint());
       const inputTokens = conservativeInputTokenUpperBound({ executiveContext, responseFormat: EXECUTIVE_RESPONSE_FORMAT }, 1800);
       const requestKey = requestId ? `${requestId}:executive` : '';
-      const generationBudget: AIReservationResult = modelReady && inputTokens && requestKey
-        ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: requestKey, model_key: Deno.env.get('AI_MODEL') || 'gpt-4o-mini', input_tokens: inputTokens, max_output_tokens: MAX_AI_OUTPUT_TOKENS })
+      const modelKey = Deno.env.get('AI_MODEL') || 'gpt-4o-mini';
+      const creditHash = await aiCreditRequestHash({ company_id: companyId, operation, request_id: requestId, executive_context: executiveContext, model: modelKey, max_output_tokens: MAX_AI_OUTPUT_TOKENS });
+      const creditResult = modelReady && inputTokens && requestKey ? await reserveAICredits(sb, { company_id: companyId, user_id: userData.user.id, request_key: requestKey, request_hash: creditHash, model_key: modelKey, input_tokens: inputTokens, output_token_limit: MAX_AI_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true }) : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID' };
+      if (creditResult.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: creditResult.code, ai_credit_quote: creditResult }, 409);
+      let creditOperationId = creditResult.allowed && typeof creditResult.operation_id === 'string' ? creditResult.operation_id : null;
+      const financialBudget: AIReservationResult = modelReady && inputTokens && requestKey && creditResult.allowed
+        ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: requestKey, model_key: modelKey, input_tokens: inputTokens, max_output_tokens: MAX_AI_OUTPUT_TOKENS })
         : { allowed: false, reason: modelReady ? 'AI_IDEMPOTENCY_KEY_REQUIRED' : 'AI_PROVIDER_NOT_CONFIGURED', estimated_cost: 0 };
+      const generationBudget: AIReservationResult = financialBudget.allowed ? financialBudget : { allowed: false, reason: creditResult.code || financialBudget.reason, estimated_cost: 0 };
       if (!generationBudget.allowed) {
+        if (creditOperationId) await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId });
         const summary = deterministicExecutiveSummary(executiveContext);
         await recordEvent(sb, companyId, traceId, 'EXECUTIVE_FALLBACK_USED', 'success', { reason: 'AI_BUDGET_UNAVAILABLE' }, 'AI_BUDGET_UNAVAILABLE');
         await recordRun(sb, companyId, traceId, { current_stage: 'COMPLETED', status: 'completed', provider: 'deterministic', duration_ms: Date.now() - started, finished_at: new Date().toISOString() });
@@ -323,6 +331,7 @@ Deno.serve(async (req) => {
       if (generated.ok) {
         const usage = readProviderUsage(generated.usage, { reservedInputTokens: inputTokens, maxOutputTokens: MAX_AI_OUTPUT_TOKENS });
         const settlement = activeReservation ? await settleAIReservation(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, usage_reliable: usage.reported }) : { settled: false };
+        if (creditOperationId) await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
         if (!settlement.settled && activeReservation) await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' });
         activeReservation = null;
         const actualCost = settlement.settled ? Number(settlement.actual_cost || 0) : Number(generationBudget.estimated_cost || 0);
@@ -334,6 +343,7 @@ Deno.serve(async (req) => {
         await markAIReservationUncertain(sb, { company_id: activeReservation.companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: generated.code || 'provider_result_unknown' });
         activeReservation = null;
       }
+      if (creditOperationId) await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: 0, output_tokens: 0, usage_reliable: false });
       const summary = deterministicExecutiveSummary(executiveContext);
       await recordEvent(sb, companyId, traceId, 'EXECUTIVE_FALLBACK_USED', 'success', { reason: generated.code }, generated.code);
       await recordEvent(sb, companyId, traceId, 'EXECUTIVE_SUMMARY_FAILED', 'error', {}, generated.code);
@@ -393,12 +403,24 @@ Deno.serve(async (req) => {
     let generationUnavailable: string | null = null;
     const modelReady = Deno.env.get('AI_ENABLED')?.trim().toLowerCase() === 'true' && Boolean(Deno.env.get('AI_API_KEY')) && Boolean(providerEndpoint());
     const inputTokens = conservativeInputTokenUpperBound({ query, mode, internal, sources, candidates: candidate, history, context, response_format: INTELLIGENCE_RESPONSE_FORMAT }, 1800);
-    const generationBudget: AIReservationResult = modelReady
+    const generationRequestKey = requestId ? `${requestId}:analysis` : '';
+    const generationModel = Deno.env.get('AI_MODEL') || 'gpt-4o-mini';
+    const creditHash = await aiCreditRequestHash({ company_id: companyId, query, mode, history, context, request_id: requestId, model: generationModel, max_output_tokens: MAX_AI_OUTPUT_TOKENS });
+    const creditResult = modelReady && inputTokens && generationRequestKey
+      ? await reserveAICredits(sb, { company_id: companyId, user_id: userData.user.id, request_key: generationRequestKey, request_hash: creditHash, model_key: generationModel, input_tokens: inputTokens, output_token_limit: MAX_AI_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true })
+      : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID' };
+    if (creditResult.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: creditResult.code, ai_credit_quote: creditResult }, 409);
+    let creditOperationId = creditResult.allowed && typeof creditResult.operation_id === 'string' ? creditResult.operation_id : null;
+    const financialBudget: AIReservationResult = modelReady
       ? requestId && inputTokens
-        ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: `${requestId}:analysis`, model_key: Deno.env.get('AI_MODEL') || 'gpt-4o-mini', settings: settingsResult.data, input_tokens: inputTokens, max_output_tokens: MAX_AI_OUTPUT_TOKENS })
+        ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: generationRequestKey, model_key: generationModel, settings: settingsResult.data, input_tokens: inputTokens, max_output_tokens: MAX_AI_OUTPUT_TOKENS })
         : { allowed: false, reason: requestId ? 'AI_INPUT_BOUND_INVALID' : 'AI_IDEMPOTENCY_KEY_REQUIRED', estimated_cost: 0 }
       : { allowed: false, reason: 'AI_PROVIDER_NOT_CONFIGURED', estimated_cost: 0 };
-    if (!generationBudget.allowed) generationUnavailable = 'AI_BUDGET_UNAVAILABLE';
+    const generationBudget: AIReservationResult = financialBudget.allowed && creditResult.allowed ? financialBudget : { allowed: false, reason: creditResult.code || financialBudget.reason || 'AI_BUDGET_UNAVAILABLE', estimated_cost: 0 };
+    if (!generationBudget.allowed) {
+      generationUnavailable = generationBudget.reason === 'AI_CREDITS_INSUFFICIENT' ? 'AI_CREDITS_INSUFFICIENT' : 'AI_BUDGET_UNAVAILABLE';
+      if (creditOperationId) { await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId }); creditOperationId = null; }
+    }
     else {
       const requestKey = `${requestId}:analysis`;
       if (generationBudget.reservation_id) activeReservation = { id: generationBudget.reservation_id, requestKey, companyId };
@@ -409,6 +431,7 @@ Deno.serve(async (req) => {
         analysis = generated.result;
         const usage = readProviderUsage(generated.usage, { reservedInputTokens: inputTokens, maxOutputTokens: MAX_AI_OUTPUT_TOKENS });
         const settlement = activeReservation ? await settleAIReservation(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, usage_reliable: usage.reported }) : { settled: false };
+        if (creditOperationId) await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
         if (!settlement.settled && activeReservation) await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' });
         activeReservation = null;
         const actualCost = settlement.settled ? Number(settlement.actual_cost || 0) : Number(generationBudget.estimated_cost || 0);
@@ -416,6 +439,7 @@ Deno.serve(async (req) => {
         await recordRun(sb, companyId, traceId, { provider: 'openai_compatible', model: Deno.env.get('AI_MODEL') || 'gpt-4o-mini', input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, estimated_cost: Number.isFinite(actualCost) ? actualCost : Number(generationBudget.estimated_cost || 0) });
       }
       else {
+        if (creditOperationId) { await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId }); creditOperationId = null; }
         if (activeReservation) {
           await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: generated.code || 'provider_result_unknown' });
           activeReservation = null;
@@ -436,7 +460,7 @@ Deno.serve(async (req) => {
     await recordRun(sb, companyId, traceId, { current_stage: 'COMPLETED', status: 'completed', provider: research?.provider || (mode === 'internal' ? 'internal' : null), query_count: research?.queries_executed || 0, source_domains: sources.map((item: any) => new URL(item.url).hostname), candidate_count: candidate.length, duration_ms: duration, finished_at: new Date().toISOString() });
     await recordEvent(sb, companyId, traceId, 'RESPONSE_CREATED', 'success', { mode, source_count: sources.length, candidate_count: candidate.length });
     if (candidate.length) await recordEvent(sb, companyId, traceId, 'OPPORTUNITY_PROPOSED', 'success', { candidate_count: candidate.length });
-    return json({ success: true, trace_id: traceId, mode, answer, confidence, context, analysis: analysis || { insights: [], recommendations: [], risks: [] }, internal: mode === 'external' ? null : internal, external: mode === 'internal' ? null : { configured: !externalUnavailable, status: externalUnavailable ? 'unavailable' : research?.status || 'INSUFFICIENT_DATA', sources, candidates: candidate }, actions: { can_save_opportunity: candidate.length > 0, requires_human: true } });
+    return json({ success: true, trace_id: traceId, mode, answer, confidence, context, analysis: analysis || { insights: [], recommendations: [], risks: [] }, generation: { mode: analysis ? 'ai_generated' : 'deterministic_factual', unavailable_reason: generationUnavailable }, internal: mode === 'external' ? null : internal, external: mode === 'internal' ? null : { configured: !externalUnavailable, status: externalUnavailable ? 'unavailable' : research?.status || 'INSUFFICIENT_DATA', sources, candidates: candidate }, actions: { can_save_opportunity: candidate.length > 0, requires_human: true } });
   } catch (error) {
     if (sb && activeReservation) await markAIReservationUncertain(sb, { company_id: activeReservation.companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: 'intelligence_result_unknown' });
     if (sb && companyId) { await recordRun(sb, companyId, traceId, { current_stage: 'FAILED', status: 'failed', safe_error_code: 'INTELLIGENCE_QUERY_FAILED', duration_ms: Date.now() - started, finished_at: new Date().toISOString() }); await recordEvent(sb, companyId, traceId, 'FAILED', 'error', {}, 'INTELLIGENCE_QUERY_FAILED'); }

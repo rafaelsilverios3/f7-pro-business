@@ -22,6 +22,8 @@ import { assistantHandoffService } from '@/services/assistantHandoffService';
 import { assistantFeedbackService } from '@/services/assistantFeedbackService';
 import { actionProposalService } from '@/services/actionProposalService';
 import { useCompanyMembership } from '@/hooks/useCompanyMembership';
+import AICreditConfirmationDialog from '@/components/ai/AICreditConfirmationDialog';
+import { aiCreditsService } from '@/services/aiCreditsService';
 
 const STATUS_STYLE = {
   open: 'bg-sky-100 text-sky-700',
@@ -97,6 +99,8 @@ export default function Atendimento() {
   const [aiThinking, setAiThinking] = useState(false);
   const [assistantSettings, setAssistantSettings] = useState({ mode: 'manual' });
   const [assistantSuggestion, setAssistantSuggestion] = useState(null);
+  const [aiCreditQuote, setAiCreditQuote] = useState(null);
+  const [pendingCreditRequest, setPendingCreditRequest] = useState(null);
   const [assistantDraft, setAssistantDraft] = useState(null);
   const [showAssistantInvestigation, setShowAssistantInvestigation] = useState(false);
   const [assistantError, setAssistantError] = useState('');
@@ -368,20 +372,33 @@ export default function Atendimento() {
     } finally { setSending(false); }
   };
 
-  const suggestReply = async () => {
+  const suggestReply = async (approved = null) => {
     if (!assistantCanSuggest || aiThinking) return;
+    const pending = approved || { requestId: crypto.randomUUID() };
     setAiThinking(true); setAssistantError(''); setAssistantSuggestion(null); setShowAssistantInvestigation(false);
     try {
-      const result = await suggestConversationReply(selected.id);
+      const result = await suggestConversationReply(selected.id, { requestId: pending.requestId, ...(approved ? { quoteId: approved.quoteId, confirmed: true } : {}) });
       if (result?.success !== false && result?.suggestion) setAssistantSuggestion({ ...result, original_suggestion: result.suggestion });
       else setAssistantError(`${result?.message || 'Não foi possível gerar uma sugestão segura.'}${result?.code ? ` Código: ${result.code}` : ''}`);
+      setPendingCreditRequest(null); setAiCreditQuote(null);
     } catch (error) {
       const code = typeof error?.code === 'string' ? error.code : null;
+      if (code === 'AI_CREDITS_CONFIRMATION_REQUIRED' && error.aiCreditQuote?.quote_id) {
+        setPendingCreditRequest({ requestId: pending.requestId, quoteId: error.aiCreditQuote.quote_id });
+        setAiCreditQuote(error.aiCreditQuote);
+        return;
+      }
       const safeMessage = error?.message || 'Não foi possível gerar uma sugestão segura.';
       const diagnostic = error?.stage ? ` Etapa: ${error.stage}${error?.internalCode ? ` · Código interno: ${error.internalCode}` : ''}.` : '';
       setAssistantError(`${safeMessage}${diagnostic}${code && !safeMessage.includes(code) ? ` Código: ${code}` : ''}`);
     }
     finally { setAiThinking(false); }
+  };
+
+  const cancelCreditRequest = async () => {
+    const pending = pendingCreditRequest;
+    setPendingCreditRequest(null); setAiCreditQuote(null);
+    if (pending?.quoteId && company?.id) { try { await aiCreditsService.cancelQuote(company.id, pending.quoteId); } catch { /* unused quotes expire server-side */ } }
   };
 
   const transferToHuman = async () => {
@@ -472,6 +489,7 @@ export default function Atendimento() {
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col px-5 py-8" style={{ height: 'calc(100vh - 1rem)' }}>
+      <AICreditConfirmationDialog quote={aiCreditQuote} busy={aiThinking} onCancel={cancelCreditRequest} onConfirm={() => pendingCreditRequest && suggestReply(pendingCreditRequest)} />
       <PageHeader
         title="F7 Smart Atendimento"
         subtitle="Central omnichannel com IA integrada ao seu CRM e catálogo."

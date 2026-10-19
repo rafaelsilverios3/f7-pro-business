@@ -1,6 +1,7 @@
 import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
-import { markAIReservationUncertain, reserveAIModelBudget, settleAIReservation } from '../_shared/aiObservability.ts';
+import { markAIReservationUncertain, reserveAIModelBudget, settleAIReservation, type AIReservationResult } from '../_shared/aiObservability.ts';
+import { aiCreditRequestHash, reserveAICredits, settleAICredits, releaseAICredits } from '../_shared/aiCredits.ts';
 import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { persistAIRun, persistAIRunEvent } from '../_shared/aiRunPersistence.js';
 import { conservativeInputTokenUpperBound, normalizeRequestKey, readProviderUsage } from '../_shared/aiBudgetPolicy.js';
@@ -394,6 +395,7 @@ export async function handleAiSalesAssistantRequest(req: Request, dependencies: 
     const providerData = sanitizeAiSalesProviderData(tool, result); const providerPayload = JSON.stringify({ tool, providerData, factualAnswer });
     let generated: any = { ok: false, code: 'AI_PROVIDER_NOT_CONFIGURED' };
     let inputTokens: number | null = null; let outputTokens: number | null = null; let estimatedCost = 0;
+    let creditOperationId: string | null = null; let creditStatus: any = null;
     if (providerState.configured && providerPayload.length <= MAX_PROVIDER_CONTEXT_CHARS) {
       const { data: aiSettings, error: aiSettingsError } = await sb.from('company_assistant_settings').select('company_id,max_daily_ai_calls,max_tokens_per_request,max_daily_ai_cost,ai_budget_currency').eq('company_id', companyId).maybeSingle();
       if (!aiSettingsError && aiSettings?.company_id && requestId) {
@@ -402,7 +404,17 @@ export async function handleAiSalesAssistantRequest(req: Request, dependencies: 
         // the helper's default 64-token framing and under-reserved paid input.
         inputTokens = conservativeInputTokenUpperBound(providerPayload, 1500);
         const requestKey = `${requestId}:ai-sales`;
-        const budget = inputTokens && Deno.env.get('AI_MODEL')?.trim() ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: requestKey, model_key: Deno.env.get('AI_MODEL')!.trim(), settings: aiSettings, input_tokens: inputTokens, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS }) : { allowed: false, reason: 'AI_MODEL_NOT_CONFIGURED' };
+        const modelKey = Deno.env.get('AI_MODEL')?.trim() || '';
+        const creditHash = await aiCreditRequestHash({ company_id: companyId, request_id: requestId, provider_payload: providerPayload, model: modelKey, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS });
+        const credits = inputTokens && modelKey ? await reserveAICredits(sb, {
+          company_id: companyId, user_id: userData.user.id, request_key: requestKey, request_hash: creditHash,
+          model_key: modelKey, input_tokens: inputTokens, output_token_limit: MAX_PROVIDER_OUTPUT_TOKENS,
+          quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true,
+        }) : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID' };
+        creditStatus = credits;
+        if (credits.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: credits.code, ai_credit_quote: credits }, 409);
+        if (credits.allowed && typeof credits.operation_id === 'string') creditOperationId = credits.operation_id;
+        const budget: AIReservationResult = credits.allowed && inputTokens && modelKey ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: requestKey, model_key: modelKey, settings: aiSettings, input_tokens: inputTokens, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS }) : { allowed: false, reason: credits.code || 'AI_CREDITS_REQUIRED' };
         estimatedCost = Number(budget.estimated_cost || 0);
         if (budget.allowed) {
           if (budget.reservation_id) activeReservation = { id: budget.reservation_id, requestKey, companyId };
@@ -413,6 +425,8 @@ export async function handleAiSalesAssistantRequest(req: Request, dependencies: 
             inputTokens = usage.input_tokens;
             outputTokens = usage.output_tokens;
             const settlement = activeReservation ? await settleAIReservation(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, usage_reliable: usage.reported }) : { settled: false };
+            const creditSettlement = creditOperationId ? await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported }) : { settled: false };
+            creditStatus = { ...(creditStatus || {}), settled: creditSettlement.settled, actual_credits: creditSettlement.actual_credits ?? null };
             estimatedCost = settlement.settled ? Number(settlement.actual_cost || 0) : Number(budget.estimated_cost || 0);
             if (!settlement.settled && activeReservation) await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' });
             activeReservation = null;
@@ -424,7 +438,10 @@ export async function handleAiSalesAssistantRequest(req: Request, dependencies: 
           if (!generated.ok && ['AI_PROVIDER_TIMEOUT', 'AI_REQUEST_CANCELLED'].includes(generated.code)) {
             await logEvent(sb, companyId, traceId, generated.code, 'error', {}, generated.code);
           }
-        } else generated = { ok: false, code: 'AI_BUDGET_EXCEEDED' };
+        } else {
+          if (creditOperationId) { await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId }); creditOperationId = null; }
+          generated = { ok: false, code: credits.code || 'AI_BUDGET_EXCEEDED' };
+        }
       } else generated = { ok: false, code: requestId ? 'AI_BUDGET_UNAVAILABLE' : 'AI_IDEMPOTENCY_KEY_REQUIRED' };
     } else if (providerState.configured) generated = { ok: false, code: 'AI_CONTEXT_TOO_LARGE' };
     const answer = generated.ok ? generated.answer : factualAnswer; const generationMode = generated.ok ? 'ai_generated' : 'factual_fallback';
@@ -434,7 +451,7 @@ export async function handleAiSalesAssistantRequest(req: Request, dependencies: 
     const providerErrorCode = !generated.ok && ['AI_PROVIDER_TIMEOUT', 'AI_REQUEST_CANCELLED'].includes(generated.code) ? generated.code : null;
     await finishRun(sb, companyId, traceId, { status: generated.code === 'AI_REQUEST_CANCELLED' ? 'failed' : awaitingConfirmation ? 'handed_off' : 'completed', current_stage: generated.code === 'AI_REQUEST_CANCELLED' ? 'REQUEST_CANCELLED' : awaitingConfirmation ? 'CONFIRMATION_REQUIRED' : 'GENERATION_COMPLETED', provider: generated.ok ? 'openai_compatible' : 'factual_fallback', model: Deno.env.get('AI_MODEL')?.trim() || null, tool_names: [tool], input_tokens: inputTokens, output_tokens: outputTokens, estimated_cost: estimatedCost, safe_error_code: providerErrorCode, duration_ms: Date.now() - started });
     if (generated.code === 'AI_REQUEST_CANCELLED') return json({ code: 'AI_REQUEST_CANCELLED' }, 408);
-    return json({ success: true, trace_id: traceId, feature_enabled: true, intent, tool, answer, generation_mode: generationMode, data: result, context, actions: { requires_human: tool === 'draft', can_create_draft: tool === 'draft' && Boolean(result?.preview), open_supplier_intelligence: false } });
+    return json({ success: true, trace_id: traceId, feature_enabled: true, intent, tool, answer, generation_mode: generationMode, ai_credits: creditStatus ? { code: creditStatus.code || null, actual_credits: creditStatus.actual_credits ?? null } : null, data: result, context, actions: { requires_human: tool === 'draft', can_create_draft: tool === 'draft' && Boolean(result?.preview), open_supplier_intelligence: false } });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '';
     const safeCode = req.signal.aborted ? 'AI_REQUEST_CANCELLED' : ['SUPPLIER_OFFERS_UNAVAILABLE', 'CHANNEL_LOOKUP_FAILED', 'DATA_LOOKUP_FAILED'].includes(errorMessage) ? errorMessage : errorMessage === 'Estoque insuficiente para criar o rascunho.' ? 'INSUFFICIENT_STOCK' : 'SALES_ASSISTANT_ERROR';
