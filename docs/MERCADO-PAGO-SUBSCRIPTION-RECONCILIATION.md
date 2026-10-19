@@ -13,7 +13,7 @@ The new `billing-subscription-reconcile` Edge Function polls only persisted F7 s
 
 ## Supabase Cloud scheduling, after a separately approved rollout
 
-Enable the supported `pg_cron`, `pg_net`, and Vault extensions in the candidate project's Dashboard. Save the Edge Function URL, a publishable API key, and the same dedicated reconciliation secret in Vault under `f7_billing_reconcile_url`, `f7_billing_publishable_key`, and `f7_billing_reconcile_secret`. Set the Edge Function secret `BILLING_RECONCILIATION_SECRET` to that same random value. Do not store service-role credentials in Vault for this job.
+Apply migration `20261019234020_billing_reconciliation_extensions.sql` to enable `pg_cron` and `pg_net`; Vault is already installed in the official production project's Dashboard. Save the Edge Function URL, a publishable API key, and the same dedicated reconciliation secret in Vault under `f7_billing_reconcile_url`, `f7_billing_publishable_key`, and `f7_billing_reconcile_secret`. Set the Edge Function secret `BILLING_RECONCILIATION_SECRET` to that same random value. Do not store service-role credentials in Vault for this job.
 
 Create a five-minute job in Supabase Cron (or SQL Editor) using the documented `pg_cron` + `pg_net` + Vault pattern:
 
@@ -44,4 +44,4 @@ The automated poll and its idempotent settlement can be covered with provider mo
 
 ## Rollback
 
-First unschedule `f7-billing-subscription-reconcile` and set `BILLING_RECONCILIATION_ENABLED=false`. Keep existing billing and payment rows. After any active lease expires, code can be rolled back while retaining the additive reconciliation columns, or the rollback described in migration `20261019200000_billing_subscription_reconciliation.sql` can be applied only after confirming no worker remains. Never delete billing events or payments as part of rollback.
+First unschedule `f7-billing-subscription-reconcile` and set `BILLING_RECONCILIATION_ENABLED=false`. Keep existing billing and payment rows. After any active lease expires, code can be rolled back while retaining the additive reconciliation columns, or the rollback described in migration `20261019233757_billing_subscription_reconciliation.sql` can be applied only after confirming no worker remains. Never delete billing events or payments as part of rollback.
