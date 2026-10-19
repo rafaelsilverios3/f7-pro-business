@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
-const migration = read('../supabase/migrations/20261018210000_f7_ai_credits.sql');
+const migration = read('../supabase/migrations/20261019003000_f7_ai_credits.sql');
 const generationHandlers = [
   ['../supabase/functions/ai-sales-assistant/index.ts', 'await reserveAIForOwnerOrCredits(sb', 'generated = await modelRouter.generateStructured'],
   ['../supabase/functions/intelligence-query/index.ts', 'await reserveAIForOwnerOrCredits(sb', "const generated: any = await modelRouter.generateStructured('openai_compatible', { query"],
