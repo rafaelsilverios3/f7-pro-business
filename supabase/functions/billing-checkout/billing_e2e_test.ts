@@ -62,7 +62,7 @@ function checkoutRequest(jwt: string, companyId: string, method = 'pix', billing
 
 function approvedOrder(checkoutId: string, orderId: string, paymentId: string, amount: number) {
   return {
-    id: orderId, status: 'processed', status_detail: 'accredited', external_reference: checkoutId,
+    id: orderId, user_id: 987654321, status: 'processed', status_detail: 'accredited', external_reference: checkoutId,
     currency_id: 'BRL', total_amount: amount,
     transactions: { payments: [{ id: paymentId, status: 'processed', status_detail: 'accredited', amount, currency_id: 'BRL' }] },
   };
@@ -206,6 +206,18 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
     const billingState = await admin.from('company_subscriptions').select('plan,status').eq('company_id', ownerA.companyId).single();
     assert(!billingState.error && billingState.data.plan === 'pro' && billingState.data.status === 'active', 'valid payment did not activate the matching company plan');
 
+    const wrongSellerEventId = `billing-local-e2e-wrong-seller-${testMarker}`;
+    createdWebhookEvents.push(wrongSellerEventId);
+    const wrongSellerRequestId = `billing-local-e2e-wrong-seller-request-${testMarker}`;
+    const wrongSellerTimestamp = String(Math.floor(Date.now() / 1000));
+    const wrongSellerDigest = await makeSignature(webhookSecret, orderId, wrongSellerRequestId, wrongSellerTimestamp);
+    orderToReturn = { ...approvedOrder(checkoutId, orderId, paymentId, 125), user_id: 987654320 };
+    const wrongSeller = await handleBillingWebhookRequest(new Request(`http://127.0.0.1/functions/v1/billing-webhook?data.id=${orderId}`, {
+      method: 'POST', headers: { 'x-request-id': wrongSellerRequestId, 'x-signature': `ts=${wrongSellerTimestamp},v1=${wrongSellerDigest}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: wrongSellerEventId, type: 'order', live_mode: false, data: { id: orderId } }),
+    }), { adminClient: admin, providerFetch });
+    assert(wrongSeller.status === 409 && (await wrongSeller.json()).code === 'PROVIDER_SELLER_MISMATCH', 'order from a different seller passed the provider-identity gate');
+
     const creditPurchase = await admin.rpc('create_ai_credit_purchase_v1', {
       target_company: ownerA.companyId, target_user: ownerA.id,
       package_code: 'credits_500', request_key: `credit-package-${testMarker}`,
@@ -230,7 +242,7 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
       body: JSON.stringify({ id: creditEventId, type: 'order', live_mode: false, data: { id: creditOrderId } }),
     });
     orderToReturn = {
-      id: creditOrderId, status: 'processed', status_detail: 'accredited', external_reference: creditPurchase.data.id,
+      id: creditOrderId, user_id: 987654321, status: 'processed', status_detail: 'accredited', external_reference: creditPurchase.data.id,
       total_amount: 19.90,
       transactions: { payments: [{ id: creditPaymentId, status: 'processed', status_detail: 'accredited', amount: 19.90 }] },
     };

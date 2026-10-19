@@ -6,7 +6,7 @@ function sign(secret: string, dataId: string, requestId: string, timestamp: stri
     .then((bytes) => [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, '0')).join(''));
 }
 
-Deno.test('Mercado Pago webhook HMAC preserves original data.id case', async () => {
+Deno.test('Mercado Pago webhook HMAC validates the received and documented lowercase ID canonicalizations', async () => {
   const secret = 'local-signature-test-only';
   const previousSecret = Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET');
   const previousEnvironment = Deno.env.get('MERCADO_PAGO_ENVIRONMENT');
@@ -26,14 +26,23 @@ Deno.test('Mercado Pago webhook HMAC preserves original data.id case', async () 
       if (!result.valid || result.dataId !== dataId) throw new Error('original-case webhook signature was rejected');
     }
 
-    const mixedCaseId = 'Order-Test-Aa19';
-    const normalizedDigest = await sign(secret, mixedCaseId.toLowerCase(), requestId, timestamp);
-    const normalizedRequest = new Request(`https://local.invalid/functions/v1/billing-webhook?data.id=${encodeURIComponent(mixedCaseId)}`, {
+    const alphanumericId = 'ORDTST01AB23';
+    const normalizedDigest = await sign(secret, alphanumericId.toLowerCase(), requestId, timestamp);
+    const normalizedRequest = new Request(`https://local.invalid/functions/v1/billing-webhook?data.id=${encodeURIComponent(alphanumericId)}`, {
       method: 'POST',
       headers: { 'x-request-id': requestId, 'x-signature': `ts=${timestamp},v1=${normalizedDigest}` },
     });
     const normalizedResult = await validateSignature(normalizedRequest, {});
-    if (normalizedResult.valid) throw new Error('signature for altered data.id case was incorrectly accepted');
+    if (!normalizedResult.valid || normalizedResult.dataId !== alphanumericId) throw new Error('documented lowercase HMAC canonicalization was rejected or changed the original resource ID');
+
+    const punctuatedId = 'Order-Test-Aa19';
+    const punctuatedDigest = await sign(secret, punctuatedId.toLowerCase(), requestId, timestamp);
+    const punctuatedRequest = new Request(`https://local.invalid/functions/v1/billing-webhook?data.id=${encodeURIComponent(punctuatedId)}`, {
+      method: 'POST',
+      headers: { 'x-request-id': requestId, 'x-signature': `ts=${timestamp},v1=${punctuatedDigest}` },
+    });
+    const punctuatedResult = await validateSignature(punctuatedRequest, {});
+    if (punctuatedResult.valid) throw new Error('lowercase fallback was applied to an ID outside the documented alphanumeric form');
   } finally {
     if (previousSecret === undefined) Deno.env.delete('MERCADO_PAGO_WEBHOOK_SECRET');
     else Deno.env.set('MERCADO_PAGO_WEBHOOK_SECRET', previousSecret);

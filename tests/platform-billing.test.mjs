@@ -167,7 +167,7 @@ test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remai
   assert.match(webhook, /received_digest_length/);
   assert.match(webhook, /v1\/orders/);
   assert.match(webhook, /body\.live_mode !== \(environment === 'production'\)/);
-  assert.match(webhook, /verifyMercadoPagoCredentialEnvironment\(providerToken, environment as 'test' \| 'production', providerFetch\)/);
+  assert.match(webhook, /getMercadoPagoCredentialIdentity\(providerToken, environment as 'test' \| 'production', providerFetch\)/);
   assert.doesNotMatch(webhook, /providerToken\.startsWith\(['\"](?:TEST-|APP_USR-)/);
 });
 
