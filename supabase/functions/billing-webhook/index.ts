@@ -41,13 +41,14 @@ const isWebhookTimestampValid = (value: string, nowSeconds = Math.floor(Date.now
 
 const resolveDataId = (req: Request, body: any) => {
   const url = new URL(req.url);
-  const queryDataId = clean(url.searchParams.get('data.id') || url.searchParams.get('data_id'));
+  const queryDataId = url.searchParams.get('data.id') ?? url.searchParams.get('data_id');
   if (queryDataId) return { value: queryDataId, origin: 'query' };
-  const bodyDataId = clean(body?.data?.id || body?.id);
+  const rawBodyDataId = body?.data?.id ?? body?.id;
+  const bodyDataId = rawBodyDataId === null || rawBodyDataId === undefined ? '' : String(rawBodyDataId);
   return { value: bodyDataId, origin: bodyDataId ? 'body' : 'none' };
 };
 
-async function validateSignature(req: Request, body: any) {
+export async function validateSignature(req: Request, body: any) {
   const secret = Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET') || '';
   const signature = req.headers.get('x-signature') || '';
   const requestId = req.headers.get('x-request-id') || '';
@@ -69,9 +70,9 @@ async function validateSignature(req: Request, body: any) {
   if (!secret) return invalid('secret_missing');
   if (!ts || !v1 || !dataId) return invalid('required_signature_field_missing');
   if (!isWebhookTimestampValid(ts)) return invalid('timestamp_invalid_or_expired');
-  // Mercado Pago sends uppercase alphanumeric resource IDs (such as ORDTST...),
-  // but its webhook signature manifest requires data.id in lowercase.
-  const manifest = [`id:${dataId.toLowerCase()};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
+  // The signature covers the raw data.id value. Do not normalize its case:
+  // uppercase and mixed-case IDs are signed exactly as Mercado Pago sends them.
+  const manifest = [`id:${dataId};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(manifest));
   const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
