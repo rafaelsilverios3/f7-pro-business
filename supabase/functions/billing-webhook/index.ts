@@ -7,6 +7,15 @@ const safeProviderLabel = (value: unknown) => {
   const label = String(value || '').toLowerCase();
   return /^[a-z][a-z0-9_]{0,31}$/.test(label) ? label : null;
 };
+const safeDiagnosticId = (value: unknown) => {
+  const id = String(value || '').trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id) ? id : null;
+};
+const resourceFingerprint = async (value: string) => {
+  if (!value) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].slice(0, 8).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+};
 
 const hexBytes = (value: string) => {
   if (!/^[0-9a-f]+$/i.test(value) || value.length % 2 !== 0) return null;
@@ -44,9 +53,18 @@ async function validateSignature(req: Request, body: any) {
   const requestId = req.headers.get('x-request-id') || '';
   const resolvedDataId = resolveDataId(req, body);
   const dataId = resolvedDataId.value;
+  const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || 'unconfigured').trim().toLowerCase();
+  const diagnosticId = safeDiagnosticId(req.headers.get('x-f7-diagnostic-id'));
+  const diagnosticContext = {
+    timestamp: new Date().toISOString(),
+    diagnostic_id: diagnosticId,
+    environment: ['test', 'production'].includes(environment) ? environment : 'unconfigured',
+    type: safeProviderLabel(body?.type || body?.action) || 'unknown',
+    resource_fingerprint: await resourceFingerprint(dataId),
+  };
   const ts = signature.match(/(?:^|,)ts=([^,]+)/)?.[1] || '';
   const v1 = signature.match(/(?:^|,)v1=([^,]+)/)?.[1] || '';
-  const diagnostics = { event: 'BILLING_WEBHOOK_SIGNATURE_CHECK', x_request_id_present: Boolean(requestId), x_signature_present: Boolean(signature), timestamp_present: Boolean(ts), data_id_present: Boolean(dataId), data_id_origin: resolvedDataId.origin, received_digest_length: v1.length };
+  const diagnostics = { event: 'BILLING_WEBHOOK_SIGNATURE_CHECK', ...diagnosticContext, x_request_id_present: Boolean(requestId), x_signature_present: Boolean(signature), timestamp_present: Boolean(ts), data_id_present: Boolean(dataId), data_id_origin: resolvedDataId.origin, received_digest_length: v1.length };
   const invalid = (reason: string) => { console.error(JSON.stringify({ ...diagnostics, result: 'invalid', reason })); return { valid: false, dataId }; };
   if (!secret) return invalid('secret_missing');
   if (!ts || !v1 || !dataId) return invalid('required_signature_field_missing');
@@ -284,7 +302,7 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
     ? normalizeOrdersPaymentStatus({ orderStatus: resource.status, orderStatusDetail: resource.status_detail, transactionStatus: payment.status, transactionStatusDetail: payment.status_detail })
     : normalizeLegacyPaymentStatus(payment.status || resource.status);
   const evidence = { ...providerEvidence, normalized_payment_status: normalized.status, normalization_reason: normalized.reason };
-  console.error(JSON.stringify({ event: 'BILLING_WEBHOOK_STATUS_NORMALIZED', provider: 'mercado_pago', ...evidence }));
+  console.error(JSON.stringify({ event: 'BILLING_WEBHOOK_STATUS_NORMALIZED', provider: 'mercado_pago', timestamp: new Date().toISOString(), diagnostic_id: safeDiagnosticId(req.headers.get('x-f7-diagnostic-id')), environment, type: safeProviderLabel(type) || 'unknown', resource_fingerprint: await resourceFingerprint(signature.dataId), ...evidence }));
   const paymentId = clean(payment.id);
   const externalReference = clean(resource.external_reference || payment.external_reference);
   const providerAmountValue = payment.amount ?? resource.total_amount ?? resource.transaction_amount;

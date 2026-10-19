@@ -54,7 +54,7 @@ Deno.test('AI credit package PIX uses database amount and remains pending until 
       if (url === 'https://api.mercadopago.com/v1/orders') return Response.json({
         id: 'fixture-order', status: 'action_required', external_reference: '22222222-2222-4222-8222-222222222222',
         total_amount: '19.90',
-        transactions: { payments: [{ id: 'fixture-payment', status: 'pending', amount: '19.90', point_of_interaction: { transaction_data: { qr_code: 'fixture-qr' } } }] },
+        transactions: { payments: [{ id: 'fixture-payment', status: 'pending', amount: '19.90', payment_method: { qr_code: 'fixture-qr', qr_code_base64: 'fixture-base64', ticket_url: 'https://sandbox.example.invalid/ticket' } }] },
       }, { status: 201 });
       throw new Error('unexpected external request');
     };
@@ -65,6 +65,7 @@ Deno.test('AI credit package PIX uses database amount and remains pending until 
     const body = await response.json();
     assert(response.status === 200 && body.code === 'OK', 'local PIX package handler did not return pending checkout');
     assert(body.purchase.amount_minor === 1990 && body.purchase.status === 'pending', 'client-supplied price influenced the purchase');
+    assert(body.payment.qr_code === 'fixture-qr' && body.payment.qr_code_base64 === 'fixture-base64' && body.payment.ticket_url === 'https://sandbox.example.invalid/ticket', 'Orders payment_method PIX details were not returned to the client');
     assert(body.purchase.credits === 500 && body.payment.status === 'pending' && body.payment.qr_code === 'fixture-qr', 'pending payment response lost package state');
     assert(sb.rpcCalls.some((call) => call.name === 'create_ai_credit_purchase_v1' && call.args.package_code === 'credits_500'), 'server did not create the catalog package');
     assert(sb.rpcCalls.some((call) => call.name === 'persist_ai_credit_purchase_provider_v1'), 'provider idempotency state was not persisted');

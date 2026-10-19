@@ -57,7 +57,8 @@ async function handleCreditPackageCheckout(req: Request, sb: any, providerFetch:
   const persisted = await sb.rpc('persist_ai_credit_purchase_provider_v1',{p_purchase_id:purchase.id,p_payment_id:paymentId,p_order_id:orderId,p_status:status});
   if (persisted.error || persisted.data?.code !== 'OK') return json({code:'AI_CREDIT_PURCHASE_STATE_RETRYABLE'},503);
   const point = payment.point_of_interaction?.transaction_data || {};
-  return json({code:'OK',purchase:{id:purchase.id,status:'pending',credits:purchase.credits,amount_minor:purchase.amount_minor,currency:'BRL'},payment:{id:paymentId,status,qr_code:clean(point.qr_code,4000)||null,qr_code_base64:typeof point.qr_code_base64==='string'?point.qr_code_base64:null,ticket_url:clean(point.ticket_url,1000)||null}});
+  const paymentMethod = payment.payment_method || {};
+  return json({code:'OK',purchase:{id:purchase.id,status:'pending',credits:purchase.credits,amount_minor:purchase.amount_minor,currency:'BRL'},payment:{id:paymentId,status,qr_code:clean(point.qr_code || paymentMethod.qr_code,4000)||null,qr_code_base64:typeof point.qr_code_base64==='string'?point.qr_code_base64:typeof paymentMethod.qr_code_base64==='string'?paymentMethod.qr_code_base64:null,ticket_url:clean(point.ticket_url || paymentMethod.ticket_url,1000)||null}});
 }
 
 const logProviderFailure = (details: Record<string, unknown>) => {
