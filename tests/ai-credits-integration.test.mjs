@@ -5,9 +5,9 @@ import { readFileSync } from 'node:fs';
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const migration = read('../supabase/migrations/20261018210000_f7_ai_credits.sql');
 const generationHandlers = [
-  ['../supabase/functions/ai-sales-assistant/index.ts', 'credits = inputTokens && modelKey ? await reserveAICredits', 'generated = await modelRouter.generateStructured'],
-  ['../supabase/functions/intelligence-query/index.ts', 'const creditResult = modelReady && inputTokens && generationRequestKey', "const generated: any = await modelRouter.generateStructured('openai_compatible', { query"],
-  ['../supabase/functions/assistant-suggest/index.ts', 'const creditResult = estimatedTokens && requestKey && creditActorId', 'const providerSuggestion: any = await modelRouter.generateStructured'],
+  ['../supabase/functions/ai-sales-assistant/index.ts', 'await reserveAIForOwnerOrCredits(sb', 'generated = await modelRouter.generateStructured'],
+  ['../supabase/functions/intelligence-query/index.ts', 'await reserveAIForOwnerOrCredits(sb', "const generated: any = await modelRouter.generateStructured('openai_compatible', { query"],
+  ['../supabase/functions/assistant-suggest/index.ts', 'await reserveAIForOwnerOrCredits(sb', 'const providerSuggestion: any = await modelRouter.generateStructured'],
 ];
 
 test('credit persistence is private, nonnegative, auditable, and executable only through guarded RPCs', () => {
@@ -34,9 +34,9 @@ test('all live model-generation entry points reserve credits before provider req
     assert.notEqual(reserveAt, -1, `${path} must reserve credits`);
     assert.notEqual(providerAt, -1, `${path} must contain provider request after the reservation`);
     assert.ok(reserveAt < providerAt, `${path} must reserve before provider call`);
-    assert.match(source, /settleAICredits\(sb/);
+    assert.match(source, /settleAIForOwnerOrCredits\(sb/);
     assert.match(source, /AI_CREDITS_CONFIRMATION_REQUIRED/);
-    assert.match(source, /releaseAICredits/);
+    assert.match(source, /releaseAIForOwnerOrCredits/);
   }
 });
 

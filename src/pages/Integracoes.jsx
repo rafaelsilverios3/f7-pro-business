@@ -8,6 +8,7 @@ import { checkIntegrationHealth, connectWhatsApp, disconnectWhatsApp, listIntegr
 import { getAssistantSettings } from '@/services/assistantSettingsService';
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
 import { getWhatsAppIntegrationState } from '@/lib/whatsappIntegrationState';
+import { platformAdminService } from '@/services/platformAdminService';
 
 const statusLabel = { connected: 'Conectado', disconnected: 'Desconectado', pending: 'Configuração pendente', error: 'Erro', disabled: 'Desabilitado', not_configured: 'Configuração pendente' };
 const statusTone = { connected: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/30', error: 'text-rose-300 bg-rose-400/10 border-rose-400/30', disabled: 'text-slate-400 bg-slate-400/10 border-slate-400/20', disconnected: 'text-slate-300 bg-slate-400/10 border-slate-400/20', pending: 'text-amber-300 bg-amber-400/10 border-amber-400/30', not_configured: 'text-amber-300 bg-amber-400/10 border-amber-400/30' };
@@ -65,10 +66,11 @@ export default function Integracoes() {
     Promise.all([
       getAssistantSettings(company.id),
       getSupabaseClient().rpc('company_has_feature', { target_company: company.id, feature: 'ai' }),
-    ]).then(([settings, feature]) => {
+      platformAdminService.access().then((access) => access?.role === 'owner').catch(() => false),
+    ]).then(([settings, feature, isGlobalOwner]) => {
       if (cancelled) return;
       setAssistantMode(settings?.mode || 'manual');
-      setAiFeatureAvailable(feature?.error ? false : feature?.data === true);
+      setAiFeatureAvailable(isGlobalOwner === true || (!feature?.error && feature?.data === true));
     }).catch(() => { if (!cancelled) { setAssistantMode('manual'); setAiFeatureAvailable(false); } });
     return () => { cancelled = true; };
   }, [company?.id]);

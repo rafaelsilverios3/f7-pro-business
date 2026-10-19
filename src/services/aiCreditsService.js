@@ -7,7 +7,8 @@ export const aiCreditsService = {
     if (authError || !user?.id) throw new Error('AUTH_REQUIRED');
     const { data, error } = await client.rpc('ai_credits_snapshot_v1', { target_company: companyId, target_user: user.id });
     if (error) throw error;
-    return data;
+    const ownerResult = await client.rpc('platform_owner_ai_usage_policy_v1');
+    return { ...data, owner_usage: ownerResult.error ? null : ownerResult.data };
   },
   async cancelQuote(companyId, quoteId) {
     const client = getSupabaseClient();

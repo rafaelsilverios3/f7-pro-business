@@ -3,7 +3,7 @@ import { classifyIntelligenceMode, type IntelligenceMode } from '../_shared/inte
 import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 import { conductWebResearch } from '../_shared/webResearch.ts';
 import { markAIReservationUncertain, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation, type AIReservationResult } from '../_shared/aiObservability.ts';
-import { aiCreditRequestHash, reserveAICredits, settleAICredits, releaseAICredits } from '../_shared/aiCredits.ts';
+import { aiCreditRequestHash, hasPermanentGlobalOwnerAccess, reserveAIForOwnerOrCredits, settleAIForOwnerOrCredits, releaseAIForOwnerOrCredits, checkOwnerWebResearchPolicy } from '../_shared/aiCredits.ts';
 import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { persistAIRun, persistAIRunEvent } from '../_shared/aiRunPersistence.js';
 import { conservativeInputTokenUpperBound, normalizeRequestKey, readProviderUsage } from '../_shared/aiBudgetPolicy.js';
@@ -286,10 +286,12 @@ Deno.serve(async (req) => {
     if (!companyId || (!query && operation !== 'executive_summary')) return json({ code: 'INVALID_REQUEST' }, 422);
     const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', userData.user.id).maybeSingle();
     if (!member?.active || !ALLOWED_ROLES.has(member.role)) return json({ code: 'FORBIDDEN' }, 403);
+    const globalOwner = await hasPermanentGlobalOwnerAccess(sb, userData.user.id);
+    if (!globalOwner.ok) return json({ code: 'AI_OWNER_AUTHORIZATION_UNAVAILABLE' }, 503);
     const mode: IntelligenceMode = classifyIntelligenceMode(query, history.map((item: any) => item.mode).filter(Boolean));
     const { data: intelligenceAllowed, error: intelligenceGateError } = await sb.rpc('company_has_feature_internal', { target_company: companyId, feature: 'intelligence' });
-    if (intelligenceGateError) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
-    if (!intelligenceAllowed) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'F7 Intelligence está disponível a partir do plano PRO.' }, 403);
+    if (intelligenceGateError && !globalOwner.is_owner) return json({ code: 'FEATURE_LOOKUP_FAILED' }, 500);
+    if (!intelligenceAllowed && !globalOwner.is_owner) return json({ code: 'FEATURE_NOT_AVAILABLE', message: 'F7 Intelligence está disponível a partir do plano PRO.' }, 403);
     if (operation === 'executive_summary') {
       const maintenance = aiMaintenanceResponse(Deno.env.get('AI_MAINTENANCE_MODE'), corsHeaders);
       if (maintenance) return maintenance;
@@ -310,15 +312,16 @@ Deno.serve(async (req) => {
       const requestKey = requestId ? `${requestId}:executive` : '';
       const modelKey = Deno.env.get('AI_MODEL') || 'gpt-4o-mini';
       const creditHash = await aiCreditRequestHash({ company_id: companyId, operation, request_id: requestId, executive_context: executiveContext, model: modelKey, max_output_tokens: MAX_AI_OUTPUT_TOKENS });
-      const creditResult = modelReady && inputTokens && requestKey ? await reserveAICredits(sb, { company_id: companyId, user_id: userData.user.id, request_key: requestKey, request_hash: creditHash, model_key: modelKey, input_tokens: inputTokens, output_token_limit: MAX_AI_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true }) : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID' };
+      const creditResult = modelReady && inputTokens && requestKey ? await reserveAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, request_key: requestKey, request_hash: creditHash, model_key: modelKey, input_tokens: inputTokens, output_token_limit: MAX_AI_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true }) : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID', owner_exempt: false };
       if (creditResult.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: creditResult.code, ai_credit_quote: creditResult }, 409);
+      const creditOwnerExempt = creditResult.owner_exempt === true;
       let creditOperationId = creditResult.allowed && typeof creditResult.operation_id === 'string' ? creditResult.operation_id : null;
       const financialBudget: AIReservationResult = modelReady && inputTokens && requestKey && creditResult.allowed
         ? await reserveAIModelBudget(sb, { company_id: companyId, request_key: requestKey, model_key: modelKey, input_tokens: inputTokens, max_output_tokens: MAX_AI_OUTPUT_TOKENS })
         : { allowed: false, reason: modelReady ? 'AI_IDEMPOTENCY_KEY_REQUIRED' : 'AI_PROVIDER_NOT_CONFIGURED', estimated_cost: 0 };
       const generationBudget: AIReservationResult = financialBudget.allowed ? financialBudget : { allowed: false, reason: creditResult.code || financialBudget.reason, estimated_cost: 0 };
       if (!generationBudget.allowed) {
-        if (creditOperationId) await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId });
+        if (creditOperationId) await releaseAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, operation_id: creditOperationId, owner_exempt: creditOwnerExempt });
         const summary = deterministicExecutiveSummary(executiveContext);
         await recordEvent(sb, companyId, traceId, 'EXECUTIVE_FALLBACK_USED', 'success', { reason: 'AI_BUDGET_UNAVAILABLE' }, 'AI_BUDGET_UNAVAILABLE');
         await recordRun(sb, companyId, traceId, { current_stage: 'COMPLETED', status: 'completed', provider: 'deterministic', duration_ms: Date.now() - started, finished_at: new Date().toISOString() });
@@ -331,7 +334,7 @@ Deno.serve(async (req) => {
       if (generated.ok) {
         const usage = readProviderUsage(generated.usage, { reservedInputTokens: inputTokens, maxOutputTokens: MAX_AI_OUTPUT_TOKENS });
         const settlement = activeReservation ? await settleAIReservation(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, usage_reliable: usage.reported }) : { settled: false };
-        if (creditOperationId) await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
+        if (creditOperationId) await settleAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, operation_id: creditOperationId, owner_exempt: creditOwnerExempt, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
         if (!settlement.settled && activeReservation) await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' });
         activeReservation = null;
         const actualCost = settlement.settled ? Number(settlement.actual_cost || 0) : Number(generationBudget.estimated_cost || 0);
@@ -343,7 +346,7 @@ Deno.serve(async (req) => {
         await markAIReservationUncertain(sb, { company_id: activeReservation.companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: generated.code || 'provider_result_unknown' });
         activeReservation = null;
       }
-      if (creditOperationId) await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: 0, output_tokens: 0, usage_reliable: false });
+      if (creditOperationId) await settleAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, operation_id: creditOperationId, owner_exempt: creditOwnerExempt, input_tokens: 0, output_tokens: 0, usage_reliable: false });
       const summary = deterministicExecutiveSummary(executiveContext);
       await recordEvent(sb, companyId, traceId, 'EXECUTIVE_FALLBACK_USED', 'success', { reason: generated.code }, generated.code);
       await recordEvent(sb, companyId, traceId, 'EXECUTIVE_SUMMARY_FAILED', 'error', {}, generated.code);
@@ -371,7 +374,9 @@ Deno.serve(async (req) => {
     let research: any = null;
     let externalUnavailable: string | null = null;
     if (mode !== 'internal') {
-      if (settingsResult.error || settingsResult.data?.allow_web_research === false) externalUnavailable = 'EXTERNAL_RESEARCH_NOT_ALLOWED';
+      const ownerWebPolicy = await checkOwnerWebResearchPolicy(sb, userData.user.id);
+      if (!ownerWebPolicy.ok || (ownerWebPolicy.is_owner && !ownerWebPolicy.allowed)) externalUnavailable = 'OWNER_WEB_RESEARCH_DISABLED';
+      else if (settingsResult.error || settingsResult.data?.allow_web_research === false) externalUnavailable = 'EXTERNAL_RESEARCH_NOT_ALLOWED';
       else {
         const maxWebQueries = Math.min(5, Math.max(0, Math.trunc(Number(settingsResult.data?.max_daily_web_queries))));
         const budget: AIReservationResult = requestId && maxWebQueries > 0
@@ -407,9 +412,10 @@ Deno.serve(async (req) => {
     const generationModel = Deno.env.get('AI_MODEL') || 'gpt-4o-mini';
     const creditHash = await aiCreditRequestHash({ company_id: companyId, query, mode, history, context, request_id: requestId, model: generationModel, max_output_tokens: MAX_AI_OUTPUT_TOKENS });
     const creditResult = modelReady && inputTokens && generationRequestKey
-      ? await reserveAICredits(sb, { company_id: companyId, user_id: userData.user.id, request_key: generationRequestKey, request_hash: creditHash, model_key: generationModel, input_tokens: inputTokens, output_token_limit: MAX_AI_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true })
-      : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID' };
+      ? await reserveAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, request_key: generationRequestKey, request_hash: creditHash, model_key: generationModel, input_tokens: inputTokens, output_token_limit: MAX_AI_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true })
+      : { allowed: false, code: 'AI_CREDITS_REQUEST_INVALID', owner_exempt: false };
     if (creditResult.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: creditResult.code, ai_credit_quote: creditResult }, 409);
+    const creditOwnerExempt = creditResult.owner_exempt === true;
     let creditOperationId = creditResult.allowed && typeof creditResult.operation_id === 'string' ? creditResult.operation_id : null;
     const financialBudget: AIReservationResult = modelReady
       ? requestId && inputTokens
@@ -419,7 +425,7 @@ Deno.serve(async (req) => {
     const generationBudget: AIReservationResult = financialBudget.allowed && creditResult.allowed ? financialBudget : { allowed: false, reason: creditResult.code || financialBudget.reason || 'AI_BUDGET_UNAVAILABLE', estimated_cost: 0 };
     if (!generationBudget.allowed) {
       generationUnavailable = generationBudget.reason === 'AI_CREDITS_INSUFFICIENT' ? 'AI_CREDITS_INSUFFICIENT' : 'AI_BUDGET_UNAVAILABLE';
-      if (creditOperationId) { await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId }); creditOperationId = null; }
+      if (creditOperationId) { await releaseAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, operation_id: creditOperationId, owner_exempt: creditOwnerExempt }); creditOperationId = null; }
     }
     else {
       const requestKey = `${requestId}:analysis`;
@@ -431,7 +437,7 @@ Deno.serve(async (req) => {
         analysis = generated.result;
         const usage = readProviderUsage(generated.usage, { reservedInputTokens: inputTokens, maxOutputTokens: MAX_AI_OUTPUT_TOKENS });
         const settlement = activeReservation ? await settleAIReservation(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, usage_reliable: usage.reported }) : { settled: false };
-        if (creditOperationId) await settleAICredits(sb, { company_id: companyId, operation_id: creditOperationId, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
+        if (creditOperationId) await settleAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, operation_id: creditOperationId, owner_exempt: creditOwnerExempt, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
         if (!settlement.settled && activeReservation) await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' });
         activeReservation = null;
         const actualCost = settlement.settled ? Number(settlement.actual_cost || 0) : Number(generationBudget.estimated_cost || 0);
@@ -439,7 +445,7 @@ Deno.serve(async (req) => {
         await recordRun(sb, companyId, traceId, { provider: 'openai_compatible', model: Deno.env.get('AI_MODEL') || 'gpt-4o-mini', input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, estimated_cost: Number.isFinite(actualCost) ? actualCost : Number(generationBudget.estimated_cost || 0) });
       }
       else {
-        if (creditOperationId) { await releaseAICredits(sb, { company_id: companyId, operation_id: creditOperationId }); creditOperationId = null; }
+        if (creditOperationId) { await settleAIForOwnerOrCredits(sb, { company_id: companyId, user_id: userData.user.id, operation_id: creditOperationId, owner_exempt: creditOwnerExempt, input_tokens: 0, output_tokens: 0, usage_reliable: false }); creditOperationId = null; }
         if (activeReservation) {
           await markAIReservationUncertain(sb, { company_id: companyId, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: generated.code || 'provider_result_unknown' });
           activeReservation = null;

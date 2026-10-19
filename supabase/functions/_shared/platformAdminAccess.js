@@ -10,11 +10,12 @@ const WRITE_ACTIONS = new Set([
   ...ADMIN_MANAGEMENT_ACTIONS,
 ]);
 const AI_FINANCIAL_ACTIONS = new Set([
-  'ai_financial_rates', 'ai_financial_usage',
+  'ai_financial_rates', 'ai_financial_usage', 'ai_owner_usage_read',
 ]);
 const AI_FINANCIAL_WRITE_ACTIONS = new Set([
   'ai_financial_budget', 'ai_financial_rate_create', 'ai_financial_rate_enable',
   'ai_credits_plan_update', 'ai_credits_pricing_update', 'ai_credits_rate_pricing_update', 'ai_credits_package_update', 'ai_credits_company_adjust',
+  'ai_owner_usage_update',
 ]);
 
 export function isPlatformAdminCurrent(row, now = Date.now()) {
