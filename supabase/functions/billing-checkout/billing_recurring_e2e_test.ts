@@ -8,7 +8,7 @@ const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const dbContainer = Deno.env.get('E2E_DB_CONTAINER') || '';
 const local = baseUrl ? new URL(baseUrl) : null;
-if (!local || !['localhost', '127.0.0.1', '[::1]'].includes(local.hostname) || !anonKey || !serviceKey || !dbContainer || !dbContainer.startsWith('supabase_db_')) {
+if (!local || !['localhost', '127.0.0.1', '[::1]'].includes(local.hostname) || !anonKey || !serviceKey || !/^supabase(?:_db_|-[a-z0-9._-]*database-)/i.test(dbContainer)) {
   throw new Error('Recurring billing E2E requires an explicitly configured local-only Supabase stack.');
 }
 
@@ -170,12 +170,16 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
       body: JSON.stringify({ company_id: owner!.companyId, subscription_id: localSubscription.data.id, action }),
     }), { adminClient: admin, providerFetch: async (input, init) => {
       const url = new URL(String(input));
+      if (url.origin === 'https://api.mercadolibre.com' && url.pathname === '/users/me') {
+        return Response.json({ id: 987654321, site_id: 'MLB', tags: ['test_user'] });
+      }
       assert(url.pathname === `/preapproval/${providerSubscriptionId}` && init?.method === 'PUT', 'subscription control used an unexpected provider endpoint');
       assert(JSON.parse(String(init?.body || '{}')).status === providerStatus, 'subscription control sent an unexpected provider status');
       return new Response(JSON.stringify({ id: providerSubscriptionId, status: providerStatus }), { status: 200 });
     } });
     const paused = await manage('pause', 'paused');
-    assert(paused.status === 200 && (await paused.json()).status === 'paused', 'subscription pause was not persisted');
+    const pausedBody = await paused.json();
+    assert(paused.status === 200 && pausedBody.status === 'paused', `subscription pause was not persisted (http=${paused.status}, code=${String(pausedBody.code || 'none')}, status=${String(pausedBody.status || 'none')})`);
     const resumed = await manage('resume', 'authorized');
     assert(resumed.status === 200 && (await resumed.json()).status === 'authorized', 'subscription resumption was not persisted');
     const managedCancellation = await manage('cancel', 'canceled');

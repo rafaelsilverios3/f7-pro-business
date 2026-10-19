@@ -329,6 +329,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       !crossTenantBefore.error && crossTenantBefore.data.length === 0,
       "Other tenant could read the subscription fixture.",
     );
+    const callsBeforeForbiddenControl = calls.length;
     const forbiddenControl = await handleBillingSubscriptionManageRequest(
       new Request("http://127.0.0.1/functions/v1/billing-subscription-manage", {
         method: "POST",
@@ -350,7 +351,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       "Other tenant could control the subscription.",
     );
     assert(
-      calls.length === 1,
+      calls.length === callsBeforeForbiddenControl,
       "Unauthorized cross-tenant control called the provider.",
     );
 

@@ -206,9 +206,50 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
     const billingState = await admin.from('company_subscriptions').select('plan,status').eq('company_id', ownerA.companyId).single();
     assert(!billingState.error && billingState.data.plan === 'pro' && billingState.data.status === 'active', 'valid payment did not activate the matching company plan');
 
-    const providerCallsBeforeDuplicate = providerCalls.length;
+    const creditPurchase = await admin.rpc('create_ai_credit_purchase_v1', {
+      target_company: ownerA.companyId, target_user: ownerA.id,
+      package_code: 'credits_500', request_key: `credit-package-${testMarker}`,
+    });
+    assert(!creditPurchase.error && creditPurchase.data?.code === 'OK', 'local AI credit package purchase was not created');
+    const creditOrderId = `credit-order-${testMarker}`;
+    const creditPaymentId = `credit-payment-${testMarker}`;
+    const persistedCreditOrder = await admin.rpc('persist_ai_credit_purchase_provider_v1', {
+      p_purchase_id: creditPurchase.data.id, p_payment_id: creditPaymentId,
+      p_order_id: creditOrderId, p_status: 'pending',
+    });
+    assert(!persistedCreditOrder.error && persistedCreditOrder.data?.code === 'OK', 'local AI credit provider order could not be attached');
+    const beforeCreditPayment = await admin.rpc('ai_credits_snapshot_v1', { target_company: ownerA.companyId, target_user: ownerA.id });
+    assert(!beforeCreditPayment.error && beforeCreditPayment.data?.extra_balance === 0, 'AI credits were granted before the signed payment callback');
+    const creditEventId = `billing-local-credit-event-${testMarker}`;
+    createdWebhookEvents.push(creditEventId);
+    const creditRequestId = `billing-local-credit-request-${testMarker}`;
+    const creditTimestamp = String(Math.floor(Date.now() / 1000));
+    const creditDigest = await makeSignature(webhookSecret, creditOrderId, creditRequestId, creditTimestamp);
+    const creditWebhookRequest = () => new Request(`http://127.0.0.1/functions/v1/billing-webhook?data.id=${creditOrderId}`, {
+      method: 'POST', headers: { 'x-request-id': creditRequestId, 'x-signature': `ts=${creditTimestamp},v1=${creditDigest}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: creditEventId, type: 'order', live_mode: false, data: { id: creditOrderId } }),
+    });
+    orderToReturn = {
+      id: creditOrderId, status: 'processed', status_detail: 'accredited', external_reference: creditPurchase.data.id,
+      currency_id: 'BRL', total_amount: 19.90,
+      transactions: { payments: [{ id: creditPaymentId, status: 'processed', status_detail: 'accredited', amount: 19.90, currency_id: 'BRL' }] },
+    };
+    const creditWebhook = await handleBillingWebhookRequest(creditWebhookRequest(), { adminClient: admin, providerFetch });
+    const creditWebhookBody = await creditWebhook.json();
+    assert(creditWebhook.status === 200 && creditWebhookBody.code === 'OK' && creditWebhookBody.credited === true, 'signed local payment callback did not credit the package');
+    const afterCreditPayment = await admin.rpc('ai_credits_snapshot_v1', { target_company: ownerA.companyId, target_user: ownerA.id });
+    assert(!afterCreditPayment.error && afterCreditPayment.data?.extra_balance === 500, 'signed local callback credited the wrong package balance');
+    const orderLookupsBeforeCreditDuplicate = providerCalls.filter((call) => call.method === 'GET' && call.endpoint.includes('/v1/orders/')).length;
+    const duplicateCreditWebhook = await handleBillingWebhookRequest(creditWebhookRequest(), { adminClient: admin, providerFetch });
+    const duplicateCreditBody = await duplicateCreditWebhook.json();
+    const orderLookupsAfterCreditDuplicate = providerCalls.filter((call) => call.method === 'GET' && call.endpoint.includes('/v1/orders/')).length;
+    assert(duplicateCreditWebhook.status === 200 && duplicateCreditBody.duplicate === true && orderLookupsAfterCreditDuplicate === orderLookupsBeforeCreditDuplicate, 'duplicate AI credit callback repeated settlement or the financial order lookup');
+
+    const orderLookupsBeforeDuplicate = providerCalls.filter((call) => call.method === 'GET' && call.endpoint.includes('/v1/orders/')).length;
     const duplicate = await handleBillingWebhookRequest(webhookRequest(), { adminClient: admin, providerFetch });
-    assert(duplicate.status === 200 && (await duplicate.json()).duplicate === true && providerCalls.length === providerCallsBeforeDuplicate, 'duplicate webhook caused a second provider lookup or activation');
+    const duplicateBody = await duplicate.json();
+    const orderLookupsAfterDuplicate = providerCalls.filter((call) => call.method === 'GET' && call.endpoint.includes('/v1/orders/')).length;
+    assert(duplicate.status === 200 && duplicateBody.duplicate === true && orderLookupsAfterDuplicate === orderLookupsBeforeDuplicate, 'duplicate webhook repeated the financial order lookup or activation');
 
     const alternateEventId = `billing-local-e2e-alternate-event-${testMarker}`;
     createdWebhookEvents.push(alternateEventId);
@@ -266,9 +307,10 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
     providerLookupGate = { started: markLookupStarted, result: lookupResponse };
     const firstWebhookAttempt = handleBillingWebhookRequest(badWebhookRequest(), { adminClient: admin, providerFetch });
     await lookupStarted;
-    const providerCallCountDuringLease = providerCalls.length;
+    const orderLookupCountDuringLease = providerCalls.filter((call) => call.method === 'GET' && call.endpoint.includes('/v1/orders/')).length;
     const overlappingWebhookAttempt = await handleBillingWebhookRequest(badWebhookRequest(), { adminClient: admin, providerFetch });
-    assert(overlappingWebhookAttempt.status === 503 && (await overlappingWebhookAttempt.json()).code === 'WEBHOOK_PROCESSING' && providerCalls.length === providerCallCountDuringLease, 'concurrent webhook bypassed the processing lease or repeated the provider lookup');
+    const orderLookupCountAfterOverlap = providerCalls.filter((call) => call.method === 'GET' && call.endpoint.includes('/v1/orders/')).length;
+    assert(overlappingWebhookAttempt.status === 503 && (await overlappingWebhookAttempt.json()).code === 'WEBHOOK_PROCESSING' && orderLookupCountAfterOverlap === orderLookupCountDuringLease, 'concurrent webhook bypassed the processing lease or repeated the financial order lookup');
     releaseLookup(new Response(JSON.stringify(orderToReturn), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     const mismatchedAmount = await firstWebhookAttempt;
     assert(mismatchedAmount.status === 422 && (await mismatchedAmount.json()).code === 'PAYMENT_AMOUNT_MISMATCH', 'amount mismatch did not fail closed');

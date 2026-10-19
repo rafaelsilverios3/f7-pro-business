@@ -6,14 +6,14 @@ insert into auth.users(id) values
   ('10000000-0000-4000-8000-000000000001'),
   ('10000000-0000-4000-8000-000000000002')
 on conflict do nothing;
-insert into public.companies(id) values
-  ('20000000-0000-4000-8000-000000000001'),
-  ('20000000-0000-4000-8000-000000000002')
+insert into public.companies(id,name) values
+  ('20000000-0000-4000-8000-000000000001','AI Credits Synthetic Company A'),
+  ('20000000-0000-4000-8000-000000000002','AI Credits Synthetic Company B')
 on conflict do nothing;
-insert into public.plans(id,code)
+insert into public.plans(id,code,name)
 values
-  ('30000000-0000-4000-8000-000000000001','pro'),
-  ('30000000-0000-4000-8000-000000000002','business')
+  ('30000000-0000-4000-8000-000000000001','pro','AI Credits Synthetic Pro'),
+  ('30000000-0000-4000-8000-000000000002','business','AI Credits Synthetic Business')
 on conflict (code) do nothing;
 insert into public.plan_features(plan_id,feature,enabled)
 select id,'ai_credits_generation',true from public.plans where code in ('pro','business')
@@ -30,9 +30,9 @@ insert into public.company_users(company_id,user_id,role,active) values
 on conflict do nothing;
 
 insert into public.ai_rate_cards(rate_kind,provider_key,model_key,rate_version,currency,input_cost_per_1k,
-  output_cost_per_1k,enabled,effective_from,source_reference)
+  output_cost_per_1k,enabled,effective_from,source_reference,verified_at,approved_by)
 values ('model_tokens','openai','fixture-model','fixture-v1','USD',0.001,0.01,true,
-  now()-interval '1 day','https://example.invalid/test');
+  now()-interval '1 day','https://example.invalid/test',now(),'10000000-0000-4000-8000-000000000001');
 insert into public.ai_credit_rate_pricing(rate_card_id,fx_to_brl,markup_bps)
 select id,5,10000 from public.ai_rate_cards where provider_key='openai' and model_key='fixture-model' and rate_version='fixture-v1';
 update public.ai_credit_pricing_config set usd_to_brl=5,confirmation_threshold_credits=20,

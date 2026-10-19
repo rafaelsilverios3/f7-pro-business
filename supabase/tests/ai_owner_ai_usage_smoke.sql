@@ -5,9 +5,9 @@ insert into auth.users(id) values
  ('11000000-0000-4000-8000-000000000001'),
  ('11000000-0000-4000-8000-000000000002'),
  ('11000000-0000-4000-8000-000000000003') on conflict do nothing;
-insert into public.companies(id) values
- ('21000000-0000-4000-8000-000000000001'),
- ('21000000-0000-4000-8000-000000000002') on conflict do nothing;
+insert into public.companies(id,name) values
+ ('21000000-0000-4000-8000-000000000001','Owner Pilot Synthetic Company A'),
+ ('21000000-0000-4000-8000-000000000002','Owner Pilot Synthetic Company B') on conflict do nothing;
 insert into public.company_users(company_id,user_id,role,active) values
  ('21000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000001','admin',true),
  ('21000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000002','admin',true),
@@ -17,10 +17,10 @@ insert into public.platform_admins(user_id,role,status,expires_at) values
  ('11000000-0000-4000-8000-000000000001','owner','active',null),
  ('11000000-0000-4000-8000-000000000003','admin','active',null);
 insert into public.ai_rate_cards(rate_kind,provider_key,model_key,rate_version,currency,input_cost_per_1k,
-  output_cost_per_1k,enabled,effective_from,source_reference)
+  output_cost_per_1k,enabled,effective_from,source_reference,verified_at,approved_by)
 values
- ('model_tokens','openai','owner-fixture','owner-v1','USD',0.001,0.005,true,now()-interval '1 day','https://example.invalid/rate'),
- ('model_tokens','openai','owner-expensive-fixture','owner-v1','USD',2,2,true,now()-interval '1 day','https://example.invalid/rate-expensive');
+ ('model_tokens','openai','owner-fixture','owner-v1','USD',0.001,0.005,true,now()-interval '1 day','https://example.invalid/rate',now(),'11000000-0000-4000-8000-000000000001'),
+ ('model_tokens','openai','owner-expensive-fixture','owner-v1','USD',2,2,true,now()-interval '1 day','https://example.invalid/rate-expensive',now(),'11000000-0000-4000-8000-000000000001');
 insert into public.ai_credit_rate_pricing(rate_card_id,fx_to_brl,markup_bps)
 select id,5,10000 from public.ai_rate_cards where model_key in ('owner-fixture','owner-expensive-fixture');
 update public.ai_credit_pricing_config set usd_to_brl=5 where singleton;
