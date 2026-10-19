@@ -69,7 +69,9 @@ async function validateSignature(req: Request, body: any) {
   if (!secret) return invalid('secret_missing');
   if (!ts || !v1 || !dataId) return invalid('required_signature_field_missing');
   if (!isWebhookTimestampValid(ts)) return invalid('timestamp_invalid_or_expired');
-  const manifest = [`id:${dataId};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
+  // Mercado Pago sends uppercase alphanumeric resource IDs (such as ORDTST...),
+  // but its webhook signature manifest requires data.id in lowercase.
+  const manifest = [`id:${dataId.toLowerCase()};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(manifest));
   const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -119,7 +121,21 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
   if (!['test', 'production'].includes(environment) || !providerToken) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);
   if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'MERCADO_PAGO_PRODUCTION_DISABLED' }, 503);
-  if (typeof body?.live_mode !== 'boolean' || body.live_mode !== (environment === 'production')) return json({ code: 'WEBHOOK_MODE_MISMATCH' }, 409);
+  if (typeof body?.live_mode !== 'boolean' || body.live_mode !== (environment === 'production')) {
+    console.error(JSON.stringify({
+      event: 'BILLING_WEBHOOK_MODE_CHECK',
+      timestamp: new Date().toISOString(),
+      diagnostic_id: safeDiagnosticId(req.headers.get('x-f7-diagnostic-id')),
+      environment: ['test', 'production'].includes(environment) ? environment : 'unconfigured',
+      type: safeProviderLabel(body?.type || body?.action) || 'unknown',
+      resource_fingerprint: await resourceFingerprint(signature.dataId),
+      live_mode_type: typeof body?.live_mode,
+      live_mode: typeof body?.live_mode === 'boolean' ? body.live_mode : null,
+      result: 'rejected',
+      reason: 'environment_mismatch',
+    }));
+    return json({ code: 'WEBHOOK_MODE_MISMATCH' }, 409);
+  }
   const credentialCheck = await verifyMercadoPagoCredentialEnvironment(providerToken, environment as 'test' | 'production', providerFetch);
   if (credentialCheck !== 'verified') {
     return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialCheck === 'unavailable' ? 503 : 409);

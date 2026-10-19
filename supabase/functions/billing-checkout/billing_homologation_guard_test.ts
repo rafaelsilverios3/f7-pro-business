@@ -111,7 +111,7 @@ async function signedWebhook(
     false,
     ["sign"],
   );
-  const manifest = `id:${id};request-id:${requestId};ts:${timestamp};`;
+  const manifest = `id:${id.toLowerCase()};request-id:${requestId};ts:${timestamp};`;
   const bytes = await crypto.subtle.sign(
     "HMAC",
     key,
@@ -479,5 +479,36 @@ Deno.test("Billing webhook verifies a legitimate test identity before validating
     );
     assert(response.status === 422 && (await response.json()).code === "INVALID_WEBHOOK_EVENT", "verified sandbox identity did not pass the webhook mode gate");
     assert(providerCalls === 1 && client.tableCalls === 0 && client.rpcCalls === 0, "invalid event entered billing persistence after identity verification");
+  });
+});
+
+Deno.test("Billing Orders webhook validates uppercase resource IDs using the lowercase HMAC manifest", async () => {
+  await withEnv({
+    SUPABASE_URL: HOMOLOG_URL,
+    MERCADO_PAGO_ENVIRONMENT: "test",
+    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-synthetic-test-only",
+    MERCADO_PAGO_WEBHOOK_SECRET: "local-only-secret",
+  }, async () => {
+    const client = makeAdminClient();
+    let providerCalls = 0;
+    const resourceId = "ORDTST01M5AZ9PC35G1VDBYH1G0EKP7J";
+    const body = {
+      id: crypto.randomUUID(),
+      live_mode: false,
+      type: "",
+      data: { id: resourceId },
+    };
+    const response = await handleBillingWebhookRequest(
+      await signedWebhook("local-only-secret", body, resourceId),
+      {
+        adminClient: client,
+        providerFetch: async () => {
+          providerCalls += 1;
+          return Response.json({ id: 123, site_id: "MLB", tags: ["test_user"] });
+        },
+      },
+    );
+    assert(response.status === 422 && (await response.json()).code === "INVALID_WEBHOOK_EVENT", "uppercase Orders ID failed HMAC validation before event validation");
+    assert(providerCalls === 1 && client.tableCalls === 0 && client.rpcCalls === 0, "uppercase Orders ID reached billing persistence without a valid event");
   });
 });
