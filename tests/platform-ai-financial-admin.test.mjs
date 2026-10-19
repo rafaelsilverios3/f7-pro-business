@@ -6,6 +6,7 @@ import { validateAiRateCard, validateAiRateCardEnabled, validateCompanyAiBudget,
 const migration = fs.readFileSync('supabase/migrations/20261016232326_20261016170000_platform_ai_financial_admin_controls.sql', 'utf8');
 const lifecycleMigration = fs.readFileSync('supabase/migrations/20261016233851_platform_admin_temporary_expiry.sql', 'utf8');
 const budgetMigration = fs.readFileSync('supabase/migrations/20261014234651_ai_budget_reservations_and_settlement.sql', 'utf8');
+const zeroWebMigration = fs.readFileSync('supabase/migrations/20261019120000_ai_financial_zero_web_query_budget.sql', 'utf8');
 const edge = fs.readFileSync('supabase/functions/platform-admin/index.ts', 'utf8');
 const accessPolicy = fs.readFileSync('supabase/functions/_shared/platformAdminAccess.js', 'utf8');
 const ui = fs.readFileSync('src/components/platform-admin/AiFinancialControls.jsx', 'utf8');
@@ -63,6 +64,17 @@ test('database keeps AI pricing and reservation ledger private and exposes only 
   assert.match(migration, /AI_FINANCIAL_RATE_OVERLAP/);
   assert.equal((migration.match(/target_currency not in \('BRL','EUR','USD'\)/g) || []).length, 2);
   assert.doesNotMatch(migration, /AI_ENABLED|ALTER SYSTEM|dblink/i);
+});
+
+test('audited pilot-budget correction permits zero web queries without weakening financial authorization', () => {
+  assert.match(zeroWebMigration, /target_daily_web_queries is null or target_daily_web_queries not between 0 and 1000/i);
+  assert.doesNotMatch(zeroWebMigration, /target_daily_web_queries not between 1 and 1000/i);
+  assert.match(zeroWebMigration, /platform_admin_ai_assert_financial_admin\(\)/i);
+  assert.match(zeroWebMigration, /security definer[\s\S]*set search_path = pg_catalog, public/i);
+  assert.match(zeroWebMigration, /pg_advisory_xact_lock\(hashtextextended\(target_company::text \|\| ':' \|\| current_date::text \|\| ':ai-budget-v2', 0\)\)/i);
+  assert.match(zeroWebMigration, /platform_admin_audit_logs\([\s\S]*company\.ai_financial_budget\.changed/i);
+  assert.match(zeroWebMigration, /revoke all on function public\.platform_admin_ai_set_company_budget\([^;]+ from public, anon, authenticated, service_role/i);
+  assert.match(zeroWebMigration, /grant execute on function public\.platform_admin_ai_set_company_budget\([^;]+ to authenticated/i);
 });
 
 test('Edge financial actions use caller JWT RPCs and exclude limits from generic settings updates', () => {
