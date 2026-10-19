@@ -1,5 +1,5 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksBillingEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
 import { getMercadoPagoCredentialIdentity } from '../_shared/mercadoPagoCredentials.ts';
 
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -127,7 +127,7 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   const signature = await validateSignature(req, body);
   if (!signature.valid) return json({ code: 'INVALID_WEBHOOK_SIGNATURE' }, 401);
   const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
-  if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
+  if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
   const providerToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
   const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
   if (!['test', 'production'].includes(environment) || !providerToken) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);

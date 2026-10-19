@@ -18,6 +18,9 @@ export default function Checkout() {
   const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [plansError, setPlansError] = useState('');
+  const [billingHealth, setBillingHealth] = useState(null);
+  const [billingHealthLoading, setBillingHealthLoading] = useState(true);
+  const [billingHealthError, setBillingHealthError] = useState(false);
   const [billingModel, setBillingModel] = useState('one_time');
   const [billingPeriod, setBillingPeriod] = useState('month');
   const [method, setMethod] = useState('pix');
@@ -27,6 +30,22 @@ export default function Checkout() {
   const code = params.get('plan') || 'pro';
   const plan = plans.find((item) => item.code === code);
   const amountMinor = priceForBillingPeriod(plan, billingPeriod);
+  const publicCardKeyConfigured = Boolean(String(import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '').trim());
+  const pixAllowed = billingHealth?.pix_allowed === true;
+  const cardAllowed = billingHealth?.card_enabled === true && publicCardKeyConfigured;
+  const recurringAllowed = billingHealth?.recurring_enabled === true && publicCardKeyConfigured;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!company?.id) { setBillingHealthLoading(false); return undefined; }
+    setBillingHealthLoading(true);
+    setBillingHealthError(false);
+    billingService.health(company.id)
+      .then((health) => { if (!cancelled) setBillingHealth(health); })
+      .catch(() => { if (!cancelled) { setBillingHealth(null); setBillingHealthError(true); } })
+      .finally(() => { if (!cancelled) setBillingHealthLoading(false); });
+    return () => { cancelled = true; };
+  }, [company?.id]);
 
   useEffect(() => {
     if (plan?.billing_period === 'year') setBillingPeriod('year');
@@ -54,6 +73,8 @@ export default function Checkout() {
 
   const startPayment = async () => {
     if (!plan || amountMinor == null || !company?.id) return;
+    if (method === 'pix' && !pixAllowed) { setError('O checkout está temporariamente indisponível.'); return; }
+    if (method === 'card' && !(billingModel === 'recurring' ? recurringAllowed : cardAllowed)) { setError('Esta forma de pagamento ainda não está habilitada.'); return; }
     setLoading(true); setError('');
     try { setResult(await billingService.createCheckout(company.id, plan.code, billingModel, billingPeriod, method)); }
     catch (cause) { setError(cause.message || 'Não foi possível iniciar o checkout.'); }
@@ -62,6 +83,7 @@ export default function Checkout() {
 
   const submitCardToken = useCallback(async (cardPayment) => {
     if (!plan || !company?.id) throw new Error('Não foi possível vincular o plano à empresa atual.');
+    if (!(billingModel === 'recurring' ? recurringAllowed : cardAllowed)) throw new Error('Esta forma de pagamento ainda não está habilitada.');
     setLoading(true); setError('');
     try {
       // The single-use token is passed directly to the backend and is never
@@ -71,7 +93,7 @@ export default function Checkout() {
       return response;
     } catch (cause) { setError(cause.message || 'Não foi possível iniciar a assinatura.'); throw cause; }
     finally { setLoading(false); }
-  }, [billingModel, billingPeriod, company?.id, plan]);
+  }, [billingModel, billingPeriod, cardAllowed, company?.id, plan, recurringAllowed]);
 
   const onCardError = useCallback((cause) => setError(cause?.message || 'O formulário seguro de cartão não está disponível.'), []);
   const copy = async () => { if (result?.pix?.qr_code) await navigator.clipboard?.writeText(result.pix.qr_code); };
@@ -89,6 +111,8 @@ export default function Checkout() {
       <p className="mt-2 text-sm text-slate-500">{plan.description}</p>
       <p className="mt-5 text-3xl font-bold text-slate-900">{money(amountMinor, plan.currency)} <span className="text-sm font-normal text-slate-500">/ {billingPeriod === 'year' ? 'ano' : 'mês'}</span></p>
 
+      {(billingHealthLoading || billingHealthError || !billingHealth?.payments_enabled) && plan.code !== 'free' && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{billingHealthLoading ? 'Verificando disponibilidade segura do checkout…' : billingHealthError ? 'Não foi possível validar o checkout agora. Nenhuma cobrança será iniciada.' : 'O checkout ainda não está liberado para cobranças neste ambiente.'}</p>}
+
       {plan.code === 'free' ? <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">O plano FREE não gera cobrança. Você pode começar sem pagamento.</p>
         : amountMinor == null ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Este período ainda não possui um preço definido no catálogo oficial. Escolha outro período ou solicite a configuração comercial.</p>
           : result?.pix ? <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
@@ -105,7 +129,7 @@ export default function Checkout() {
               <legend className="text-sm font-semibold text-slate-800">Como deseja pagar?</legend>
               <div className="mt-2 grid gap-3 sm:grid-cols-2">
                 <label className={`cursor-pointer rounded-xl border p-3 ${billingModel === 'one_time' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}><input type="radio" name="billingModel" value="one_time" checked={billingModel === 'one_time'} onChange={() => { setBillingModel('one_time'); setMethod('pix'); setResult(null); }} /> <span className="ml-2 font-medium">Pagamento avulso</span><span className="mt-1 block text-xs text-slate-600">Acesso por período, sem renovação automática.</span></label>
-                <label className={`cursor-pointer rounded-xl border p-3 ${billingModel === 'recurring' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}><input type="radio" name="billingModel" value="recurring" checked={billingModel === 'recurring'} onChange={() => { setBillingModel('recurring'); setMethod('card'); setResult(null); }} /> <span className="ml-2 font-medium">Assinatura recorrente</span><span className="mt-1 block text-xs text-slate-600">Cartão cobrado automaticamente a cada período; cancele quando quiser.</span></label>
+                <label className={`rounded-xl border p-3 ${billingModel === 'recurring' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'} ${recurringAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}><input type="radio" name="billingModel" value="recurring" checked={billingModel === 'recurring'} disabled={!recurringAllowed} onChange={() => { setBillingModel('recurring'); setMethod('card'); setResult(null); }} /> <span className="ml-2 font-medium">Assinatura recorrente</span><span className="mt-1 block text-xs text-slate-600">Cartão cobrado automaticamente a cada período; cancele quando quiser.{!recurringAllowed ? ' Indisponível até validação e ativação da reconciliação recorrente.' : ''}</span></label>
               </div>
             </fieldset>
             <fieldset className="mt-4">
@@ -114,11 +138,11 @@ export default function Checkout() {
               {plan.billing_period === 'month' && billingPeriod === 'year' && <p className="mt-2 text-xs text-slate-500">Total anual equivalente a 12 mensalidades, sem desconto. O valor final é recalculado e validado pelo backend.</p>}
             </fieldset>
             <div className="mt-4 flex gap-3">
-              {billingModel === 'one_time' && <label className="text-sm">Forma de pagamento<select className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2" value={method} onChange={(event) => { setMethod(event.target.value); setResult(null); }}><option value="pix">PIX</option><option value="card">Cartão</option></select></label>}
+              {billingModel === 'one_time' && <label className="text-sm">Forma de pagamento<select className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2" value={method} onChange={(event) => { setMethod(event.target.value); setResult(null); }}><option value="pix" disabled={!pixAllowed}>PIX</option><option value="card" disabled={!cardAllowed}>Cartão{!cardAllowed ? ' (indisponível)' : ''}</option></select></label>}
               {billingModel === 'recurring' && <p className="text-sm text-slate-600">Forma de pagamento: cartão com tokenização segura do Mercado Pago.</p>}
             </div>
-            {method === 'pix' ? <><p className="mt-2 text-xs text-slate-500">Pagamento único; o período contratado expira e poderá ser renovado manualmente.</p><Button className="mt-5 w-full" onClick={startPayment} disabled={loading || amountMinor == null}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Gerar PIX</Button></>
-              : <MercadoPagoCardTokenBrick amountMinor={amountMinor} email={user?.email} onToken={submitCardToken} onError={onCardError} />}
+            {method === 'pix' ? <><p className="mt-2 text-xs text-slate-500">Pagamento único; o período contratado expira e poderá ser renovado manualmente.</p><Button className="mt-5 w-full" onClick={startPayment} disabled={loading || amountMinor == null || !pixAllowed}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Gerar PIX</Button></>
+              : cardAllowed && (billingModel !== 'recurring' || recurringAllowed) ? <MercadoPagoCardTokenBrick amountMinor={amountMinor} email={user?.email} onToken={submitCardToken} onError={onCardError} /> : <p role="status" className="mt-4 rounded-xl bg-slate-100 p-3 text-sm text-slate-600">O checkout com cartão ainda não está habilitado neste ambiente.</p>}
           </>}
 
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}

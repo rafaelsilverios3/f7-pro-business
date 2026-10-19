@@ -1,6 +1,6 @@
 import { handleBillingSubscriptionReconcile } from './index.ts';
 
-const assert = (value: unknown, message: string): asserts value => { if (!value) throw new Error(message); };
+const assert: (value: unknown, message: string) => asserts value = (value, message) => { if (!value) throw new Error(message); };
 const checkoutId = '5a9a0e8c-4096-4b28-8f3b-0dc4ab35ad3f';
 const subId = 'preapproval-test-01';
 const claim = { id: '4f847735-c824-46f0-bdfd-4296dc63442e', company_id: '80447da8-38ca-4c1f-927f-ad53c6aa9152', checkout_id: checkoutId, plan_id: '7b48f19b-65ee-4f35-b115-4de692ae21c3', provider_subscription_id: subId, amount_minor: 1990, currency: 'BRL', billing_period_snapshot: 'month', lease_token: '9b7445b4-0662-4fd9-bc0c-492888b6e5a0' };

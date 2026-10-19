@@ -1,5 +1,5 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation, blocksRecurringBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksBillingEnvironmentMismatch, blocksRecurringEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
 import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
@@ -19,7 +19,7 @@ async function handleCreditPackageCheckout(req: Request, sb: any, providerFetch:
   const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
   if (!member?.active || !['admin', 'gestor'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
   const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
-  if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
+  if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
   if (!['test', 'production'].includes(environment)) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
   if (environment === 'production' && (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() !== 'true') return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
   const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
@@ -107,12 +107,16 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
       return json({ code: 'PLAN_PRICE_INVALID' }, 409);
     }
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
-    if (blocksRecurringBillingInHomologation(billingModel, environment)) return json({ code: 'HOMOLOGATION_RECURRING_BILLING_TEST_ONLY' }, 409);
-    if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
+    if (blocksRecurringEnvironmentMismatch(billingModel, environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
+    if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
     const validEnvironment = environment === 'test' || environment === 'production';
     if (!validEnvironment) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
     const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
     if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
+    if (environment === 'production' && billingModel === 'recurring' &&
+      (Deno.env.get('BILLING_RECONCILIATION_ENABLED') || '').trim().toLowerCase() !== 'true') {
+      return json({ code: 'BILLING_RECONCILIATION_NOT_READY' }, 409);
+    }
     let appBackUrl: string | null = null;
     if (billingModel === 'recurring') {
       try {

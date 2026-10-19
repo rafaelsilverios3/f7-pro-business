@@ -110,9 +110,11 @@ Deno.test('billing-health checks exact authenticated tenant and returns only ope
     provider: 'mercado_pago',
     environment: 'test',
     state: 'ready',
+    credentials_verified: true,
     payments_enabled: true,
     pix_allowed: true,
     card_enabled: false,
+    recurring_enabled: false,
   });
   assert(!JSON.stringify(body).includes('987654321'));
   assert(!JSON.stringify(body).includes('private@example.test'));
@@ -125,9 +127,9 @@ Deno.test('billing-health fails closed when membership lookup fails', async () =
   assertEquals(await response.json(), { code: 'AUTHORIZATION_CHECK_FAILED' });
 });
 
-Deno.test('homologation never probes production provider credentials', async () => {
+Deno.test('non-production projects never probe production provider credentials', async () => {
   const { client } = fakeAdmin();
-  Deno.env.set('SUPABASE_URL', 'https://vwylnjmapixtzhryiutt.supabase.co');
+  Deno.env.set('SUPABASE_URL', 'https://f7-homologation.invalid');
   let providerCalls = 0;
   const response = await handleBillingHealthRequest(request(), {
     adminClient: client,
@@ -145,9 +147,11 @@ Deno.test('homologation never probes production provider credentials', async () 
     provider: 'mercado_pago',
     environment: 'production',
     state: 'payments_disabled',
+    credentials_verified: false,
     payments_enabled: false,
     pix_allowed: false,
     card_enabled: false,
+    recurring_enabled: false,
   });
 });
 
@@ -165,8 +169,74 @@ Deno.test('production identity in test mode fails closed without exposing accoun
     provider: 'mercado_pago',
     environment: 'test',
     state: 'configuration_required',
+    credentials_verified: false,
     payments_enabled: false,
     pix_allowed: false,
     card_enabled: false,
+    recurring_enabled: false,
   });
+});
+
+Deno.test('production billing-health verifies production credentials read-only while charges remain gated', async () => {
+  const { client } = fakeAdmin();
+  const previousProjectUrl = Deno.env.get('SUPABASE_URL');
+  Deno.env.set('SUPABASE_URL', 'https://vwylnjmapixtzhryiutt.supabase.co');
+  let providerCalls = 0;
+  const response = await handleBillingHealthRequest(request(), {
+    adminClient: client,
+    getEnv: env({
+      MERCADO_PAGO_ENVIRONMENT: 'production',
+      MERCADO_PAGO_ACCESS_TOKEN: 'APP_USR-private-test-value',
+      MERCADO_PAGO_WEBHOOK_SECRET: 'configured',
+      MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: 'false',
+      BILLING_RECONCILIATION_ENABLED: 'false',
+    }),
+    providerFetch: async (url, init) => {
+      providerCalls++;
+      assertEquals(String(url), 'https://api.mercadolibre.com/users/me');
+      assertEquals(new Headers(init?.headers).get('Authorization'), 'Bearer APP_USR-private-test-value');
+      return Response.json({ id: 987654321, site_id: 'MLB', tags: [], email: 'private@example.test' });
+    },
+  });
+  assertEquals(response.status, 200);
+  assertEquals(providerCalls, 1);
+  assertEquals(await response.json(), {
+    provider: 'mercado_pago',
+    environment: 'production',
+    state: 'payments_disabled',
+    credentials_verified: true,
+    payments_enabled: false,
+    pix_allowed: false,
+    card_enabled: false,
+    recurring_enabled: false,
+  });
+  previousProjectUrl === undefined ? Deno.env.delete('SUPABASE_URL') : Deno.env.set('SUPABASE_URL', previousProjectUrl);
+});
+
+Deno.test('production billing-health only reports recurring when payments and reconciliation are enabled', async () => {
+  const { client } = fakeAdmin();
+  const previousProjectUrl = Deno.env.get('SUPABASE_URL');
+  Deno.env.set('SUPABASE_URL', 'https://vwylnjmapixtzhryiutt.supabase.co');
+  const response = await handleBillingHealthRequest(request(), {
+    adminClient: client,
+    getEnv: env({
+      MERCADO_PAGO_ENVIRONMENT: 'production',
+      MERCADO_PAGO_ACCESS_TOKEN: 'APP_USR-private-test-value',
+      MERCADO_PAGO_WEBHOOK_SECRET: 'configured',
+      MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: 'true',
+      BILLING_RECONCILIATION_ENABLED: 'true',
+    }),
+    providerFetch: async () => Response.json({ id: 987654321, site_id: 'MLB', tags: [] }),
+  });
+  assertEquals(await response.json(), {
+    provider: 'mercado_pago',
+    environment: 'production',
+    state: 'ready',
+    credentials_verified: true,
+    payments_enabled: true,
+    pix_allowed: true,
+    card_enabled: true,
+    recurring_enabled: true,
+  });
+  previousProjectUrl === undefined ? Deno.env.delete('SUPABASE_URL') : Deno.env.set('SUPABASE_URL', previousProjectUrl);
 });

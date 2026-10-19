@@ -2,11 +2,12 @@ import { handleBillingCheckoutRequest } from "./index.ts";
 import { handleBillingSubscriptionManageRequest } from "../billing-subscription-manage/index.ts";
 import { handleBillingWebhookRequest } from "../billing-webhook/index.ts";
 import {
-  blocksLiveBillingInHomologation,
-  blocksRecurringBillingInHomologation,
+  blocksBillingEnvironmentMismatch,
+  blocksRecurringEnvironmentMismatch,
 } from "../_shared/billingEnvironment.ts";
 
-const HOMOLOG_URL = "https://vwylnjmapixtzhryiutt.supabase.co";
+const HOMOLOG_URL = "https://f7-homologation.invalid";
+const PRODUCTION_URL = "https://vwylnjmapixtzhryiutt.supabase.co";
 const companyId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
 const subscriptionId = "33333333-3333-4333-8333-333333333333";
@@ -143,27 +144,42 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
     MERCADO_PAGO_WEBHOOK_SECRET: "local-only-secret",
   }, async () => {
     assert(
-      blocksLiveBillingInHomologation("production"),
+      blocksBillingEnvironmentMismatch("production"),
       "homologation project did not block production mode",
     );
     assert(
-      !blocksLiveBillingInHomologation("test"),
+      !blocksBillingEnvironmentMismatch("test"),
       "sandbox mode was incorrectly blocked",
     );
     assert(
-      blocksRecurringBillingInHomologation("recurring", "production"),
+      blocksRecurringEnvironmentMismatch("recurring", "production"),
       "homologation did not block recurring billing with production credentials",
     );
     assert(
-      !blocksRecurringBillingInHomologation("one_time", "production"),
+      !blocksRecurringEnvironmentMismatch("one_time", "production"),
       "one-time contract was incorrectly classified as recurring",
     );
-    assert(!blocksRecurringBillingInHomologation("recurring", "test"), "verified test recurring mode was blocked");
-    Deno.env.set("SUPABASE_URL", "https://other-project.supabase.co");
+    assert(!blocksRecurringEnvironmentMismatch("recurring", "test"), "verified test recurring mode was blocked");
+    Deno.env.set("SUPABASE_URL", PRODUCTION_URL);
     assert(
-      !blocksLiveBillingInHomologation("production"),
-      "guard blocked an unrelated project",
+      !blocksBillingEnvironmentMismatch("production"),
+      "production mode was blocked on the designated production project",
     );
+    assert(
+      blocksBillingEnvironmentMismatch("test"),
+      "test billing was allowed to target the production database",
+    );
+    assert(
+      !blocksRecurringEnvironmentMismatch("recurring", "production"),
+      "production recurring billing was blocked on the production project",
+    );
+    assert(
+      blocksRecurringEnvironmentMismatch("recurring", "test"),
+      "sandbox recurring billing was allowed to target the production database",
+    );
+    Deno.env.set("SUPABASE_URL", "https://other-project.supabase.co");
+    assert(blocksBillingEnvironmentMismatch("production"), "live payments were allowed outside the official production project");
+    assert(!blocksBillingEnvironmentMismatch("test"), "sandbox payments were blocked outside the official production project");
     Deno.env.set("SUPABASE_URL", HOMOLOG_URL);
 
     const client = makeAdminClient();
@@ -191,7 +207,7 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
     );
     assert(
       checkout.status === 409 &&
-        (await checkout.json()).code === "HOMOLOGATION_LIVE_PAYMENTS_DISABLED",
+        (await checkout.json()).code === "BILLING_ENVIRONMENT_MISMATCH",
       "live checkout was not rejected",
     );
     assert(
@@ -220,7 +236,7 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
     );
     assert(
       manage.status === 409 &&
-        (await manage.json()).code === "HOMOLOGATION_LIVE_PAYMENTS_DISABLED",
+        (await manage.json()).code === "BILLING_ENVIRONMENT_MISMATCH",
       "live subscription control was not rejected",
     );
     assert(
@@ -255,7 +271,7 @@ Deno.test("Billing homologation: production mode is blocked even with live crede
     );
     assert(
       webhook.status === 409 &&
-        (await webhook.json()).code === "HOMOLOGATION_LIVE_PAYMENTS_DISABLED",
+        (await webhook.json()).code === "BILLING_ENVIRONMENT_MISMATCH",
       "signed live webhook was not rejected",
     );
     assert(
@@ -301,12 +317,105 @@ Deno.test("Billing homologation: live recurring is closed before persistence or 
     );
     assert(
       response.status === 409 &&
-        (await response.json()).code === "HOMOLOGATION_RECURRING_BILLING_TEST_ONLY",
+        (await response.json()).code === "BILLING_ENVIRONMENT_MISMATCH",
       "live recurring checkout was not blocked in homologation",
     );
     assert(
       providerCalls === 0 && client.rpcCalls === 0,
       "recurring card checkout reached provider or persisted an intent",
+    );
+  });
+});
+
+Deno.test("production recurring is closed until reconciliation is enabled", async () => {
+  await withEnv({
+    SUPABASE_URL: PRODUCTION_URL,
+    MERCADO_PAGO_ENVIRONMENT: "production",
+    MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: "true",
+    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-synthetic-test-only",
+    MERCADO_PAGO_WEBHOOK_SECRET: "local-only-secret",
+    APP_URL: "https://f7business.com.br/f7probusiness",
+    APP_ORIGIN: "https://f7business.com.br",
+  }, async () => {
+    const client = makeAdminClient();
+    let providerCalls = 0;
+    const response = await handleBillingCheckoutRequest(
+      new Request("https://local.invalid/functions/v1/billing-checkout", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer synthetic",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          company_id: companyId,
+          plan_code: "pro",
+          method: "card",
+          billing_model: "recurring",
+          billing_period: "month",
+          card_payment: { token: "synthetic-card-token" },
+        }),
+      }),
+      {
+        adminClient: client,
+        providerFetch: async () => {
+          providerCalls++;
+          throw new Error("Provider must not be called before reconciliation is enabled.");
+        },
+      },
+    );
+    assert(
+      response.status === 409 &&
+        (await response.json()).code === "BILLING_RECONCILIATION_NOT_READY",
+      "production recurring checkout was not closed without reconciliation",
+    );
+    assert(
+      providerCalls === 0 && client.rpcCalls === 0,
+      "recurring checkout reached provider or persisted an intent before reconciliation",
+    );
+  });
+});
+
+Deno.test("official production checkout stays closed until the live-payment gate is enabled", async () => {
+  await withEnv({
+    SUPABASE_URL: PRODUCTION_URL,
+    MERCADO_PAGO_ENVIRONMENT: "production",
+    MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: "false",
+    MERCADO_PAGO_ACCESS_TOKEN: "APP_USR-synthetic-production-only",
+    MERCADO_PAGO_WEBHOOK_SECRET: "local-only-secret",
+  }, async () => {
+    const client = makeAdminClient();
+    let providerCalls = 0;
+    const response = await handleBillingCheckoutRequest(
+      new Request("https://local.invalid/functions/v1/billing-checkout", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer synthetic",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          company_id: companyId,
+          plan_code: "pro",
+          method: "pix",
+          billing_model: "one_time",
+          billing_period: "month",
+        }),
+      }),
+      {
+        adminClient: client,
+        providerFetch: async () => {
+          providerCalls++;
+          throw new Error("Provider must not be called while live payments are gated.");
+        },
+      },
+    );
+    assert(
+      response.status === 409 &&
+        (await response.json()).code === "PRODUCTION_PAYMENTS_DISABLED",
+      "production checkout did not fail closed while the live-payment gate was off",
+    );
+    assert(
+      providerCalls === 0 && client.rpcCalls === 0,
+      "production checkout reached the provider or wrote an intent while gated",
     );
   });
 });

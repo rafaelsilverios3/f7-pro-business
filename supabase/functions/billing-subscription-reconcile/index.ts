@@ -1,5 +1,5 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksBillingEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
 import { getMercadoPagoCredentialIdentity } from '../_shared/mercadoPagoCredentials.ts';
 
 type Claim = {
@@ -167,7 +167,7 @@ export async function handleBillingSubscriptionReconcile(req: Request, dependenc
   const token = env.MERCADO_PAGO_ACCESS_TOKEN || '';
   const productionEnabled = (env.MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED || '').trim().toLowerCase() === 'true';
   if (!['test','production'].includes(environment) || !token) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);
-  if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
+  if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
   if (environment === 'production' && !productionEnabled) return json({ code: 'MERCADO_PAGO_PRODUCTION_DISABLED' }, 503);
   const providerFetch = dependencies.providerFetch || fetch;
   const credentialIdentity = await getMercadoPagoCredentialIdentity(token, environment, providerFetch);
