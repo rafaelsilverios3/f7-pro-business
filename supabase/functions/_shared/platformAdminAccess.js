@@ -17,6 +17,7 @@ const AI_FINANCIAL_WRITE_ACTIONS = new Set([
   'ai_credits_plan_update', 'ai_credits_pricing_update', 'ai_credits_rate_pricing_update', 'ai_credits_package_update', 'ai_credits_company_adjust',
   'ai_owner_usage_update',
 ]);
+const AI_CREDIT_RECOVERY_ACTIONS = new Set(['ai_credits_uncertain_list', 'ai_credits_uncertain_resolve']);
 
 export function isPlatformAdminCurrent(row, now = Date.now()) {
   if (!row || row.status !== 'active' || !PLATFORM_ROLES.includes(row.role)) return false;
@@ -44,6 +45,7 @@ export function normalizePlatformAdminExpiry(value, { required = false, allowPer
 
 export function platformAdminCanAccessAction(role, action) {
   if (!PLATFORM_ROLES.includes(role)) return false;
+  if (AI_CREDIT_RECOVERY_ACTIONS.has(action) && role !== 'owner') return false;
   if (role === 'readonly' && !READONLY_ACTIONS.has(action)) return false;
   if (role === 'support' && !SUPPORT_ACTIONS.has(action)) return false;
   if (AI_FINANCIAL_WRITE_ACTIONS.has(action) && role !== 'owner') return false;

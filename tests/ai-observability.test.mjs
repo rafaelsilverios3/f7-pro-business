@@ -54,7 +54,8 @@ test('model budget policy fails closed for zero, missing, invalid, or underprice
   assert.equal(budgetPolicy.planModelReservation({ settings: base, rateCard: { ...rateCard, input_cost_per_1k: Number.NaN }, inputTokens: 100, maxOutputTokens: 200 }).reason, 'ai_model_price_missing');
   assert.equal(budgetPolicy.planModelReservation({ settings: base, rateCard: { ...rateCard, currency: 'EUR' }, inputTokens: 100, maxOutputTokens: 200 }).reason, 'budget_currency_mismatch');
   assert.equal(budgetPolicy.planModelReservation({ settings: { ...base, max_daily_ai_cost: 0.001 }, rateCard, inputTokens: 100, maxOutputTokens: 200 }).reason, 'daily_ai_cost_exceeded');
-  assert.equal(budgetPolicy.planModelReservation({ settings: base, rateCard, inputTokens: 4990, maxOutputTokens: 20 }).reason, 'request_tokens_exceeded');
+  assert.equal(budgetPolicy.planModelReservation({ settings: base, rateCard, inputTokens: 4990, maxOutputTokens: 20 }).allowed, true);
+  assert.equal(budgetPolicy.planModelReservation({ settings: base, rateCard, inputTokens: 100, maxOutputTokens: 5001 }).reason, 'output_tokens_exceeded');
   assert.equal(budgetPolicy.planModelReservation({ settings: base, rateCard: { ...rateCard, output_cost_per_1k: 0 }, inputTokens: 100, maxOutputTokens: 20 }).allowed, true);
 });
 

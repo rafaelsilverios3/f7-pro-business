@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { platformAdminCanAccessAction } from '../supabase/functions/_shared/platformAdminAccess.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const migration = read('../supabase/migrations/20261019003000_f7_ai_credits.sql');
+const recoveryMigration = read('../supabase/migrations/20261019130000_ai_credit_uncertain_reconciliation.sql');
+const outputTokenCapMigration = read('../supabase/migrations/20261019140000_ai_budget_output_token_cap.sql');
 const generationHandlers = [
   ['../supabase/functions/ai-sales-assistant/index.ts', 'await reserveAIForOwnerOrCredits(sb', 'generated = await modelRouter.generateStructured'],
   ['../supabase/functions/intelligence-query/index.ts', 'await reserveAIForOwnerOrCredits(sb', "const generated: any = await modelRouter.generateStructured('openai_compatible', { query"],
@@ -65,4 +68,45 @@ test('credit confirmation binds backend quote to request and cancellation does n
   assert.match(dialog, /Saldo mínimo após a análise/);
   assert.match(dialog, /Cancelar/);
   assert.match(dialog, /Confirmar análise/);
+});
+
+test('uncertain credit recovery is Owner-only, evidence-bound, auditable, and idempotent', () => {
+  assert.match(recoveryMigration, /status in \('quoted','reserved','settled','cancelled','uncertain','expired','released'\)/i);
+  assert.match(recoveryMigration, /role='owner' and a\.status='active' and a\.expires_at is null/i);
+  assert.match(recoveryMigration, /p_resolution is null or p_resolution not in \('provider_not_sent','usage_confirmed'\)/i);
+  assert.match(recoveryMigration, /Unknown provider outcomes must remain held/i);
+  assert.match(recoveryMigration, /for update/i);
+  assert.match(recoveryMigration, /uncertain-release:'\|\|op\.id/i);
+  assert.match(recoveryMigration, /on conflict\(company_id,entry_type,reference_key\) do nothing/i);
+  assert.match(recoveryMigration, /platform_admin_audit_logs/i);
+  assert.match(recoveryMigration, /reconciliation_evidence_ref=safe_evidence then[\s\S]*duplicate.*true/i);
+  assert.match(recoveryMigration, /platform_admin_ai_credit_uncertain_list_v1/i);
+  assert.match(recoveryMigration, /grant execute on function public\.platform_admin_ai_credit_uncertain_list_v1\(\) to authenticated/i);
+  assert.match(recoveryMigration, /revoke all on function public\.platform_admin_ai_credit_uncertain_list_v1\(\) from public,anon,service_role/i);
+  assert.match(recoveryMigration, /AI_CREDITS_CEILING_BREACHED/i);
+  const admin = read('../supabase/functions/platform-admin/index.ts');
+  assert.match(admin, /caller\.rpc\('platform_admin_ai_credit_uncertain_list_v1'\)/);
+  assert.doesNotMatch(admin, /service\.from\('ai_credit_operations'\)/);
+  const policy = read('../supabase/functions/_shared/platformAdminAccess.js');
+  assert.match(policy, /AI_CREDIT_RECOVERY_ACTIONS/);
+  assert.match(policy, /AI_CREDIT_RECOVERY_ACTIONS\.has\(action\) && role !== 'owner'/);
+  assert.equal(platformAdminCanAccessAction('owner', 'ai_credits_uncertain_list'), true);
+  for (const role of ['admin', 'support', 'readonly']) {
+    assert.equal(platformAdminCanAccessAction(role, 'ai_credits_uncertain_list'), false);
+    assert.equal(platformAdminCanAccessAction(role, 'ai_credits_uncertain_resolve'), false);
+  }
+  const panel = read('../src/components/platform-admin/AiCreditsAdmin.jsx');
+  assert.match(panel, /Se o resultado for desconhecido, cancele e mantenha a reserva/);
+  assert.match(panel, /evidências verificáveis provam que o provedor NÃO recebeu/);
+});
+
+test('AI financial budget caps requested output while reserving full input and output cost', () => {
+  assert.match(outputTokenCapMigration, /requested_output_tokens > cfg\.max_tokens_per_request/);
+  assert.match(outputTokenCapMigration, /'output_tokens_exceeded'/);
+  assert.doesNotMatch(outputTokenCapMigration, /reserved_tokens > cfg\.max_tokens_per_request/);
+  assert.match(outputTokenCapMigration, /reserved_tokens := requested_input_tokens::bigint \+ requested_output_tokens::bigint/);
+  assert.match(outputTokenCapMigration, /rate\.input_cost_per_1k \* requested_input_tokens \+ rate\.output_cost_per_1k \* requested_output_tokens/);
+  assert.match(outputTokenCapMigration, /'reserved_tokens',reserved_tokens,'max_output_tokens',requested_output_tokens/);
+  assert.match(outputTokenCapMigration, /revoke all on function public\.reserve_ai_budget_v2[\s\S]*from public,anon,authenticated/);
+  assert.match(outputTokenCapMigration, /grant execute on function public\.reserve_ai_budget_v2[\s\S]*to service_role/);
 });

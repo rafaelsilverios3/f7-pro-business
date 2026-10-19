@@ -39,6 +39,7 @@ export function GlobalAiCreditsAdmin({ canManage }) {
   return <section className="space-y-4 rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5">
     <div><h3 className="font-semibold text-slate-900">F7 AI Credits · catálogo global</h3><p className="mt-1 text-xs text-slate-600">As franquias e pacotes são configuráveis aqui. O câmbio não vem fixo no código: sem taxa vigente, cotações para tarifas em USD falham fechadas.</p></div>
     {canManage && <OwnerAIUsageControls />}
+    {canManage && <OwnerAICreditRecovery />}
     <Message error={Boolean(error)}>{error}</Message><Message>{message}</Message>
     <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-sm font-semibold">Franquia mensal por plano</h4>{canManage && <button disabled={busy} onClick={updatePricing} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-800 disabled:opacity-50">Configurar câmbio, margem e confirmação</button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{(catalog?.plans || []).map((row) => <article key={row.plan_code} className="rounded-xl border border-slate-200 bg-white p-4"><p className="font-semibold uppercase">{row.plan_code}</p><p className="mt-1 text-sm">{Number(row.monthly_credits).toLocaleString('pt-BR')} créditos/mês</p>{canManage && <button disabled={busy} onClick={() => updatePlan(row)} className="mt-3 text-xs font-semibold text-blue-700">Alterar franquia</button>}</article>)}</div>
@@ -85,6 +86,51 @@ function OwnerAIUsageControls() {
       <p className="text-[11px] text-slate-500 sm:col-span-3">Pesquisa web fica em zero durante o piloto. O teto financeiro diário pessoal continua obrigatório como proteção global, mesmo quando os limites temporários de chamadas e pesquisa forem desativados. A isenção comercial permanece e nada altera os limites dos clientes.</p>
       <button disabled={busy || reason.trim().length < 8 || !Number.isInteger(Number(calls)) || Number(calls) < 1 || Number(calls) > 1000 || !Number.isFinite(Number(budget)) || Number(budget) < 0.01 || Number(budget) > 100000} onClick={save} className="w-fit rounded-lg bg-violet-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:col-span-3">{busy ? 'Salvando…' : 'Salvar limites pessoais'}</button>
     </div>
+  </section>;
+}
+
+function OwnerAICreditRecovery() {
+  const [rows, setRows] = useState([]); const [busyId, setBusyId] = useState('');
+  const [resolutionById, setResolutionById] = useState({}); const [evidenceById, setEvidenceById] = useState({});
+  const [reasonById, setReasonById] = useState({}); const [inputById, setInputById] = useState({}); const [outputById, setOutputById] = useState({});
+  const [error, setError] = useState(''); const [message, setMessage] = useState('');
+  const load = useCallback(async () => { try { const result = await platformAdminService.aiCreditUncertainOperations(); setRows(result.rows || []); setError(''); } catch (cause) { setError(cause.message || 'Reservas pendentes indisponíveis.'); } }, []);
+  useEffect(() => { load(); }, [load]);
+  const resolve = async (row) => {
+    const resolution = resolutionById[row.id] || 'provider_not_sent';
+    const confirmed = resolution === 'provider_not_sent'
+      ? window.confirm('Confirme somente se evidências verificáveis provam que o provedor NÃO recebeu a solicitação. Se o resultado for desconhecido, cancele e mantenha a reserva. Continuar?')
+      : window.confirm('Confirme que os tokens informados vêm de registro confiável do provedor e correspondem a esta operação. Continuar?');
+    if (!confirmed) return;
+    setBusyId(row.id); setError(''); setMessage('');
+    try {
+      const result = await platformAdminService.reconcileAiCreditOperation({
+        company_id: row.company_id, operation_id: row.id, resolution,
+        actual_input: inputById[row.id] ?? '', actual_output: outputById[row.id] ?? '',
+        evidence_ref: evidenceById[row.id] || '', reason: reasonById[row.id] || '',
+      });
+      if (result?.result?.ok !== true) throw new Error(result?.result?.code || 'AI_CREDIT_RECONCILIATION_FAILED');
+      const status = result?.result?.status || (result?.result?.duplicate ? 'já reconciliada' : 'concluída');
+      setMessage(`Reconciliação ${status}; ação auditada.`); await load();
+    } catch (cause) { setError(cause.message || 'Reconciliação recusada; a reserva permanece protegida.'); }
+    finally { setBusyId(''); }
+  };
+  return <section className="space-y-3 rounded-xl border border-amber-200 bg-white p-4">
+    <div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-amber-950">Reservas de IA sem liquidação</h4><p className="mt-1 text-xs text-slate-600">Apenas Owner Global. Resultado desconhecido permanece reservado. Libere somente com evidência de que o provedor não recebeu a solicitação; liquide somente com uso confiável confirmado.</p></div><button type="button" onClick={load} className="text-xs font-semibold text-blue-700">Atualizar</button></div>
+    <Message error={Boolean(error)}>{error}</Message><Message>{message}</Message>
+    {!rows.length ? <p className="text-xs text-slate-500">Nenhuma reserva pendente.</p> : rows.map((row) => {
+      const resolution = resolutionById[row.id] || 'provider_not_sent';
+      return <article key={row.id} className="space-y-3 rounded-lg border border-slate-200 p-3">
+        <div className="grid gap-2 text-xs sm:grid-cols-4"><Metric label="Operação" value={row.id} /><Metric label="Empresa" value={row.company_id} /><Metric label="Modelo / estado" value={`${row.model_key} · ${row.status}`} /><Metric label="Reserva / máximo" value={`${Number(row.reserved_monthly) + Number(row.reserved_extra)} / ${row.max_credits} créditos`} /></div>
+        {Number.isInteger(row.actual_input_tokens) && Number.isInteger(row.actual_output_tokens) && <p className="text-xs text-slate-600">Tokens registrados: entrada {row.actual_input_tokens}, saída {row.actual_output_tokens}.</p>}
+        <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-medium text-slate-600">Resultado comprovado<select className={inputClass} value={resolution} onChange={(event) => setResolutionById((old) => ({ ...old, [row.id]: event.target.value }))}><option value="provider_not_sent">Provedor comprovadamente não recebeu — liberar reserva</option><option value="usage_confirmed">Uso confirmado — liquidar tokens reais</option></select></label>
+          {resolution === 'usage_confirmed' && <div className="grid grid-cols-2 gap-2"><NumberField label="Tokens de entrada" type="number" min="0" value={inputById[row.id] ?? ''} onChange={(value) => setInputById((old) => ({ ...old, [row.id]: value }))} /><NumberField label="Tokens de saída" type="number" min="0" value={outputById[row.id] ?? ''} onChange={(value) => setOutputById((old) => ({ ...old, [row.id]: value }))} /></div>}
+          <NumberField label="Referência da evidência, sem segredos" value={evidenceById[row.id] || ''} maxLength="200" onChange={(value) => setEvidenceById((old) => ({ ...old, [row.id]: value }))} />
+          <label className="text-xs font-medium text-slate-600">Motivo auditável<textarea className={`${inputClass} min-h-16`} maxLength="500" value={reasonById[row.id] || ''} onChange={(event) => setReasonById((old) => ({ ...old, [row.id]: event.target.value }))} /></label>
+        </div>
+        <button type="button" disabled={busyId === row.id || (reasonById[row.id] || '').trim().length < 8 || (evidenceById[row.id] || '').trim().length < 8 || (resolution === 'usage_confirmed' && (inputById[row.id] === undefined || outputById[row.id] === undefined))} onClick={() => resolve(row)} className="rounded-lg bg-amber-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{busyId === row.id ? 'Reconciliando…' : 'Confirmar reconciliação'}</button>
+      </article>;
+    })}
   </section>;
 }
 
