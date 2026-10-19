@@ -150,10 +150,10 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
       {canManage && <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700"><input type="checkbox" checked={enabled} disabled={!canManage || busy} onChange={(event) => setEnabled(event.target.checked)} />Consumo por geração habilitado</label>
         <Field label="Máximo de chamadas por dia (1–1000)" type="number" min="1" max="1000" step="1" value={calls} disabled={!canManage || busy || !enabled} onChange={(event) => setCalls(event.target.value)} />
-        <Field label="Máximo de consultas externas/dia (1–1000)" type="number" min="1" max="1000" step="1" value={webQueries} disabled={!canManage || busy || !enabled} onChange={(event) => setWebQueries(event.target.value)} />
+        <Field label="Máximo de consultas externas/dia (0–1000)" type="number" min="0" max="1000" step="1" value={webQueries} disabled={!canManage || busy || !enabled} onChange={(event) => setWebQueries(event.target.value)} />
         <Field label="Teto diário na moeda escolhida (máx. 1000)" type="number" min="0.0001" max="1000" step="0.0001" value={budget} disabled={!canManage || busy || !enabled} onChange={(event) => setBudget(event.target.value)} />
         <SelectField label="Moeda do teto" value={currency} disabled={!canManage || busy || !enabled} onChange={(event) => setCurrency(event.target.value)}><option value="">Selecione</option>{aiCurrencies.map((supported) => <option key={supported} value={supported}>{supported}</option>)}</SelectField>
-        <Field label="Tokens máximos por solicitação (256–100000)" type="number" min="256" max="100000" step="1" value={tokens} disabled={!canManage || busy || !enabled} onChange={(event) => setTokens(event.target.value)} />
+        <Field label="Tokens máximos de saída por solicitação (256–100000)" type="number" min="256" max="100000" step="1" value={tokens} disabled={!canManage || busy || !enabled} onChange={(event) => setTokens(event.target.value)} />
         <Field label="Motivo de auditoria (não inclua dados sensíveis)" value={reason} maxLength={500} disabled={!canManage || busy} onChange={(event) => setReason(event.target.value)} placeholder="Motivo obrigatório" />
         <button className={`${buttonClass} sm:col-span-2 xl:col-span-3`} disabled={!canManage || busy || reason.trim().length < 8}>{busy ? 'Salvando…' : 'Salvar limites auditados'}</button>
       </form>}
