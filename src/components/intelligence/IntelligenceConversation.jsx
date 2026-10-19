@@ -24,6 +24,7 @@ export default function IntelligenceConversation({ company }) {
   const [routeContext, setRouteContext] = useState({});
   const [creditQuote, setCreditQuote] = useState(null);
   const [pendingRequest, setPendingRequest] = useState(null);
+  const [creditRefreshKey, setCreditRefreshKey] = useState(0);
   React.useEffect(() => { const incoming = location.state?.query || new URLSearchParams(location.search).get('query'); const incomingContext = location.state?.context || {}; if (incoming) setQuery(incoming); if (Object.keys(incomingContext).length) setRouteContext(incomingContext); if (incoming || Object.keys(incomingContext).length) navigate(location.pathname, { replace: true, state: null }); }, [location.pathname, location.search, location.state, navigate]);
 
   const ask = async (value = query, approved = null) => {
@@ -34,6 +35,7 @@ export default function IntelligenceConversation({ company }) {
     try {
       const result = await intelligenceService.query(company.id, text, pending.history, pending.context, { requestId: pending.requestId, ...(approved ? { quoteId: approved.quoteId, confirmed: true } : {}) });
       setMessages((current) => [...current, { query: text, result }]);
+      setCreditRefreshKey((current) => current + 1);
       setPendingRequest(null); setCreditQuote(null);
     } catch (cause) {
       if (cause.code === 'AI_CREDITS_CONFIRMATION_REQUIRED' && cause.aiCreditQuote?.quote_id) {
@@ -62,7 +64,7 @@ export default function IntelligenceConversation({ company }) {
   const followUp = (prompt, asked) => ask(`${prompt} Contexto da análise anterior: ${asked}`);
   const openSupplierSearch = (asked) => navigate('/supplier-intelligence', { state: { query: asked, context: buildModuleContext({ item: { ...routeContext, id: routeContext.opportunity_id, metadata: routeContext }, sourceModule: 'intelligence', intent: 'supplier_research' }) } });
 
-  return <><AICreditsWallet companyId={company?.id} email={user?.email} /><AICreditConfirmationDialog quote={creditQuote} busy={loading} onCancel={cancelCreditQuote} onConfirm={() => pendingRequest && ask('', pendingRequest)} /><section className="mb-6 overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-br from-[#0e1a2b] via-[#182b52] to-indigo-900 text-white shadow-lg">
+  return <><AICreditsWallet companyId={company?.id} email={user?.email} refreshKey={creditRefreshKey} /><AICreditConfirmationDialog quote={creditQuote} busy={loading} onCancel={cancelCreditQuote} onConfirm={() => pendingRequest && ask('', pendingRequest)} /><section className="mb-6 overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-br from-[#0e1a2b] via-[#182b52] to-indigo-900 text-white shadow-lg">
     <div className="p-5 sm:p-6">
       <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-400/20"><Sparkles className="h-5 w-5 text-indigo-200" /></div><div><h2 className="text-lg font-semibold">Como posso ajudar sua empresa hoje?</h2><p className="mt-1 text-xs text-indigo-100/80">Converse com a F7 Intelligence usando os dados autorizados da sua empresa.</p>{Object.keys(routeContext).length > 0 && <p className="mt-2 text-[11px] text-indigo-200">Contexto recebido de {routeContext.source_module || 'outro módulo'} · {contextSummary(routeContext).opportunity_id ? 'oportunidade vinculada' : 'entidade vinculada'}</p>}</div></div>
       <form className="mt-5 flex gap-2" onSubmit={(event) => { event.preventDefault(); ask(); }}><input value={query} onChange={(event) => setQuery(event.target.value)} disabled={loading} placeholder="Pergunte à F7 Intelligence..." className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-indigo-100/60 focus:border-indigo-300" /><Button type="submit" disabled={loading || !query.trim()} className="shrink-0 bg-indigo-400 text-slate-950 hover:bg-indigo-300">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}</Button></form>

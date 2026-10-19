@@ -7,11 +7,11 @@ import { useCompanyMembership } from '@/hooks/useCompanyMembership';
 
 const price = (minor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(minor || 0) / 100);
 
-export default function AICreditsWallet({ companyId, email }) {
+export default function AICreditsWallet({ companyId, email, refreshKey = 0 }) {
   const membership = useCompanyMembership(companyId);
   const [snapshot, setSnapshot] = useState(null); const [selected, setSelected] = useState(null); const [method, setMethod] = useState('pix'); const [payment, setPayment] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = useCallback(async () => { if (!companyId || import.meta.env.VITE_DATA_PROVIDER !== 'supabase') return; try { setSnapshot(await aiCreditsService.snapshot(companyId)); setError(''); } catch { setSnapshot(null); setError('Saldo de F7 AI Credits indisponível.'); } }, [companyId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshKey]);
   const canPurchase = membership.active && ['admin', 'gestor'].includes(membership.role);
   const startPix = async (pkg) => {
     if (!canPurchase) return;
