@@ -231,8 +231,8 @@ Deno.test('Billing: sandbox local checkout, webhook HMAC, idempotÃªncia e ativaÃ
     });
     orderToReturn = {
       id: creditOrderId, status: 'processed', status_detail: 'accredited', external_reference: creditPurchase.data.id,
-      currency_id: 'BRL', total_amount: 19.90,
-      transactions: { payments: [{ id: creditPaymentId, status: 'processed', status_detail: 'accredited', amount: 19.90, currency_id: 'BRL' }] },
+      total_amount: 19.90,
+      transactions: { payments: [{ id: creditPaymentId, status: 'processed', status_detail: 'accredited', amount: 19.90 }] },
     };
     const creditWebhook = await handleBillingWebhookRequest(creditWebhookRequest(), { adminClient: admin, providerFetch });
     const creditWebhookBody = await creditWebhook.json();

@@ -47,7 +47,12 @@ async function handleCreditPackageCheckout(req: Request, sb: any, providerFetch:
   catch { return json({code:'MERCADO_PAGO_RESULT_UNCERTAIN'},503); }
   const payload = await response.json().catch(()=>({})); const payment = payload?.transactions?.payments?.[0] || {};
   const paymentId = clean(payment.id,120); const orderId = clean(payload?.id,120); const status = clean(payment.status || payload?.status,40);
-  const providerAmountMinor = Math.round(Number(payment.amount ?? payload?.total_amount) * 100); const currency = String(payment.currency_id || payload?.currency_id || '').toUpperCase();
+  const providerAmountMinor = Math.round(Number(payment.amount ?? payload?.total_amount) * 100);
+  // The Orders API response for Brazilian sellers omits currency_id on PIX
+  // orders. The credential check above only accepts an MLB seller identity,
+  // which fixes the account market to Brazil; use the server-owned package
+  // currency in that case and continue to reject any explicit mismatch.
+  const currency = String(payment.currency_id || payload?.currency_id || (credentialCheck === 'verified' ? purchase.currency : '')).toUpperCase();
   if (!response.ok || !paymentId || !orderId || providerAmountMinor !== Number(purchase.amount_minor) || currency !== 'BRL') return json({code:response.ok?'MERCADO_PAGO_RESPONSE_MISMATCH':'MERCADO_PAGO_ERROR'},502);
   const persisted = await sb.rpc('persist_ai_credit_purchase_provider_v1',{p_purchase_id:purchase.id,p_payment_id:paymentId,p_order_id:orderId,p_status:status});
   if (persisted.error || persisted.data?.code !== 'OK') return json({code:'AI_CREDIT_PURCHASE_STATE_RETRYABLE'},503);

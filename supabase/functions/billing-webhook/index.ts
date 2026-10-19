@@ -290,7 +290,11 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   const providerAmountValue = payment.amount ?? resource.total_amount ?? resource.transaction_amount;
   const providerAmount = providerAmountValue === null || providerAmountValue === undefined || providerAmountValue === '' ? Number.NaN : Number(providerAmountValue);
   const providerAmountMinor = Number.isFinite(providerAmount) ? Math.round(providerAmount * 100) : null;
-  const providerCurrency = String(payment.currency_id || resource.currency_id || '').toUpperCase();
+  // Mercado Pago Orders responses omit currency_id for Brazilian PIX orders.
+  // `verified` here means the access token identity was verified as an MLB
+  // account, so BRL is the provider market currency. Explicit provider values
+  // remain authoritative and are still checked against the purchase/session.
+  const providerCurrency = String(payment.currency_id || resource.currency_id || (isOrder && credentialCheck === 'verified' ? 'BRL' : '')).toUpperCase();
   if (!eventRecordId) return json({ code: 'WEBHOOK_EVENT_NOT_AVAILABLE' }, 503);
   if (!paymentId || providerAmountMinor === null || !providerCurrency) {
     await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' }, evidence);

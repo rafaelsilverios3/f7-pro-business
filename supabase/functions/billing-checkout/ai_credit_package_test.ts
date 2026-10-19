@@ -53,8 +53,8 @@ Deno.test('AI credit package PIX uses database amount and remains pending until 
       if (url === 'https://api.mercadolibre.com/users/me') return Response.json({ id: 1, site_id: 'MLB', tags: ['test_user'] });
       if (url === 'https://api.mercadopago.com/v1/orders') return Response.json({
         id: 'fixture-order', status: 'action_required', external_reference: '22222222-2222-4222-8222-222222222222',
-        total_amount: '19.90', currency_id: 'BRL',
-        transactions: { payments: [{ id: 'fixture-payment', status: 'pending', amount: '19.90', currency_id: 'BRL', point_of_interaction: { transaction_data: { qr_code: 'fixture-qr' } } }] },
+        total_amount: '19.90',
+        transactions: { payments: [{ id: 'fixture-payment', status: 'pending', amount: '19.90', point_of_interaction: { transaction_data: { qr_code: 'fixture-qr' } } }] },
       }, { status: 201 });
       throw new Error('unexpected external request');
     };
