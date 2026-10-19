@@ -7,6 +7,11 @@ const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u000
 const providerUrl = 'https://api.mercadopago.com/v1/orders';
 
 async function handleCreditPackageCheckout(req: Request, sb: any, providerFetch: typeof fetch, user: any, body: any, companyId: string, method: string) {
+  // AI credit packs are a separate commercial product from plan subscriptions.
+  // A production plan-payment rollout must not silently enable pack purchases.
+  if ((Deno.env.get('MERCADO_PAGO_AI_CREDITS_ENABLED') || '').trim().toLowerCase() !== 'true') {
+    return json({ code: 'AI_CREDITS_COMMERCE_DISABLED' }, 409);
+  }
   if (!companyId || !['pix', 'card'].includes(method) || body?.billing_model && body.billing_model !== 'one_time') return json({ code: 'AI_CREDIT_PURCHASE_INVALID' }, 422);
   const requestKey = uuid(body?.request_id);
   const packageCode = clean(body?.package_code, 40);

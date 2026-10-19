@@ -31,11 +31,12 @@ function fakeAdmin(role = 'admin') {
 }
 
 async function withTestEnvironment(run: () => Promise<void>) {
-  const names = ['MERCADO_PAGO_ENVIRONMENT', 'MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'MERCADO_PAGO_ACCESS_TOKEN', 'MERCADO_PAGO_WEBHOOK_SECRET'];
+  const names = ['MERCADO_PAGO_ENVIRONMENT', 'MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'MERCADO_PAGO_AI_CREDITS_ENABLED', 'MERCADO_PAGO_ACCESS_TOKEN', 'MERCADO_PAGO_WEBHOOK_SECRET'];
   const previous = new Map(names.map((name) => [name, Deno.env.get(name)]));
   try {
     Deno.env.set('MERCADO_PAGO_ENVIRONMENT', 'test');
     Deno.env.set('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED', 'false');
+    Deno.env.set('MERCADO_PAGO_AI_CREDITS_ENABLED', 'true');
     Deno.env.set('MERCADO_PAGO_ACCESS_TOKEN', 'fixture-only-token');
     Deno.env.set('MERCADO_PAGO_WEBHOOK_SECRET', 'fixture-only-webhook-secret');
     await run();
@@ -43,6 +44,20 @@ async function withTestEnvironment(run: () => Promise<void>) {
     for (const [name, value] of previous) value === undefined ? Deno.env.delete(name) : Deno.env.set(name, value);
   }
 }
+
+Deno.test('AI credit package checkout stays disabled by default independently of plan billing', async () => {
+  await withTestEnvironment(async () => {
+    Deno.env.delete('MERCADO_PAGO_AI_CREDITS_ENABLED');
+    const sb = fakeAdmin();
+    let providerCalls = 0;
+    const response = await handleBillingCheckoutRequest(request({
+      purchase_type: 'ai_credits', company_id: '33333333-3333-4333-8333-333333333333', package_code: 'credits_500',
+      method: 'pix', request_id: '44444444-4444-4444-8444-444444444444',
+    }), { adminClient: sb, providerFetch: async () => { providerCalls += 1; return Response.json({}); } });
+    assert(response.status === 409 && (await response.json()).code === 'AI_CREDITS_COMMERCE_DISABLED', 'AI credit commerce was not independently gated');
+    assert(providerCalls === 0 && sb.rpcCalls.length === 0, 'disabled AI credit checkout touched the provider or purchase ledger');
+  });
+});
 
 Deno.test('AI credit package PIX uses database amount and remains pending until webhook; all provider I/O is stubbed', async () => {
   await withTestEnvironment(async () => {
