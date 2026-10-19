@@ -16,6 +16,7 @@ const validRate = { rate_kind: 'model_tokens', provider_key: 'https://api.openai
 
 test('budget policy accepts bounded explicit pilot input and safe disable', () => {
   assert.deepEqual(validateCompanyAiBudget(validBudget), { allowed: true });
+  assert.deepEqual(validateCompanyAiBudget({ ...validBudget, daily_web_queries: 0 }), { allowed: true });
   assert.deepEqual(validateCompanyAiBudget({ consumption_enabled: false, reason: 'Pause the AI spend' }), { allowed: true });
   for (const patch of [
     { daily_calls: 0 }, { daily_calls: 1001 }, { daily_web_queries: -1 },

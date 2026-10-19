@@ -19,7 +19,7 @@ export function validateCompanyAiBudget(input) {
   const budget = Number(input.daily_budget);
   const tokens = Number(input.max_tokens_per_request);
   if (!Number.isInteger(calls) || calls < 1 || calls > MAX_DAILY_LIMIT
-    || !Number.isInteger(webQueries) || webQueries < 1 || webQueries > MAX_DAILY_LIMIT
+    || !Number.isInteger(webQueries) || webQueries < 0 || webQueries > MAX_DAILY_LIMIT
     || !finite(input.daily_budget) || budget <= 0 || budget > MAX_DAILY_BUDGET
     || !Number.isInteger(tokens) || tokens < 256 || tokens > MAX_REQUEST_TOKENS
     || typeof input.currency !== 'string' || !SUPPORTED_AI_CURRENCIES.includes(input.currency)) {

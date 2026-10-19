@@ -296,6 +296,22 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
     await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' }, evidence);
     return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
   }
+  const purchaseId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(externalReference) ? externalReference : null;
+  if (purchaseId) {
+    const creditStatus = normalized.activationEligible ? 'approved'
+      : ['refunded','charged_back'].includes(normalized.status) ? 'refunded'
+        : ['rejected','cancelled'].includes(normalized.status) ? normalized.status : 'pending';
+    const creditSettlement = await sb.rpc('settle_ai_credit_purchase_v1', {
+      p_purchase_id: purchaseId, p_payment_id: paymentId, p_status: creditStatus,
+      p_amount_minor: providerAmountMinor, p_currency: providerCurrency,
+    });
+    if (creditSettlement.error) return json({ code: 'AI_CREDIT_PURCHASE_SETTLEMENT_RETRYABLE' }, 503);
+    if (creditSettlement.data?.code !== 'AI_CREDIT_PURCHASE_NOT_FOUND') {
+      if (creditSettlement.data?.code !== 'OK') return json({ code: clean(creditSettlement.data?.code, 80) || 'AI_CREDIT_PURCHASE_SETTLEMENT_REJECTED' }, 422);
+      await updateEvent({ status: 'processed', processed: true, processed_at: new Date().toISOString() }, evidence);
+      return json({ code: 'OK', status: creditSettlement.data.status || creditStatus, credited: Boolean(creditSettlement.data.credited), duplicate: Boolean(creditSettlement.data.duplicate) });
+    }
+  }
   const settled = await sb.rpc('settle_billing_webhook_event', {
     p_event_id: eventRecordId,
     p_processing_token: processingToken,

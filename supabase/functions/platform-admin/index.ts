@@ -63,6 +63,28 @@ Deno.serve(async (req) => {
     if (['ai_financial_rates', 'ai_financial_usage'].includes(action) && !['support', 'readonly'].includes(adminRow.data.role)) {
       await audit(service, { admin_user_id: actor.id, company_id: action === 'ai_financial_usage' ? clean(input.company_id, 80) || null : null, action: 'platform_admin.ai_financial.read', entity: 'ai_financial_admin', entity_id: action, after_data: { action }, reason: 'Financial AI data read' }, req);
     }
+    if (action.startsWith('ai_credits_')) {
+      const caller = userClient(jwt);
+      const procedures: Record<string, [string, Record<string, unknown>]> = {
+        ai_credits_catalog: ['platform_admin_ai_credit_catalog_v1', {}],
+        ai_credits_company_read: ['platform_admin_ai_credit_company_v1', { p_company: clean(input.company_id, 80) }],
+        ai_credits_plan_update: ['platform_admin_ai_credit_update_plan_v1', { p_plan: clean(input.plan_code, 20), p_credits: Number(input.monthly_credits), p_reason: clean(input.reason, 500) }],
+        ai_credits_pricing_update: ['platform_admin_ai_credit_update_pricing_v1', { p_usd_to_brl: input.usd_to_brl === '' ? null : input.usd_to_brl, p_markup_bps: Number(input.markup_bps), p_threshold: Number(input.confirmation_threshold_credits), p_balance_bps: Number(input.confirmation_balance_bps), p_reason: clean(input.reason, 500) }],
+        ai_credits_rate_pricing_update: ['platform_admin_ai_credit_update_rate_pricing_v1', { p_rate_card_id: clean(input.rate_card_id, 80), p_markup_bps: input.markup_bps === '' || input.markup_bps === undefined ? null : Number(input.markup_bps), p_fx_to_brl: input.fx_to_brl === '' || input.fx_to_brl === undefined ? null : Number(input.fx_to_brl), p_reason: clean(input.reason, 500) }],
+        ai_credits_package_update: ['platform_admin_ai_credit_update_package_v1', { p_package: clean(input.package_code, 40), p_credits: Number(input.credits), p_price_minor: Number(input.price_minor), p_active: input.active === true, p_reason: clean(input.reason, 500) }],
+        ai_credits_company_adjust: ['platform_admin_ai_credit_adjust_company_v1', { p_company: clean(input.company_id, 80), p_monthly: input.monthly_allowance === '' || input.monthly_allowance === undefined ? null : Number(input.monthly_allowance), p_bonus: Number(input.bonus_credits || 0), p_reference: clean(input.reference_key, 120), p_expires_at: input.expires_at || null, p_reason: clean(input.reason, 500) }],
+      };
+      const configured = procedures[action];
+      if (!configured) return json({ error: 'AI_CREDITS_ACTION_NOT_FOUND' }, 404);
+      const [procedure, args] = configured;
+      const { data, error } = await caller.rpc(procedure, args);
+      if (error) return json({ error: ['PLATFORM_OWNER_REQUIRED','AI_CREDITS_CONFIG_INVALID','AI_CREDITS_REFERENCE_REQUIRED'].includes(error.message) ? error.message : 'AI_CREDITS_ADMIN_OPERATION_FAILED' }, error.code === '42501' ? 403 : 422);
+      await audit(service, { admin_user_id: actor.id, company_id: action === 'ai_credits_company_adjust' ? clean(input.company_id, 80) || null : null, action: `platform_admin.${action}`, entity: procedure, entity_id: clean(input.plan_code || input.package_code || input.company_id, 120) || null, after_data: action === 'ai_credits_catalog' ? { catalog_read: true } : data, reason: clean(input.reason, 500) || (action === 'ai_credits_catalog' ? 'Read AI Credits administration' : undefined) }, req);
+      if (action === 'ai_credits_catalog') return json(data);
+      if (action === 'ai_credits_company_read') return json(data);
+      if (action === 'ai_credits_company_adjust') return json({ wallet: data });
+      return json({ result: data });
+    }
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
     if (action === 'overview') {

@@ -1,8 +1,8 @@
 export const PLATFORM_ROLES = Object.freeze(['owner', 'admin', 'support', 'readonly']);
 
 const WRITE_ROLES = new Set(['owner', 'admin']);
-const READONLY_ACTIONS = new Set(['access', 'overview', 'companies', 'health', 'ai_financial_rates', 'ai_financial_usage']);
-const SUPPORT_ACTIONS = new Set(['access', 'overview', 'companies', 'company', 'subscriptions', 'whatsapp', 'health', 'ai_financial_rates', 'ai_financial_usage']);
+const READONLY_ACTIONS = new Set(['access', 'overview', 'companies', 'health', 'ai_financial_rates', 'ai_financial_usage', 'ai_credits_catalog', 'ai_credits_company_read']);
+const SUPPORT_ACTIONS = new Set(['access', 'overview', 'companies', 'company', 'subscriptions', 'whatsapp', 'health', 'ai_financial_rates', 'ai_financial_usage', 'ai_credits_catalog', 'ai_credits_company_read']);
 const ADMIN_MANAGEMENT_ACTIONS = new Set(['create_platform_admin', 'update_platform_admin']);
 const WRITE_ACTIONS = new Set([
   'update_company_plan', 'update_company_status', 'create_warning', 'resolve_warning',
@@ -14,6 +14,7 @@ const AI_FINANCIAL_ACTIONS = new Set([
 ]);
 const AI_FINANCIAL_WRITE_ACTIONS = new Set([
   'ai_financial_budget', 'ai_financial_rate_create', 'ai_financial_rate_enable',
+  'ai_credits_plan_update', 'ai_credits_pricing_update', 'ai_credits_rate_pricing_update', 'ai_credits_package_update', 'ai_credits_company_adjust',
 ]);
 
 export function isPlatformAdminCurrent(row, now = Date.now()) {
