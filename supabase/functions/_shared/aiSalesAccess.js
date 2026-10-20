@@ -21,6 +21,9 @@ const TOOL_PERMISSIONS = Object.freeze({
   supplier_external: ['supplier_intelligence.view'],
   channels: ['sales_channels.view'],
   supplier_offer_pricing: ['catalog.view', 'purchases.view', 'pricing.view'],
+  sales_analysis: ['sales.view'],
+  message_draft: ['ai_sales.use'],
+  general_guidance: ['ai_sales.use'],
 });
 
 const safeString = (value, max = 160) => String(value ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -68,6 +71,20 @@ export function sanitizeAiSalesProviderData(tool, result) {
     const rows = list(result);
     return { opportunity_count: rows.length, by_stage: rows.reduce((summary, row) => { const key = safeString(row?.stage || row?.status || 'sem etapa', 40); summary[key] = (summary[key] || 0) + 1; return summary; }, {}) };
   }
+  if (tool === 'analisar_vendas') return result ? {
+    period_days: Number(result.period_days || 30),
+    included_sales: Number(result.included_sales || 0),
+    excluded_drafts: Number(result.excluded_drafts || 0),
+    gross_total: Number(result.gross_total || 0),
+    by_status: result.by_status || {},
+    sample_limited: result.sample_limited === true,
+  } : null;
+  if (tool === 'redigir_mensagem') return result ? {
+    request: safeString(result.request, 600),
+    product_matches: list(result.products).slice(0, 10).map((row) => ({ name: safeString(row?.name), sku: safeString(row?.sku, 60) || null, sale_price: Number(row?.price || 0), own_stock_units: Number(row?.stock || 0) })),
+    product_lookup_performed: result.product_lookup_performed === true,
+  } : null;
+  if (tool === 'orientacao_comercial') return result ? { request: safeString(result.request, 600), source: 'general_guidance' } : null;
   if (tool === 'consultar_fornecedor') {
     const rows = list(result);
     return {

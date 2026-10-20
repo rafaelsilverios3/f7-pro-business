@@ -10,7 +10,7 @@ import { marketIntelligenceService } from '@/services/marketIntelligenceService'
 import { salesHubService } from '@/services/salesHubService';
 
 const requireToolAccess = (user, permission = 'ai_sales.use') => { if (!can(user, permission)) throw new Error('Você não tem permissão para usar esta ferramenta.'); };
-export const AI_TOOL_NAMES = Object.freeze(['buscar_produto', 'consultar_estoque', 'consultar_preco', 'listar_variacoes', 'buscar_cliente', 'criar_rascunho_pedido', 'consultar_pedido', 'buscar_oportunidades', 'consultar_fornecedor', 'analisar_ofertas_fornecedor', 'consultar_canais']);
+export const AI_TOOL_NAMES = Object.freeze(['buscar_produto', 'consultar_estoque', 'consultar_preco', 'listar_variacoes', 'buscar_cliente', 'criar_rascunho_pedido', 'consultar_pedido', 'analisar_vendas', 'buscar_oportunidades', 'consultar_fornecedor', 'analisar_ofertas_fornecedor', 'consultar_canais', 'redigir_mensagem', 'orientacao_comercial']);
 export function createAiSalesTools({ companyId, user }) {
   if (!companyId) throw new Error('Empresa não identificada.');
   requireToolAccess(user);
