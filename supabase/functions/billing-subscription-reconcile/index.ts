@@ -159,10 +159,10 @@ export async function handleBillingSubscriptionReconcile(req: Request, dependenc
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
   const env = dependencies.env || { BILLING_RECONCILIATION_ENABLED: Deno.env.get('BILLING_RECONCILIATION_ENABLED'), BILLING_RECONCILIATION_SECRET: Deno.env.get('BILLING_RECONCILIATION_SECRET'), MERCADO_PAGO_ENVIRONMENT: Deno.env.get('MERCADO_PAGO_ENVIRONMENT'), MERCADO_PAGO_ACCESS_TOKEN: Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN'), MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') };
-  if (env.BILLING_RECONCILIATION_ENABLED !== 'true') return json({ code: 'RECONCILIATION_DISABLED' }, 503);
   const secret = env.BILLING_RECONCILIATION_SECRET || '';
   const supplied = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
   if (!secret || !timingSafeEqual(supplied, secret)) return json({ code: 'UNAUTHORIZED' }, 401);
+  if (env.BILLING_RECONCILIATION_ENABLED !== 'true') return json({ code: 'RECONCILIATION_DISABLED' }, 503);
   const environment = (env.MERCADO_PAGO_ENVIRONMENT || '').trim().toLowerCase();
   const token = env.MERCADO_PAGO_ACCESS_TOKEN || '';
   const productionEnabled = (env.MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED || '').trim().toLowerCase() === 'true';

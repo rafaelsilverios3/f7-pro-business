@@ -89,7 +89,10 @@ Deno.test('fails closed on provider seller mismatch and releases lease for backo
 
 Deno.test('disabled gate cannot query provider or database', async () => {
   const f = fixture(); f.env.BILLING_RECONCILIATION_ENABLED = 'false';
+  const unauthorized = await handleBillingSubscriptionReconcile(new Request('http://localhost', { method: 'POST' }), { adminClient: f.client, providerFetch: f.fetcher, env: f.env });
+  assert(unauthorized.status === 401, 'disabled gate must not bypass scheduler authentication');
   const response = await handleBillingSubscriptionReconcile(f.request(), { adminClient: f.client, providerFetch: f.fetcher, env: f.env });
   assert(response.status === 503, 'disabled reconciliation must fail closed');
+  assert((await response.json()).code === 'RECONCILIATION_DISABLED', 'authenticated caller should receive disabled status');
   assert(f.calls.length === 0 && f.settlements.length === 0, 'disabled gate reached dependencies');
 });
