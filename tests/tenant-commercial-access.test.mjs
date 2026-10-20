@@ -8,6 +8,7 @@ const purchaseMigration = fs.readFileSync('supabase/migrations/0003_transactiona
 const productionMigration = fs.readFileSync('supabase/migrations/0054_production_module.sql', 'utf8');
 const draftMigration = fs.readFileSync('supabase/migrations/0086_ai_sales_draft_rpc.sql', 'utf8');
 const serviceLedgerMigration = fs.readFileSync('supabase/migrations/0087_service_role_commercial_ledger_write_boundary.sql', 'utf8');
+const activeSubscriptionGateMigration = fs.readFileSync('supabase/migrations/20261020022410_platform_entitlement_requires_active_subscription.sql', 'utf8');
 
 test('browser entitlement RPC preserves PostgREST argument names and requires active company membership', () => {
   assert.match(migration, /company_has_feature\(target_company uuid, feature text\)/i);
@@ -21,6 +22,14 @@ test('internal entitlement lookup is executable only by service_role', () => {
   assert.match(migration, /create or replace function public\.company_has_feature_internal\(target_company uuid, feature text\)/i);
   assert.match(migration, /revoke all on function public\.company_has_feature_internal\(uuid, text\) from public, anon, authenticated/i);
   assert.match(migration, /grant execute on function public\.company_has_feature_internal\(uuid, text\) to service_role/i);
+});
+
+test('pending subscription states and inactive plan catalog entries fail closed before overrides or fallbacks', () => {
+  assert.match(activeSubscriptionGateMigration, /subscription_found and subscription_status is distinct from 'active'[\s\S]*?return false/i);
+  assert.match(activeSubscriptionGateMigration, /select p\.active into plan_is_active[\s\S]*?plan_is_active is distinct from true[\s\S]*?return false/i);
+  assert.ok(activeSubscriptionGateMigration.indexOf('plan_is_active is distinct from true') < activeSubscriptionGateMigration.indexOf('from public.company_feature_overrides'));
+  assert.match(activeSubscriptionGateMigration, /missing row uses the Free fallback/i);
+  assert.match(activeSubscriptionGateMigration, /security definer[\s\S]*?set search_path = pg_catalog, public, pg_temp/i);
 });
 
 test('service-role Edge Functions use the restricted resolver after their own authorization checks', () => {
