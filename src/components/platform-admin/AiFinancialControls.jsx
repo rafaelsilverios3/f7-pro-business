@@ -114,6 +114,8 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
 
 export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSaved }) {
   const [usage, setUsage] = useState(null);
+  const [usageCompanyId, setUsageCompanyId] = useState(null);
+  const [formDirty, setFormDirty] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [calls, setCalls] = useState('');
   const [webQueries, setWebQueries] = useState('');
@@ -124,14 +126,15 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const loadUsage = useCallback(async () => { if (!canRead) return; try { const result = await platformAdminService.aiFinancialUsage(companyId); setUsage(result.usage); } catch (cause) { setError(cause.message || 'Não foi possível carregar consumo e reservas.'); } }, [canRead, companyId]);
+  useEffect(() => { setUsage(null); setUsageCompanyId(null); setFormDirty(false); setError(''); setMessage(''); }, [companyId]);
+  const loadUsage = useCallback(async () => { if (!canRead) return; try { const result = await platformAdminService.aiFinancialUsage(companyId); setUsage(result.usage); setUsageCompanyId(companyId); } catch (cause) { setError(cause.message || 'Não foi possível carregar consumo e reservas.'); } }, [canRead, companyId]);
   useEffect(() => { loadUsage(); }, [loadUsage]);
   useEffect(() => {
-    if (!usage) return;
+    if (!usage || usageCompanyId !== companyId || formDirty) return;
     const budgetSettings = usage.budget;
     const active = Number(budgetSettings?.max_daily_ai_calls) > 0 && Number(budgetSettings?.max_daily_ai_cost) > 0 && /^[A-Z]{3}$/.test(budgetSettings?.ai_budget_currency || '');
     setEnabled(active); setCalls(String(budgetSettings?.max_daily_ai_calls ?? 0)); setWebQueries(String(budgetSettings?.max_daily_web_queries ?? 0)); setBudget(String(budgetSettings?.max_daily_ai_cost ?? 0)); setCurrency(budgetSettings?.ai_budget_currency || ''); setTokens(String(budgetSettings?.max_tokens_per_request ?? 8000));
-  }, [companyId, usage]);
+  }, [companyId, formDirty, usage, usageCompanyId]);
   const today = usage?.today || {};
   const reservations = usage?.reservations || [];
   if (!canRead) return <Notice>Consulta de orçamento e consumo não está disponível para este papel.</Notice>;
@@ -139,8 +142,16 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     try {
       await platformAdminService.updateAiFinancialBudget({ company_id: companyId, consumption_enabled: enabled, daily_calls: Number(calls), daily_web_queries: Number(webQueries), daily_budget: Number(budget), currency: currency.toUpperCase(), max_tokens_per_request: Number(tokens), reason });
-      setMessage(enabled ? 'Limites financeiros salvos com auditoria.' : 'Consumo de geração pausado. Tarifas e histórico foram preservados.'); setReason(''); await onSaved?.(); await loadUsage();
+      setMessage(enabled ? 'Limites financeiros salvos com auditoria.' : 'Consumo pausado. O orçamento existente foi preservado; use “Restaurar orçamento a zero” para removê-lo.'); setReason(''); setFormDirty(false); await onSaved?.(); await loadUsage();
     } catch (cause) { setError(cause.message || 'Não foi possível salvar os limites financeiros.'); }
+    finally { setBusy(false); }
+  };
+  const clearBudget = async () => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await platformAdminService.updateAiFinancialBudget({ company_id: companyId, consumption_enabled: false, clear_budget: true, daily_calls: 0, daily_web_queries: 0, daily_budget: 0, currency: '', max_tokens_per_request: Number(tokens) || 8000, reason });
+      setEnabled(false); setBudget('0'); setCurrency(''); setCalls('0'); setWebQueries('0'); setReason(''); setFormDirty(false); setMessage('Orçamento diário restaurado para zero com auditoria.'); await onSaved?.(); await loadUsage();
+    } catch (cause) { setError(cause.message || 'Não foi possível limpar o orçamento.'); }
     finally { setBusy(false); }
   };
   return <div className="space-y-4">
@@ -148,14 +159,14 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
       <div><h3 className="font-semibold text-slate-900">Orçamento de geração da empresa</h3><p className="mt-1 text-xs text-slate-500">O estado abaixo controla apenas o limite da empresa. Não ativa AI_ENABLED, não altera manutenção e não configura segredos do provedor.</p></div>
       {error && <Notice tone="red">{error}</Notice>}{message && <Notice tone="green">{message}</Notice>}
       {canManage && <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700"><input type="checkbox" checked={enabled} disabled={!canManage || busy} onChange={(event) => setEnabled(event.target.checked)} />Consumo por geração habilitado</label>
-        <Field label="Máximo de chamadas por dia (1–1000)" type="number" min="1" max="1000" step="1" value={calls} disabled={!canManage || busy || !enabled} onChange={(event) => setCalls(event.target.value)} />
-        <Field label="Máximo de consultas externas/dia (0–1000)" type="number" min="0" max="1000" step="1" value={webQueries} disabled={!canManage || busy || !enabled} onChange={(event) => setWebQueries(event.target.value)} />
-        <Field label="Teto diário na moeda escolhida (máx. 1000)" type="number" min="0.0001" max="1000" step="0.0001" value={budget} disabled={!canManage || busy || !enabled} onChange={(event) => setBudget(event.target.value)} />
-        <SelectField label="Moeda do teto" value={currency} disabled={!canManage || busy || !enabled} onChange={(event) => setCurrency(event.target.value)}><option value="">Selecione</option>{aiCurrencies.map((supported) => <option key={supported} value={supported}>{supported}</option>)}</SelectField>
-        <Field label="Tokens máximos de saída por solicitação (256–100000)" type="number" min="256" max="100000" step="1" value={tokens} disabled={!canManage || busy || !enabled} onChange={(event) => setTokens(event.target.value)} />
-        <Field label="Motivo de auditoria (não inclua dados sensíveis)" value={reason} maxLength={500} disabled={!canManage || busy} onChange={(event) => setReason(event.target.value)} placeholder="Motivo obrigatório" />
-        <button className={`${buttonClass} sm:col-span-2 xl:col-span-3`} disabled={!canManage || busy || reason.trim().length < 8}>{busy ? 'Salvando…' : 'Salvar limites auditados'}</button>
+        <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700"><input type="checkbox" checked={enabled} disabled={!canManage || busy} onChange={(event) => { setEnabled(event.target.checked); setFormDirty(true); }} />Consumo por geração habilitado</label>
+        <Field label="Máximo de chamadas por dia (1–1000)" type="number" min="1" max="1000" step="1" value={calls} disabled={!canManage || busy || !enabled} onChange={(event) => { setCalls(event.target.value); setFormDirty(true); }} />
+        <Field label="Máximo de consultas externas/dia (0–1000)" type="number" min="0" max="1000" step="1" value={webQueries} disabled={!canManage || busy || !enabled} onChange={(event) => { setWebQueries(event.target.value); setFormDirty(true); }} />
+        <Field label="Teto diário na moeda escolhida (máx. 1000)" type="number" min="0.0001" max="1000" step="0.0001" value={budget} disabled={!canManage || busy || !enabled} onChange={(event) => { setBudget(event.target.value); setFormDirty(true); }} />
+        <SelectField label="Moeda do teto" value={currency} disabled={!canManage || busy} onChange={(event) => { setCurrency(event.target.value); setFormDirty(true); }}><option value="">Selecione</option>{aiCurrencies.map((supported) => <option key={supported} value={supported}>{supported}</option>)}</SelectField>
+        <Field label="Tokens máximos de saída por solicitação (256–100000)" type="number" min="256" max="100000" step="1" value={tokens} disabled={!canManage || busy || !enabled} onChange={(event) => { setTokens(event.target.value); setFormDirty(true); }} />
+        <Field label="Motivo de auditoria (não inclua dados sensíveis)" value={reason} maxLength={500} disabled={!canManage || busy} onChange={(event) => { setReason(event.target.value); setFormDirty(true); }} placeholder="Motivo obrigatório" />
+        <div className="flex flex-wrap gap-3 sm:col-span-2 xl:col-span-3"><button className={buttonClass} disabled={!canManage || busy || reason.trim().length < 8}>{busy ? 'Salvando…' : 'Salvar limites auditados'}</button><button type="button" onClick={clearBudget} className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canManage || busy || reason.trim().length < 8}>Restaurar orçamento a zero</button></div>
       </form>}
       {!canManage && <Notice>Modo somente leitura. Alterações de orçamento e limites estão restritas ao owner global.</Notice>}
       {!canManage && <Notice>Somente o owner global pode alterar tarifas ou orçamentos.</Notice>}
