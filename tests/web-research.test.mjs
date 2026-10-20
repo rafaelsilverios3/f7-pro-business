@@ -69,6 +69,13 @@ test('Brave adapter follows the real endpoint contract and parses the web fixtur
   assert.match(provider, /WEB_SEARCH_TIMEOUT/);
 });
 
+test('explicit Brave configuration ignores stale generic provider key and endpoint values', () => {
+  assert.match(provider, /requestedProvider \|\| \(braveKey \? 'brave' : legacyKey \? 'public' : 'disabled'\)/);
+  assert.match(provider, /if \(provider === 'brave'\) return \{ endpoint: BRAVE_ENDPOINT, key: braveKey, provider \}/);
+  assert.match(provider, /return \{ endpoint: Deno\.env\.get\('WEB_SEARCH_API_URL'\) \|\| '', key: legacyKey, provider \}/);
+  assert.doesNotMatch(provider, /key: Deno\.env\.get\('WEB_SEARCH_API_KEY'\) \|\| braveKey/);
+});
+
 test('Brave requests are bounded and record safe cost metrics', () => {
   assert.match(provider, /slice\(0, MAX_QUERIES_PER_ROUND\)/);
   assert.match(provider, /queries_executed/);

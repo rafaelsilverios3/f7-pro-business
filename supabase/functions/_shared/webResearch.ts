@@ -122,15 +122,18 @@ function regionalScore(target: ResearchRegionContext, evidence: ReturnType<typeo
   if (targetNorth && evidenceSouth) return -45;
   return 0;
 }
+const BRAVE_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';
+
 function providerConfig() {
   const braveKey = Deno.env.get('BRAVE_SEARCH_API_KEY') || '';
-  const endpoint = Deno.env.get('WEB_SEARCH_API_URL') || '';
-  const key = Deno.env.get('WEB_SEARCH_API_KEY') || braveKey;
-  const provider = (Deno.env.get('WEB_SEARCH_PROVIDER') || (braveKey ? 'brave' : 'disabled')).trim().toLocaleLowerCase('en-US');
-  return { endpoint, key, provider };
+  const legacyKey = Deno.env.get('WEB_SEARCH_API_KEY') || '';
+  const requestedProvider = Deno.env.get('WEB_SEARCH_PROVIDER')?.trim().toLocaleLowerCase('en-US');
+  const provider = requestedProvider || (braveKey ? 'brave' : legacyKey ? 'public' : 'disabled');
+  // An explicit Brave selection always uses Brave's dedicated server-side key
+  // and canonical endpoint. Stale generic variables must not hijack requests.
+  if (provider === 'brave') return { endpoint: BRAVE_ENDPOINT, key: braveKey, provider };
+  return { endpoint: Deno.env.get('WEB_SEARCH_API_URL') || '', key: legacyKey, provider };
 }
-
-const BRAVE_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';
 
 export function normalizeBraveResponse(payload: any, domains: string[] = [], retrievedAt = new Date().toISOString()): WebSearchResult[] {
   const rows = Array.isArray(payload?.web?.results) ? payload.web.results : [];
