@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Package, Boxes, ShoppingCart, FileText,
   Wallet, Truck, MessageSquare, Zap, BrainCircuit, BarChart3,
-  Settings, Bell, Target, Shield, Store, Pencil, ScanLine, BadgeDollarSign, Globe2, Factory, Megaphone,
+  Settings, Bell, Target, Shield, Store, Pencil, ScanLine, BadgeDollarSign, Globe2, Factory, Megaphone, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CompanyLogoDialog from './CompanyLogoDialog';
@@ -77,6 +77,7 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
   const location = useLocation();
   const [companyLogo, setCompanyLogo] = React.useState('');
   const [logoOpen, setLogoOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(() => window.localStorage.getItem('f7-sidebar-collapsed') === 'true');
   const [memberRole, setMemberRole] = React.useState('');
   const { refresh } = useCompany();
   const role = String(memberRole || user?.role || '').toLowerCase();
@@ -104,13 +105,11 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
   React.useEffect(() => { let cancelled = false; if (import.meta.env.VITE_DATA_PROVIDER !== 'supabase' || !company?.logo_path) { setCompanyLogo(''); return undefined; } getCompanyLogoUrl(company.logo_path).then((url) => { if (!cancelled) setCompanyLogo(url); }).catch(() => { if (!cancelled) setCompanyLogo(''); }); return () => { cancelled = true; }; }, [company?.logo_path]);
   const companyName = company?.name || 'Sua empresa';
 
-  const NavList = () => (
-    <nav className="flex-1 overflow-y-auto px-3 py-2">
+  const NavList = ({ compact = false }) => (
+    <nav className={`flex-1 overflow-y-auto py-2 ${compact ? 'px-2' : 'px-3'}`} aria-label="Navegação principal">
       {NAV.map((section) => (
-        <div key={section.group} className="mb-6 last:mb-2">
-          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            {section.group}
-          </p>
+        <div key={section.group} className="mb-5 last:mb-2">
+          {!compact && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[.12em] text-slate-400">{section.group}</p>}
           <div className="space-y-0.5">
             {section.items.filter((item) => !item.permission || can({ role }, item.permission)).map((item) => {
               const active = location.pathname === item.to;
@@ -118,7 +117,8 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
                 return (
                   <div
                     key={item.to}
-                    className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-600 opacity-50"
+                    className={`flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-500 opacity-70 ${compact ? 'justify-center px-2' : ''}`}
+                    title={compact ? item.label : undefined}
                   >
                     <item.icon className="h-4 w-4" />
                     <span className="flex-1">{item.label}</span>
@@ -132,15 +132,18 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
                   to={item.to}
                   onClick={() => mobileOpen && onOpenMobile?.(false)}
                   className={cn(
-                    'group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium transition duration-200',
+                    'group flex min-h-10 items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-[13px] font-medium transition duration-200',
+                    compact ? 'justify-center px-2' : '',
                     active
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30'
-                      : 'text-slate-300 hover:border-slate-700/60 hover:bg-white/[.04] hover:text-white'
+                      ? 'bg-gradient-to-r from-blue-700 to-blue-600 text-white shadow-md shadow-blue-950/25'
+                      : 'text-slate-300 hover:border-slate-700 hover:bg-white/[.06] hover:text-white'
                   )}
+                  title={compact ? item.label : undefined}
+                  aria-label={compact ? item.label : undefined}
                 >
-                  <item.icon className="h-4 w-4" />
-                  <span className="flex-1">{item.label}</span>
-                  {item.label === 'Smart Atendimento' && <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300">IA</span>}
+                  <item.icon className="h-[17px] w-[17px] shrink-0" />
+                  {!compact && <span className="flex-1">{item.label}</span>}
+                  {!compact && item.label === 'Smart Atendimento' && <span className="rounded-md bg-violet-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-200">IA</span>}
                 </Link>
               );
             })}
@@ -153,13 +156,16 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
   return (
     <>
       {/* Desktop */}
-      <aside className="hidden w-[245px] shrink-0 flex-col border-r border-slate-800/70 bg-[#091426] md:flex">
-        <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700/70 bg-slate-800 text-slate-300">{companyLogo ? <img src={companyLogo} alt={`Logo de ${companyName}`} className="h-full w-full object-contain" /> : <Store className="h-5 w-5" />}{isAdmin && <button type="button" aria-label="Editar logo da empresa" onClick={() => setLogoOpen(true)} className="absolute inset-0 flex items-center justify-center bg-slate-950/65 opacity-0 transition hover:opacity-100"><Pencil className="h-4 w-4 text-white" /></button>}</div>
-          <div className="min-w-0 leading-tight"><p className="truncate text-sm font-bold tracking-tight text-white">{companyName}</p>{isAdmin && <Link to="/configuracoes" className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 transition hover:text-blue-300">PAINEL ADMINISTRATIVO</Link>}</div>
+      <aside className={`hidden shrink-0 flex-col border-r border-slate-700/70 bg-[#151d23] transition-[width] duration-200 md:flex ${collapsed ? 'w-[76px]' : 'w-[252px]'}`}>
+        <div className={`flex items-center gap-2.5 px-4 py-4 ${collapsed ? 'flex-col' : ''}`}>
+          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-800 text-slate-300">{companyLogo ? <img src={companyLogo} alt={`Logo de ${companyName}`} className="h-full w-full object-contain" /> : <Store className="h-5 w-5" />}{isAdmin && <button type="button" aria-label="Editar logo da empresa" onClick={() => setLogoOpen(true)} className="absolute inset-0 flex items-center justify-center bg-slate-950/65 opacity-0 transition hover:opacity-100"><Pencil className="h-4 w-4 text-white" /></button>}</div>
+          {!collapsed && <div className="min-w-0 flex-1 leading-tight"><p className="truncate text-sm font-bold tracking-tight text-white">{companyName}</p>{isAdmin && <Link to="/configuracoes" className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 transition hover:text-blue-300">Painel administrativo</Link>}</div>}
+          <button type="button" onClick={() => { const next = !collapsed; window.localStorage.setItem('f7-sidebar-collapsed', String(next)); setCollapsed(next); }} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} title={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} className="rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
         </div>
-        <NavList />
-        <div className="border-t border-slate-800 px-4 py-3"><div className="flex items-center gap-2.5 rounded-lg px-2 py-2"><img src="/branding/f7-icon.png" alt="F7 PRO BUSINESS" className="h-9 w-9 object-contain" /><div className="min-w-0 leading-tight"><p className="truncate text-xs font-bold text-white">F7 PRO BUSINESS</p><p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p></div></div></div>
+        <NavList compact={collapsed} />
+        <div className="border-t border-slate-700 px-3 py-3"><div className={`flex items-center gap-2.5 rounded-lg px-2 py-2 ${collapsed ? 'justify-center' : ''}`} title={collapsed ? 'F7 PRO BUSINESS — Venda. Atenda. Automatize.' : undefined}><img src="/branding/f7-icon.png" alt="F7 PRO BUSINESS" className="h-9 w-9 shrink-0 object-contain" />{!collapsed && <div className="min-w-0 leading-tight"><p className="truncate text-xs font-bold text-white">F7 PRO BUSINESS</p><p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p></div>}</div></div>
       </aside>
 
       {/* Mobile top bar */}
@@ -182,7 +188,7 @@ export default function Sidebar({ company, user, onOpenMobile, mobileOpen }) {
               <span className="text-sm font-bold text-white">Navegação</span>
               <button onClick={() => onOpenMobile?.(false)} className="text-slate-400">✕</button>
             </div>
-            <NavList />
+            <NavList compact={false} />
             <div className="border-t border-slate-800 px-4 py-3"><div className="flex items-center gap-2"><img src="/branding/f7-icon.png" alt="F7 PRO BUSINESS" className="h-8 w-8 object-contain" /><div><p className="text-xs font-bold text-white">F7 PRO BUSINESS</p><p className="text-[10px] text-slate-400">Venda. Atenda. Automatize.</p></div></div></div>
           </div>
         </div>

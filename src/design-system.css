@@ -1,0 +1,203 @@
+/* Shared F7 workspace tokens. Kept after legacy page styles so each module
+   inherits the same readable base while retaining its semantic status colors. */
+:root {
+  color-scheme: dark;
+  --font-heading: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-body: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-display: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --app-bg: #11171c;
+  --surface: #192127;
+  --surface-elevated: #202a31;
+  --card-bg: #192127;
+  --card-border: #36434c;
+  --text-primary: #f2f5f7;
+  --text-secondary: #b2bec7;
+  --sidebar-bg: #151d23;
+  --sidebar-active: linear-gradient(135deg, #176db5, #24578d);
+  --input-bg: #151d23;
+  --app-border: #36434c;
+  --app-accent: #4b9fe2;
+  --background: 205 24% 9%;
+  --foreground: 204 20% 96%;
+  --card: 204 20% 14%;
+  --card-foreground: 204 20% 96%;
+  --popover: 204 20% 14%;
+  --popover-foreground: 204 20% 96%;
+  --primary: 207 73% 51%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 204 18% 20%;
+  --secondary-foreground: 204 20% 96%;
+  --muted: 204 18% 18%;
+  --muted-foreground: 204 12% 72%;
+  --accent: 204 18% 20%;
+  --accent-foreground: 204 20% 96%;
+  --destructive: 0 67% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 204 15% 28%;
+  --input: 204 18% 19%;
+  --ring: 207 73% 51%;
+  --radius: 0.75rem;
+}
+
+body.light-theme {
+  color-scheme: light;
+  --app-bg: #f3f6f8;
+  --surface: #ffffff;
+  --surface-elevated: #f8fafb;
+  --card-bg: #ffffff;
+  --card-border: #d4dde3;
+  --text-primary: #172630;
+  --text-secondary: #52636e;
+  --sidebar-bg: #ffffff;
+  --sidebar-active: linear-gradient(135deg, #176da8, #285d8e);
+  --input-bg: #ffffff;
+  --app-border: #d4dde3;
+  --app-accent: #176da8;
+  --background: 204 25% 96%;
+  --foreground: 204 30% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 204 30% 14%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 204 30% 14%;
+  --primary: 205 76% 38%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 204 20% 92%;
+  --secondary-foreground: 204 30% 14%;
+  --muted: 204 20% 92%;
+  --muted-foreground: 204 16% 36%;
+  --accent: 204 20% 92%;
+  --accent-foreground: 204 30% 14%;
+  --border: 204 18% 82%;
+  --input: 204 18% 82%;
+  --ring: 205 76% 38%;
+}
+
+html { font-family: var(--font-body); font-synthesis: none; text-size-adjust: 100%; }
+body { background: var(--app-bg); color: var(--text-primary); }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+:where(button, a, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--app-accent) 76%, white);
+  outline-offset: 2px;
+}
+:where(button, input, select, textarea) { border-radius: max(0.5rem, var(--radius)); }
+:where(button, a) { transition-duration: 160ms; }
+button:disabled, input:disabled, select:disabled, textarea:disabled {
+  cursor: not-allowed;
+  opacity: .64;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.app-shell main { min-width: 0; background: var(--app-bg); }
+.app-shell main > .sticky {
+  min-height: 68px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
+  border-color: var(--app-border) !important;
+}
+.app-shell h1, .app-shell h2, .app-shell h3, .app-shell h4 {
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  letter-spacing: -.02em;
+}
+.app-shell h1 { font-size: clamp(1.55rem, 2vw, 2rem); line-height: 1.2; font-weight: 700; }
+.app-shell h2 { font-size: clamp(1.2rem, 1.5vw, 1.5rem); line-height: 1.3; font-weight: 650; }
+.app-shell p, .app-shell label, .app-shell th, .app-shell td { line-height: 1.5; }
+.app-shell .tabular-nums, .app-shell [data-financial], .app-shell .recharts-label {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.app-shell input:not([type="checkbox"]):not([type="radio"]),
+.app-shell select, .app-shell textarea {
+  min-height: 42px;
+  border-color: var(--app-border);
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+}
+.app-shell textarea { min-height: 96px; }
+.app-shell input::placeholder, .app-shell textarea::placeholder { color: var(--text-secondary); opacity: .88; }
+.app-shell table { border-collapse: separate; border-spacing: 0; }
+.app-shell thead th { color: var(--text-secondary); font-weight: 650; }
+.app-shell tbody tr { border-color: var(--app-border); }
+.app-shell :where(th, td) { vertical-align: middle; }
+.app-shell :where(.f7-kpi-card, .f7-quick-actions, .f7-dialog-content) { border-color: var(--card-border); }
+.app-shell :where(.f7-kpi-card, .f7-quick-actions) { border-radius: 1rem; }
+.app-shell :where(.recharts-cartesian-grid line) { stroke: color-mix(in srgb, var(--text-secondary) 24%, transparent); }
+.app-shell :where(.recharts-text) { fill: var(--text-secondary); }
+body:not(.light-theme) .app-shell .bg-white,
+body:not(.light-theme) .app-shell .bg-slate-50 { background-color: var(--surface) !important; color: var(--text-primary); }
+body:not(.light-theme) .app-shell .bg-white :where(.text-slate-900, .text-slate-800, .text-slate-700),
+body:not(.light-theme) .app-shell .bg-slate-50 :where(.text-slate-900, .text-slate-800, .text-slate-700) { color: var(--text-primary) !important; }
+body:not(.light-theme) .app-shell .bg-white :where(.text-slate-600, .text-slate-500, .text-slate-400),
+body:not(.light-theme) .app-shell .bg-slate-50 :where(.text-slate-600, .text-slate-500, .text-slate-400) { color: var(--text-secondary) !important; }
+
+body.light-theme .app-shell,
+body.light-theme .app-shell main { background: var(--app-bg) !important; color: var(--text-primary); }
+body.light-theme .app-shell > aside { background: var(--sidebar-bg) !important; border-color: var(--app-border) !important; }
+body.light-theme .app-shell main > .sticky { background: rgb(255 255 255 / 94%) !important; border-color: var(--app-border) !important; }
+body.light-theme .app-shell [class*="bg-[#07111f"],
+body.light-theme .app-shell [class*="bg-[#091426"],
+body.light-theme .app-shell [class*="bg-[#0e1a2b"],
+body.light-theme .app-shell [class*="bg-[#0d1b28"],
+body.light-theme .app-shell [class*="bg-[#0d1b2e"],
+body.light-theme .app-shell [class*="bg-[#10213a"],
+body.light-theme .app-shell [class*="bg-[#0b1626"],
+body.light-theme .app-shell [class*="bg-[#0b1728"],
+body.light-theme .app-shell [class*="bg-[#101f33"] { background-color: var(--surface) !important; }
+body.light-theme .app-shell [class*="border-slate-700"],
+body.light-theme .app-shell [class*="border-slate-800"],
+body.light-theme .app-shell [class*="border-blue-950"] { border-color: var(--app-border) !important; }
+body.light-theme .app-shell .text-white,
+body.light-theme .app-shell .text-slate-100,
+body.light-theme .app-shell .text-slate-200,
+body.light-theme .app-shell .text-slate-300 { color: var(--text-primary) !important; }
+body.light-theme .app-shell .text-slate-400,
+body.light-theme .app-shell .text-slate-500,
+body.light-theme .app-shell .text-slate-600 { color: var(--text-secondary) !important; }
+body.light-theme .app-shell :where(button.bg-primary, button.bg-destructive, button.bg-blue-500, button.bg-blue-600, button.bg-blue-700, button.bg-indigo-500, button.bg-indigo-600, button[class*="bg-[#1677ff"], button[class*="bg-[#dc3545"], aside a.bg-gradient-to-r),
+body.light-theme .app-shell :where(button.bg-primary, button.bg-destructive, button.bg-blue-500, button.bg-blue-600, button.bg-blue-700, button.bg-indigo-500, button.bg-indigo-600, button[class*="bg-[#1677ff"], button[class*="bg-[#dc3545"], aside a.bg-gradient-to-r) * { color: #fff !important; }
+body.light-theme .app-shell .f7-kpi-card { background: #fff !important; border-color: var(--card-border) !important; box-shadow: 0 8px 22px rgb(24 45 58 / 7%) !important; }
+body.light-theme .app-shell :where(.bg-slate-900, .bg-slate-800, .bg-slate-700\/50, .bg-slate-800\/60) { background-color: #edf2f5 !important; }
+body.light-theme .app-shell :where(.bg-slate-900, .bg-slate-800, .bg-slate-700\/50, .bg-slate-800\/60) :where(.text-white, .text-slate-100, .text-slate-200, .text-slate-300) { color: var(--text-primary) !important; }
+body.light-theme .app-shell .border-slate-100,
+body.light-theme .app-shell .border-slate-200 { border-color: var(--app-border) !important; }
+body.light-theme .app-shell .bg-white { background-color: #fff !important; }
+body.light-theme .app-shell input:not([type="checkbox"]):not([type="radio"]),
+body.light-theme .app-shell select, body.light-theme .app-shell textarea {
+  background: #fff !important; color: #172630 !important; border-color: #bdcbd4 !important;
+}
+body.light-theme .app-shell input::placeholder, body.light-theme .app-shell textarea::placeholder { color: #52636e !important; }
+body.light-theme .app-shell .f7-dialog-content { background: #fff !important; color: #172630 !important; border-color: #bdcbd4 !important; }
+body.light-theme .app-shell .f7-dialog-content :where(input, select, textarea) { background: #fff !important; color: #172630 !important; }
+body.light-theme .app-shell aside a:not(.bg-gradient-to-r) { color: #334650 !important; }
+body.light-theme .app-shell aside a:not(.bg-gradient-to-r):hover { background: #edf3f6 !important; color: #123d5c !important; }
+body.light-theme .app-shell aside a.bg-gradient-to-r,
+body.light-theme .app-shell .f7-period-active { background: var(--sidebar-active) !important; color: #fff !important; }
+body.light-theme .app-shell aside a.bg-gradient-to-r * { color: #fff !important; }
+body.light-theme .app-shell .recharts-text { fill: #52636e !important; }
+body.light-theme .app-shell .recharts-cartesian-grid line { stroke: rgb(82 99 110 / 24%) !important; }
+
+@media (max-width: 900px) {
+  .app-shell main > .sticky { gap: .5rem; padding-inline: 1rem; }
+  .app-shell main > .sticky > :where(a, button) { flex: 0 0 auto; }
+}
+@media (max-width: 640px) {
+  .app-shell main > .sticky { min-height: 56px; flex-wrap: wrap; padding-block: .5rem; }
+  .app-shell h1 { font-size: 1.5rem; }
+  .app-shell h2 { font-size: 1.2rem; }
+  .app-shell :where([role="dialog"], .f7-dialog-content) { max-height: calc(100dvh - 1.5rem); overflow-y: auto; }
+  .app-shell table { min-width: 36rem; }
+  .app-shell main div:has(> table) { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+  .app-shell [class*="overflow-x-auto"] { max-width: 100%; overscroll-behavior-inline: contain; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
