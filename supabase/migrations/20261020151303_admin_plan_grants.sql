@@ -1,6 +1,8 @@
 -- Administrative plan grants are independent of provider billing history.
 -- Temporary grants become ineffective from the resolver as soon as ends_at passes;
 -- no scheduled job or mutation of a paid subscription is needed.
+-- Conceptual rollback: disable grant mutation endpoints and restore the prior
+-- resolver only after active grants are migrated or explicitly ended; retain this ledger.
 begin;
 
 create table public.company_plan_grants (
