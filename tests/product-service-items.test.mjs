@@ -20,13 +20,15 @@ test('catalog distinguishes products and services with backwards compatible defa
 });
 
 test('service catalog UI hides inventory controls and keeps price, cost and commission', () => {
-  assert.match(productDialog, /form\.item_type === 'product'/);
-  assert.match(productDialog, /form\.item_type === 'service'/);
+  assert.match(productDialog, /const isProduct = itemType === 'product'/);
+  assert.match(productDialog, /const isService = itemType === 'service'/);
+  assert.match(productDialog, /!isService && <div[\s\S]*?Estoque inicial/);
+  assert.match(productDialog, /fixedItemType \? defaultItemType/);
   assert.match(productDialog, /Duração estimada/);
   assert.match(productDialog, /Comissão %/);
-  assert.match(productsPage, /Total de serviços/);
+  assert.match(productsPage, /Total de \{tab === .*'serviços'.*\}/);
   assert.match(productsPage, /p\.item_type === 'service' \? '—'/);
-  assert.match(productsPage, /p\.item_type !== 'service'/);
+  assert.match(productsPage, /tab !== 'material'/);
 });
 
 test('mixed sale and quote preserve item type and show separated subtotals', () => {
