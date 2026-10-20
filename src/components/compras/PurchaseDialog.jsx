@@ -39,11 +39,13 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
   const supplier = suppliers.find((s) => s.id === supplierId);
 
   const productResults = useMemo(() => {
-    if (!productQuery) return products.slice(0, 5);
-    return products.filter((p) => p.name?.toLowerCase().includes(productQuery.toLowerCase())).slice(0, 5);
+    const inventoryItems = products.filter((p) => p.active !== false && ['product', 'material'].includes(p.item_type || 'product'));
+    if (!productQuery) return inventoryItems.slice(0, 5);
+    return inventoryItems.filter((p) => p.name?.toLowerCase().includes(productQuery.toLowerCase())).slice(0, 5);
   }, [products, productQuery]);
 
   const addItem = (p) => {
+    if (!['product', 'material'].includes(p.item_type || 'product')) return;
     setItems((prev) => {
       const ex = prev.find((i) => i.product_id === p.id);
       if (ex) return prev.map((i) => i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i);
@@ -61,6 +63,11 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
   const submit = async (e) => {
     e.preventDefault();
     if (items.length === 0 || !supplier || submitting) return;
+    const invalidItem = items.find((item) => !products.some((product) => product.id === item.product_id && product.active !== false && ['product', 'material'].includes(product.item_type || 'product')));
+    if (invalidItem) {
+      setSubmitError('Compras aceitam somente produtos e matérias-primas com controle de estoque. Remova o item inválido e tente novamente.');
+      return;
+    }
     setSubmitting(true);
     setSubmitError('');
     try {
@@ -100,16 +107,16 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Adicionar produto</Label>
+            <Label className="text-xs">Adicionar produto ou matéria-prima</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Buscar produto..."
+              <input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Buscar produto ou matéria-prima..."
                 className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400" />
               {productQuery && productResults.length > 0 && (
                 <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
                   {productResults.map((p) => (
                     <button key={p.id} type="button" onClick={() => addItem(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
-                      <span className="text-slate-700">{p.name}</span>
+                      <span className="text-slate-700">{p.name}<span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${p.item_type === 'material' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{p.item_type === 'material' ? 'MATÉRIA-PRIMA' : 'PRODUTO'}</span></span>
                       <span className="text-xs text-slate-400">custo: {fmtMoney(p.cost_price)}</span>
                     </button>
                   ))}
@@ -125,7 +132,7 @@ export default function PurchaseDialog({ open, onClose, company, onDone, suggest
               <div className="divide-y divide-slate-100">
                 {items.map((i) => (
                   <div key={i.product_id} className="flex items-center gap-2 p-2.5">
-                    <span className="flex-1 truncate text-sm text-slate-700">{i.name}</span>
+                    <span className="flex-1 truncate text-sm text-slate-700">{i.name}<span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${products.find((product) => product.id === i.product_id)?.item_type === 'material' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{products.find((product) => product.id === i.product_id)?.item_type === 'material' ? 'MATÉRIA-PRIMA' : 'PRODUTO'}</span></span>
                     <input type="number" value={i.qty} onChange={(e) => setQty(i.product_id, e.target.value)} className="h-8 w-14 rounded-md border border-slate-200 px-2 text-center text-sm" />
                     <span className="text-xs text-slate-400">×</span>
                     <input type="number" step="0.01" value={i.cost} onChange={(e) => setCost(i.product_id, e.target.value)} className="h-8 w-20 rounded-md border border-slate-200 px-2 text-right text-sm" />
