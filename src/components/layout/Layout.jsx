@@ -122,8 +122,8 @@ function GlobalSearch({ company, user, subscription }) {
     </div>
   );
   return <>
-    <div className="relative hidden min-h-11 max-w-3xl flex-1 items-center gap-2 rounded-xl border border-slate-700/70 bg-[#0e1a2b] px-4 text-sm text-slate-400 transition-colors focus-within:border-blue-400/60 md:flex" onClick={focusSearch}>
-      <Search className="h-4 w-4 text-slate-500" /><span className="flex-1">Buscar clientes, produtos, pedidos...</span>{trialActive(subscription) && <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-semibold text-amber-200">Teste gratuito — {trialHoursRemaining(subscription)}h restantes</span>}<kbd className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-500">Ctrl + K</kbd>{open && panel()}
+    <div className="relative hidden min-h-11 min-w-0 max-w-3xl flex-1 items-center gap-2 rounded-xl border border-slate-700/70 bg-[#0e1a2b] px-4 text-sm text-slate-400 transition-colors focus-within:border-blue-400/60 md:flex md:basis-full md:max-w-none xl:basis-auto xl:max-w-3xl" onClick={focusSearch}>
+      <Search className="h-4 w-4 shrink-0 text-slate-500" /><span className="min-w-0 flex-1 truncate whitespace-nowrap">Buscar clientes, produtos, pedidos...</span>{trialActive(subscription) && <span className="shrink-0 rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-semibold text-amber-200">Teste gratuito — {trialHoursRemaining(subscription)}h restantes</span>}<kbd className="shrink-0 rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-500">Ctrl + K</kbd>{open && panel()}
     </div>
     <button type="button" aria-label="Abrir busca global" onClick={() => { setMobileOpen(true); setOpen(true); }} className="rounded-xl border border-slate-700/70 p-2.5 text-slate-300 transition hover:border-blue-400/50 hover:bg-slate-800 md:hidden"><Search className="h-4 w-4" /></button>
     {mobileOpen && panel(true)}
@@ -235,7 +235,7 @@ export default function Layout() {
     <div className="app-shell flex min-h-screen">
       <Sidebar company={company} user={user} mobileOpen={mobileOpen} onOpenMobile={setMobileOpen} />
       <main className="flex-1 overflow-x-hidden pb-10 md:pb-0">
-        <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:px-8">
+        <div className="sticky top-0 z-30 flex items-center gap-4 border-b border-slate-800/70 bg-[#07111f]/85 px-5 py-3 backdrop-blur md:flex-wrap md:px-8 xl:flex-nowrap">
           <GlobalSearch company={company} user={user} subscription={subscription} />
           <SubscriptionSummary subscription={subscription} loading={subscriptionLoading} error={subscriptionError} onRetry={() => setSubscriptionRequestKey((value) => value + 1)} />
           <div className="hidden shrink-0 md:block"><ModuleHelp route={location.pathname} compact /></div>
