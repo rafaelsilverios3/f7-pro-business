@@ -28,8 +28,9 @@ async function audit(client: any, input: { admin_user_id: string; company_id?: s
 }
 async function companySummary(client: any, company: any) {
   const id = company.id;
-  const [subscription, members, products, customers, sales, warnings, integrations, ai] = await Promise.all([
-    client.from('company_subscriptions').select('plan,status,trial_ends_at,current_period_start,current_period_end').eq('company_id', id).maybeSingle(),
+  const [subscription, manualGrant, members, products, customers, sales, warnings, integrations, ai] = await Promise.all([
+    client.from('company_subscriptions').select('plan,status,trial_ends_at,current_period_start,current_period_end,billing_model,billing_checkout_id').eq('company_id', id).maybeSingle(),
+    client.from('company_plan_grants').select('id,plan_code,grant_type,starts_at,ends_at,granted_by,reason').eq('company_id', id).is('revoked_at', null).lte('starts_at', new Date().toISOString()).or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`).order('starts_at', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     client.from('company_users').select('id,active', { count: 'exact', head: false }).eq('company_id', id),
     client.from('products').select('id', { count: 'exact', head: true }).eq('company_id', id),
     client.from('customers').select('id', { count: 'exact', head: true }).eq('company_id', id),
@@ -38,9 +39,10 @@ async function companySummary(client: any, company: any) {
     client.from('company_integrations').select('provider,status,external_phone_id,external_account_id,updated_at').eq('company_id', id),
     client.from('company_assistant_settings').select('mode,automatic_reply_enabled,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,max_daily_ai_calls,max_daily_web_queries,max_tokens_per_request').eq('company_id', id).maybeSingle(),
   ]);
-  const firstError = [subscription, members, products, customers, sales, warnings, integrations, ai].find((item) => item.error);
+  const firstError = [subscription, manualGrant, members, products, customers, sales, warnings, integrations, ai].find((item) => item.error);
   if (firstError) throw firstError.error;
-  return { ...company, subscription: subscription.data, user_count: members.data?.filter((row: any) => row.active).length || 0, product_count: products.count || 0, customer_count: customers.count || 0, sales_count: sales.count || 0, open_warning_count: warnings.count || 0, integrations: integrations.data || [], ai: ai.data || null };
+  const accessSubscription = manualGrant.data ? { ...(subscription.data || {}), plan: manualGrant.data.plan_code, status: 'active', current_period_end: manualGrant.data.ends_at, access_origin: manualGrant.data.grant_type, manual_grant: manualGrant.data, paid_subscription: subscription.data } : { ...(subscription.data || {}), access_origin: subscription.data?.billing_checkout_id ? 'paid' : 'legacy' };
+  return { ...company, subscription: accessSubscription, user_count: members.data?.filter((row: any) => row.active).length || 0, product_count: products.count || 0, customer_count: customers.count || 0, sales_count: sales.count || 0, open_warning_count: warnings.count || 0, integrations: integrations.data || [], ai: ai.data || null };
 }
 
 Deno.serve(async (req) => {
@@ -67,10 +69,11 @@ Deno.serve(async (req) => {
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
     if (action === 'overview') {
-      const [companies, members, subscriptions, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides] = await Promise.all([
+      const [companies, members, subscriptions, manualGrants, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides] = await Promise.all([
         service.from('companies').select('id,name,created_at,updated_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(100),
         service.from('company_users').select('id,company_id,user_id,active,role', { count: 'exact' }).limit(1000),
         service.from('company_subscriptions').select('company_id,plan,status,current_period_end'),
+        service.from('company_plan_grants').select('id,company_id,plan_code,grant_type,starts_at,ends_at,granted_by,reason,created_at').is('revoked_at', null).lte('starts_at', new Date().toISOString()).or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`).order('starts_at', { ascending: false }).order('created_at', { ascending: false }),
         service.from('company_integrations').select('company_id,provider,status'),
         service.from('company_assistant_settings').select('company_id,mode,automatic_reply_enabled'),
         service.from('platform_company_warnings').select('id,company_id,status,severity', { count: 'exact' }).eq('status', 'open'),
@@ -79,9 +82,10 @@ Deno.serve(async (req) => {
         service.from('plan_features').select('plan_id,feature,enabled').in('feature', ['ai','ai_sales']),
         service.from('company_feature_overrides').select('company_id,feature,enabled').in('feature', ['ai','ai_sales']),
       ]);
-      const firstError = [companies, members, subscriptions, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides].find((item) => item.error);
+      const firstError = [companies, members, subscriptions, manualGrants, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides].find((item) => item.error);
       if (firstError) throw firstError.error;
       const plans = new Map((subscriptions.data || []).map((row: any) => [row.company_id, row]));
+      const currentManualGrants = new Map((manualGrants.data || []).map((row: any) => [row.company_id, row]));
       const planById = new Map((catalogPlans.data || []).map((row: any) => [row.id, row]));
       const planByCode = new Map((catalogPlans.data || []).map((row: any) => [row.code, row]));
       const planFeatureRows = (planFeatures.data || []).map((row: any) => ({ ...row, plan_code: planById.get(row.plan_id)?.code, plan_active: planById.get(row.plan_id)?.active === true }));
@@ -91,7 +95,11 @@ Deno.serve(async (req) => {
         maintenance: Deno.env.get('AI_MAINTENANCE_MODE')?.trim().toLowerCase() === 'true',
       };
       const rows = (companies.data || []).map((company: any) => {
-        const subscription = plans.get(company.id) || null;
+        const paidSubscription = plans.get(company.id) || null;
+        const manualGrant = currentManualGrants.get(company.id) || null;
+        const subscription = manualGrant
+          ? { ...(paidSubscription || {}), plan: manualGrant.plan_code, status: 'active', current_period_end: manualGrant.ends_at, access_origin: manualGrant.grant_type === 'lifetime' ? 'lifetime' : manualGrant.grant_type, manual_grant: manualGrant }
+          : paidSubscription;
         const companySettings = (ai.data || []).find((row: any) => row.company_id === company.id) || null;
         const planCode = subscription?.plan || 'free';
         const aiOverview = getCompanyAiOverview({
@@ -138,12 +146,40 @@ Deno.serve(async (req) => {
     if (action === 'subscriptions') {
       const [companies, subscriptions] = await Promise.all([
         service.from('companies').select('id,name,created_at').order('created_at', { ascending: false }),
-        service.from('company_subscriptions').select('company_id,plan,status,trial_ends_at,current_period_start,current_period_end,updated_at'),
+        service.from('company_subscriptions').select('company_id,plan,status,trial_ends_at,current_period_start,current_period_end,billing_model,billing_checkout_id,updated_at'),
       ]);
       const firstError = [companies, subscriptions].find((item: any) => item.error);
       if (firstError) throw firstError.error;
       const subscriptionMap = new Map((subscriptions.data || []).map((row: any) => [row.company_id, row]));
       return json({ rows: (companies.data || []).map((company: any) => ({ ...company, subscription: subscriptionMap.get(company.id) || null })) });
+    }
+    if (action === 'plan_grants') {
+      const companyId = clean(input.company_id, 80);
+      let query = service.from('company_plan_grants').select('id,company_id,plan_code,grant_type,starts_at,ends_at,granted_by,reason,revoked_at,revoked_by,revoke_reason,created_at').order('created_at', { ascending: false }).limit(500);
+      if (companyId) query = query.eq('company_id', companyId);
+      const result = await query;
+      if (result.error) throw result.error;
+      const companyRows = companyId ? [] : await service.from('companies').select('id,name');
+      if (companyRows.error) throw companyRows.error;
+      const companyNames = new Map((companyRows.data || []).map((row: any) => [row.id, row.name]));
+      return json({ rows: (result.data || []).map((row: any) => ({ ...row, company_name: companyNames.get(row.company_id) || null, effective_now: !row.revoked_at && Date.parse(row.starts_at) <= Date.now() && (!row.ends_at || Date.parse(row.ends_at) > Date.now()), state: row.revoked_at ? 'revoked' : Date.parse(row.starts_at) > Date.now() ? 'scheduled' : row.ends_at && Date.parse(row.ends_at) <= Date.now() ? 'expired' : 'active' })) });
+    }
+    if (action === 'create_plan_grant') {
+      const result = await userClient(jwt).rpc('platform_admin_create_plan_grant', {
+        p_company_id: clean(input.company_id, 80),
+        p_plan_code: clean(input.plan_code, 30).toLowerCase(),
+        p_grant_type: clean(input.grant_type, 30).toLowerCase(),
+        p_starts_at: input.starts_at,
+        p_ends_at: input.ends_at || null,
+        p_reason: clean(input.reason, 500),
+      });
+      if (result.error) return json({ error: clean(result.error.message, 120) || 'PLAN_GRANT_FAILED' }, result.error.code === '42501' ? 403 : 422);
+      return json(result.data);
+    }
+    if (action === 'revoke_plan_grant') {
+      const result = await userClient(jwt).rpc('platform_admin_revoke_plan_grant', { p_grant_id: clean(input.grant_id, 80), p_reason: clean(input.reason, 500) });
+      if (result.error) return json({ error: clean(result.error.message, 120) || 'PLAN_GRANT_FAILED' }, result.error.code === '42501' ? 403 : 422);
+      return json(result.data);
     }
     if (action === 'company') {
       const company = await one(service, 'companies', 'id,name,created_at,updated_at', clean(input.company_id, 80));

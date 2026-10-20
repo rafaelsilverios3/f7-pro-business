@@ -123,9 +123,10 @@ function regionalScore(target: ResearchRegionContext, evidence: ReturnType<typeo
   return 0;
 }
 function providerConfig() {
+  const braveKey = Deno.env.get('BRAVE_SEARCH_API_KEY') || '';
   const endpoint = Deno.env.get('WEB_SEARCH_API_URL') || '';
-  const key = Deno.env.get('WEB_SEARCH_API_KEY') || '';
-  const provider = (Deno.env.get('WEB_SEARCH_PROVIDER') || 'disabled').trim().toLocaleLowerCase('en-US');
+  const key = Deno.env.get('WEB_SEARCH_API_KEY') || braveKey;
+  const provider = (Deno.env.get('WEB_SEARCH_PROVIDER') || (braveKey ? 'brave' : 'disabled')).trim().toLocaleLowerCase('en-US');
   return { endpoint, key, provider };
 }
 
