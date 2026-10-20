@@ -28,6 +28,8 @@ test('pending subscription states and inactive plan catalog entries fail closed 
   assert.match(activeSubscriptionGateMigration, /subscription_found and subscription_status is distinct from 'active'[\s\S]*?return false/i);
   assert.match(activeSubscriptionGateMigration, /select p\.active into plan_is_active[\s\S]*?plan_is_active is distinct from true[\s\S]*?return false/i);
   assert.ok(activeSubscriptionGateMigration.indexOf('plan_is_active is distinct from true') < activeSubscriptionGateMigration.indexOf('from public.company_feature_overrides'));
+  assert.match(activeSubscriptionGateMigration, /o\.feature = lower\(trim\(\$2\)\)/i);
+  assert.match(activeSubscriptionGateMigration, /pf\.feature = lower\(trim\(\$2\)\)/i);
   assert.match(activeSubscriptionGateMigration, /missing row uses the Free fallback/i);
   assert.match(activeSubscriptionGateMigration, /security definer[\s\S]*?set search_path = pg_catalog, public, pg_temp/i);
 });

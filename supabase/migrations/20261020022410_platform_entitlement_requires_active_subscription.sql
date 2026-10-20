@@ -43,14 +43,14 @@ begin
   select o.enabled into override_enabled
   from public.company_feature_overrides o
   where o.company_id = target_company
-    and o.feature = lower(trim(feature));
+    and o.feature = lower(trim($2));
   if override_enabled is not null then return override_enabled; end if;
 
   select pf.enabled into configured
   from public.plan_features pf
   join public.plans p on p.id = pf.plan_id and p.active
   where p.code = plan_name
-    and pf.feature = lower(trim(feature));
+    and pf.feature = lower(trim($2));
   if configured is not null then return configured; end if;
 
   return case lower(trim(feature))
