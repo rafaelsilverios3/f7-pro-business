@@ -1,10 +1,70 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation, blocksRecurringBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksBillingEnvironmentMismatch, blocksRecurringEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
 import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const providerUrl = 'https://api.mercadopago.com/v1/orders';
+
+async function handleCreditPackageCheckout(req: Request, sb: any, providerFetch: typeof fetch, user: any, body: any, companyId: string, method: string) {
+  // AI credit packs are a separate commercial product from plan subscriptions.
+  // A production plan-payment rollout must not silently enable pack purchases.
+  if ((Deno.env.get('MERCADO_PAGO_AI_CREDITS_ENABLED') || '').trim().toLowerCase() !== 'true') {
+    return json({ code: 'AI_CREDITS_COMMERCE_DISABLED' }, 409);
+  }
+  if (!companyId || !['pix', 'card'].includes(method) || body?.billing_model && body.billing_model !== 'one_time') return json({ code: 'AI_CREDIT_PURCHASE_INVALID' }, 422);
+  const requestKey = uuid(body?.request_id);
+  const packageCode = clean(body?.package_code, 40);
+  if (!requestKey || !['credits_500', 'credits_1000', 'credits_3000'].includes(packageCode)) return json({ code: 'AI_CREDIT_PURCHASE_INVALID' }, 422);
+  const { data: member } = await sb.from('company_users').select('role,active').eq('company_id', companyId).eq('user_id', user.id).maybeSingle();
+  if (!member?.active || !['admin', 'gestor'].includes(member.role)) return json({ code: 'FORBIDDEN' }, 403);
+  const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
+  if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
+  if (!['test', 'production'].includes(environment)) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
+  if (environment === 'production' && (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() !== 'true') return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
+  const token = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
+  if (!token || !Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET')) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 409);
+  const credentialCheck = await verifyMercadoPagoCredentialEnvironment(token, environment as 'test' | 'production', providerFetch);
+  if (credentialCheck !== 'verified') return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialCheck === 'unavailable' ? 503 : 409);
+  const created = await sb.rpc('create_ai_credit_purchase_v1', { target_company: companyId, target_user: user.id, package_code: packageCode, request_key: requestKey });
+  if (created.error || created.data?.code !== 'OK') return json({ code: created.data?.code || 'AI_CREDIT_PURCHASE_CREATE_FAILED' }, created.error?.code === '42501' ? 403 : 409);
+  const purchase = created.data;
+  if (method === 'card') {
+    const card = body?.card_payment && typeof body.card_payment === 'object' ? body.card_payment : {};
+    const payer = card.payer?.identification;
+    const email = environment === 'test' ? 'test@testuser.com' : clean(card.payer?.email || user.email, 160).toLowerCase();
+    if (!card.token || !/^[A-Za-z0-9_-]{1,256}$/.test(card.token) || !/^[A-Za-z0-9_-]{1,40}$/.test(card.payment_method_id || '') || !Number.isInteger(Number(card.installments)) || Number(card.installments) < 1 || Number(card.installments) > 24 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !['CPF','CNPJ'].includes(String(payer?.type || '').toUpperCase()) || !/^\d{11,14}$/.test(String(payer?.number || '').replace(/\D/g, ''))) return json({ code: 'CARD_PAYMENT_DATA_INVALID' }, 422);
+    let response: Response;
+    try {
+      response = await providerFetch('https://api.mercadopago.com/v1/payments', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Idempotency-Key': `f7-ai-credit-${purchase.id}` }, body: JSON.stringify({ transaction_amount: Number(purchase.amount_minor) / 100, token: card.token, description: `F7 AI Credits ${purchase.credits}`, installments: Number(card.installments), payment_method_id: clean(card.payment_method_id,40), external_reference: purchase.id, payer: { email, identification: { type: String(payer.type).toUpperCase(), number: String(payer.number).replace(/\D/g,'') } } }) });
+    } catch { return json({ code: 'MERCADO_PAGO_RESULT_UNCERTAIN' }, 503); }
+    const payload = await response.json().catch(() => ({}));
+    const paymentId = clean(payload?.id,120); const status = clean(payload?.status,40);
+    if (!response.ok || !paymentId || Math.round(Number(payload?.transaction_amount) * 100) !== Number(purchase.amount_minor) || String(payload?.currency_id || '').toUpperCase() !== 'BRL') return json({ code: response.ok ? 'MERCADO_PAGO_RESPONSE_MISMATCH' : 'MERCADO_PAGO_ERROR' }, 502);
+    const persisted = await sb.rpc('persist_ai_credit_purchase_provider_v1',{p_purchase_id:purchase.id,p_payment_id:paymentId,p_order_id:paymentId,p_status:status});
+    if (persisted.error || persisted.data?.code !== 'OK') return json({ code:'AI_CREDIT_PURCHASE_STATE_RETRYABLE' },503);
+    return json({code:'OK',purchase:{id:purchase.id,status:'pending',credits:purchase.credits,amount_minor:purchase.amount_minor,currency:'BRL'},payment:{id:paymentId,status,status_detail:clean(payload?.status_detail,80)||null}});
+  }
+  const amount = (Number(purchase.amount_minor) / 100).toFixed(2);
+  const payer = environment === 'test' ? { email: 'test@testuser.com', first_name: 'APRO' } : { email: clean(user.email,160).toLowerCase() };
+  let response: Response;
+  try { response = await providerFetch(providerUrl,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','X-Idempotency-Key':`f7-ai-credit-${purchase.id}`},body:JSON.stringify({type:'online',external_reference:purchase.id,total_amount:amount,processing_mode:'automatic',payer,transactions:{payments:[{amount,payment_method:{id:'pix',type:'bank_transfer'}}]}})}); }
+  catch { return json({code:'MERCADO_PAGO_RESULT_UNCERTAIN'},503); }
+  const payload = await response.json().catch(()=>({})); const payment = payload?.transactions?.payments?.[0] || {};
+  const paymentId = clean(payment.id,120); const orderId = clean(payload?.id,120); const status = clean(payment.status || payload?.status,40);
+  const providerAmountMinor = Math.round(Number(payment.amount ?? payload?.total_amount) * 100);
+  // The Orders API response for Brazilian sellers omits currency_id on PIX
+  // orders. The credential check above only accepts an MLB seller identity,
+  // which fixes the account market to Brazil; use the server-owned package
+  // currency in that case and continue to reject any explicit mismatch.
+  const currency = String(payment.currency_id || payload?.currency_id || (credentialCheck === 'verified' ? purchase.currency : '')).toUpperCase();
+  if (!response.ok || !paymentId || !orderId || providerAmountMinor !== Number(purchase.amount_minor) || currency !== 'BRL') return json({code:response.ok?'MERCADO_PAGO_RESPONSE_MISMATCH':'MERCADO_PAGO_ERROR'},502);
+  const persisted = await sb.rpc('persist_ai_credit_purchase_provider_v1',{p_purchase_id:purchase.id,p_payment_id:paymentId,p_order_id:orderId,p_status:status});
+  if (persisted.error || persisted.data?.code !== 'OK') return json({code:'AI_CREDIT_PURCHASE_STATE_RETRYABLE'},503);
+  const point = payment.point_of_interaction?.transaction_data || {};
+  const paymentMethod = payment.payment_method || {};
+  return json({code:'OK',purchase:{id:purchase.id,status:'pending',credits:purchase.credits,amount_minor:purchase.amount_minor,currency:'BRL'},payment:{id:paymentId,status,qr_code:clean(point.qr_code || paymentMethod.qr_code,4000)||null,qr_code_base64:typeof point.qr_code_base64==='string'?point.qr_code_base64:typeof paymentMethod.qr_code_base64==='string'?paymentMethod.qr_code_base64:null,ticket_url:clean(point.ticket_url || paymentMethod.ticket_url,1000)||null}});
+}
 
 const logProviderFailure = (details: Record<string, unknown>) => {
   // Keep operational evidence useful without retaining provider payloads,
@@ -29,6 +89,7 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
     const body = await req.json().catch(() => ({})); companyId = uuid(body?.company_id); const planCode = clean(body?.plan_code, 20).toLowerCase(); const method = body?.method;
     const billingModel = body?.billing_model;
     const billingPeriod = body?.billing_period;
+    if (body?.purchase_type === 'ai_credits') return await handleCreditPackageCheckout(req, sb, providerFetch, userData.user, body, companyId || '', String(method || ''));
     if (!companyId || !['free', 'pro', 'business', 'premium'].includes(planCode)) return json({ code: 'INVALID_REQUEST' }, 422);
     if (!['pix', 'card'].includes(method)) return json({ code: 'INVALID_PAYMENT_METHOD' }, 422);
     if (!['one_time', 'recurring'].includes(billingModel)) return json({ code: 'INVALID_BILLING_MODEL' }, 422);
@@ -46,12 +107,16 @@ export async function handleBillingCheckoutRequest(req: Request, dependencies: {
       return json({ code: 'PLAN_PRICE_INVALID' }, 409);
     }
     const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
-    if (blocksRecurringBillingInHomologation(billingModel, environment)) return json({ code: 'HOMOLOGATION_RECURRING_BILLING_TEST_ONLY' }, 409);
-    if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
+    if (blocksRecurringEnvironmentMismatch(billingModel, environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
+    if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
     const validEnvironment = environment === 'test' || environment === 'production';
     if (!validEnvironment) return json({ code: 'MERCADO_PAGO_ENVIRONMENT_NOT_CONFIGURED' }, 409);
     const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
     if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'PRODUCTION_PAYMENTS_DISABLED' }, 409);
+    if (environment === 'production' && billingModel === 'recurring' &&
+      (Deno.env.get('BILLING_RECONCILIATION_ENABLED') || '').trim().toLowerCase() !== 'true') {
+      return json({ code: 'BILLING_RECONCILIATION_NOT_READY' }, 409);
+    }
     let appBackUrl: string | null = null;
     if (billingModel === 'recurring') {
       try {

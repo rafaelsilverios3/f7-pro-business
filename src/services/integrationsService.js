@@ -120,6 +120,11 @@ function createIntegrationError(rawDetail, httpStatus) {
     AI_PROVIDER_UNAVAILABLE: 'O provedor de IA está indisponível no momento.',
     AI_PROVIDER_TIMEOUT: 'O provedor de IA demorou demais para responder.',
     AI_MODEL_NOT_AVAILABLE: 'O modelo de IA configurado não está disponível para este provedor.',
+    AI_CREDITS_CONFIRMATION_REQUIRED: 'Confirme o custo máximo da análise para continuar.',
+    AI_CREDITS_INSUFFICIENT: 'O saldo de F7 AI Credits é insuficiente para esta solicitação.',
+    AI_CREDITS_RATE_UNAVAILABLE: 'Não há tarifa vigente para calcular esta análise; o consumo está bloqueado.',
+    AI_CREDITS_FX_UNCONFIGURED: 'O câmbio necessário para calcular os créditos ainda não está configurado.',
+    AI_CREDITS_UNAVAILABLE: 'O controle de créditos está indisponível; a análise foi bloqueada.',
     AI_PROVIDER_MODEL_NOT_FOUND: 'O modelo de IA configurado não foi encontrado no provedor.',
     AI_JSON_MODE_UNSUPPORTED: 'O provedor de IA não aceita o formato JSON configurado.',
     AI_STRUCTURED_OUTPUT_UNSUPPORTED: 'O provedor de IA não aceitou Structured Outputs nesta chamada.',
@@ -170,6 +175,7 @@ function createIntegrationError(rawDetail, httpStatus) {
     httpStatus: detail?.http_status || httpStatus || null,
     stage: typeof detail?.stage === 'string' ? detail.stage.slice(0, 80) : null,
     internalCode: typeof detail?.internal_code === 'string' ? detail.internal_code.slice(0, 80) : typeof detail?.internal_error_code === 'string' ? detail.internal_error_code.slice(0, 80) : null,
+    aiCreditQuote: detail?.code === 'AI_CREDITS_CONFIRMATION_REQUIRED' && detail?.ai_credit_quote && typeof detail.ai_credit_quote === 'object' ? detail.ai_credit_quote : null,
   });
   return cause;
 }

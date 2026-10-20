@@ -15,7 +15,9 @@ const originalEnv = new Map(['AI_ENABLED', 'AI_MAINTENANCE_MODE', 'AI_API_KEY', 
 const createdUsers: string[] = [];
 const createdCompanies: string[] = [];
 let testRateVersion = '';
+let testConcurrencyRateVersion = '';
 let testModelKey = '';
+let testConcurrencyModelKey = '';
 const providerRequests: Array<{ body: string; authorization: string | null }> = [];
 let providerMode: 'success' | 'unavailable' = 'success';
 
@@ -31,10 +33,10 @@ async function checked<T>(operation: PromiseLike<{ data: T; error: unknown }>, l
 
 async function localSql(sql: string): Promise<string> {
   const result = await new Deno.Command('docker', {
-    args: ['exec', dbContainer, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres', '-Atc', sql],
+    args: ['exec', dbContainer, 'psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres', '-Atc', sql],
     stdout: 'piped', stderr: 'piped',
   }).output();
-  if (result.code !== 0) throw new Error('Local PostgreSQL assertion failed.');
+  if (result.code !== 0) throw new Error(`Local PostgreSQL assertion failed: ${new TextDecoder().decode(result.stderr).slice(0, 500)}`);
   return new TextDecoder().decode(result.stdout).trim();
 }
 
@@ -63,7 +65,10 @@ async function makeCompany(owner: Awaited<ReturnType<typeof makeUser>>, label: s
   const companyId = created.data.id as string;
   createdCompanies.push(companyId);
   await localSql(`update public.company_subscriptions set plan='pro', status='active', current_period_start=now(), current_period_end=now()+interval '1 day' where company_id='${companyId}'`);
-  await checked(owner.client.from('company_assistant_settings').upsert({ company_id: companyId, max_daily_ai_calls: 50, max_tokens_per_request: 12000, max_daily_ai_cost: 100, ai_budget_currency: 'BRL' }), 'local budget setup');
+  // Financial controls are guarded from company admins by design. Configure
+  // only this disposable local fixture with the local service role; the AI
+  // requests below still use the users' real Auth JWTs and company RLS.
+  await checked(admin.from('company_assistant_settings').upsert({ company_id: companyId, mode: 'assisted', max_daily_ai_calls: 50, max_tokens_per_request: 12000, max_daily_ai_cost: 100, ai_budget_currency: 'BRL' }), 'local budget setup');
   return companyId;
 }
 
@@ -178,8 +183,37 @@ Deno.test('AI Sales: Auth real local, ferramentas comerciais/RLS, mock de geraç
     assert(eligibleOfferId.length > 0, 'eligible offer was not created');
 
     testRateVersion = `local-e2e-${ownerA.marker}`;
-    const rateSql = `insert into public.ai_rate_cards(rate_kind,provider_key,model_key,rate_version,currency,input_cost_per_1k,output_cost_per_1k,source_reference,verified_at,approved_by,effective_from,enabled) values ('model_tokens','https://api.openai.com','${testModelKey}','${testRateVersion}','BRL',1,2,'local synthetic test rate',now(), '${ownerA.id}', now() - interval '1 minute', true)`;
+    const rateSql = `insert into public.ai_rate_cards(rate_kind,provider_key,model_key,rate_version,currency,input_cost_per_1k,output_cost_per_1k,source_reference,verified_at,approved_by,effective_from,enabled) values ('model_tokens','https://api.openai.com','${testModelKey}','${testRateVersion}','BRL',0.0001,0.0005,'local synthetic test rate',now(), '${ownerA.id}', now() - interval '1 minute', true)`;
     await localSql(rateSql);
+    testConcurrencyModelKey = `local-concurrency-${ownerA.marker}`;
+    testConcurrencyRateVersion = `local-concurrency-${ownerA.marker}`;
+    await localSql(`insert into public.ai_rate_cards(rate_kind,provider_key,model_key,rate_version,currency,input_cost_per_1k,output_cost_per_1k,source_reference,verified_at,approved_by,effective_from,enabled) values ('model_tokens','https://api.openai.com','${testConcurrencyModelKey}','${testConcurrencyRateVersion}','BRL',0.6,0.6,'local synthetic concurrency test',now(),'${ownerA.id}',now()-interval '1 minute',true)`);
+
+    // Real concurrent RPCs exercise wallet row locking: each synthetic quote
+    // needs 120 of the Pro wallet's 200 credits, so only one may reserve.
+    const concurrencyRequests = await Promise.all(['a', 'b'].map(async (suffix) => {
+      const requestKey = `concurrency-${suffix}-${crypto.randomUUID()}`;
+      const requestHash = suffix.repeat(64);
+      const quote = await admin.rpc('ai_credit_quote_reserve_v1', {
+        target_company: companyA, target_user: ownerA!.id, request_key: requestKey,
+        request_hash: requestHash, provider_key: 'https://api.openai.com',
+        model_key: testConcurrencyModelKey, input_tokens: 1000, output_token_limit: 1000,
+        quote_id: null, confirm: false,
+      });
+      if (quote.error || quote.data?.code !== 'AI_CREDITS_CONFIRMATION_REQUIRED') throw new Error('Concurrent credit quote did not require confirmation.');
+      return { requestKey, requestHash, quoteId: quote.data.quote_id };
+    }));
+    const concurrentReservations = await Promise.all(concurrencyRequests.map((item) => admin.rpc('ai_credit_quote_reserve_v1', {
+      target_company: companyA, target_user: ownerA!.id, request_key: item.requestKey,
+      request_hash: item.requestHash, provider_key: 'https://api.openai.com',
+      model_key: testConcurrencyModelKey, input_tokens: 1000, output_token_limit: 1000,
+      quote_id: item.quoteId, confirm: true,
+    })));
+    if (concurrentReservations.some((result) => result.error)) throw new Error('Concurrent credit reservation RPC failed.');
+    const concurrentCodes = concurrentReservations.map((result) => result.data?.code);
+    assert(concurrentCodes.filter((code) => code === 'AI_CREDITS_RESERVED').length === 1 && concurrentCodes.filter((code) => code === 'AI_CREDITS_INSUFFICIENT').length === 1, 'Concurrent reservations exceeded the 200-credit wallet.');
+    const concurrentWallet = await admin.rpc('ai_credits_snapshot_v1', { target_company: companyA, target_user: ownerA.id });
+    assert(!concurrentWallet.error && concurrentWallet.data?.monthly_remaining === 80 && concurrentWallet.data?.available === 80, 'Concurrent reservations produced an incorrect or negative wallet balance.');
 
     const statusResponse = await invoke(ownerA.jwt, companyA, { action: 'status' });
     const statusBody = await statusResponse.json();
@@ -192,7 +226,7 @@ Deno.test('AI Sales: Auth real local, ferramentas comerciais/RLS, mock de geraç
     assert(offerResponse.status === 200 && offerBody.tool === 'analisar_ofertas_fornecedor', `supplier offers tool failed through the real handler (http=${offerResponse.status}, code=${String(offerBody.code || 'none').slice(0, 60)}, tool=${String(offerBody.tool || 'none').slice(0, 60)})`);
     if (offerBody.generation_mode !== 'ai_generated') {
       const diag = await localSql(`select coalesce((select status from public.ai_budget_reservations where company_id='${companyA}' and request_key='${requestId}:ai-sales'),'no_reservation') || '|' || (select count(*)::text from public.ai_rate_cards where rate_version='${testRateVersion}') || '|' || (select count(*)::text from public.ai_rate_cards where rate_kind='model_tokens' and provider_key='https://api.openai.com' and model_key='${testModelKey}' and enabled and effective_from<=now() and (effective_until is null or effective_until>now()))`);
-      throw new Error(`mocked provider generation did not complete (mode=${String(offerBody.generation_mode)}, status_mode=${String(statusBody.generation_mode)}, budget=${String(statusBody.controls?.company_ai_budget)}, mock_calls=${providerRequests.length}, data_chars=${JSON.stringify(offerBody.data || null).length}, local_reservation_and_rate=${diag})`);
+      throw new Error(`mocked provider generation did not complete (mode=${String(offerBody.generation_mode)}, status_mode=${String(statusBody.generation_mode)}, budget=${String(statusBody.controls?.company_ai_budget)}, credits=${String(offerBody.ai_credits?.code || 'none')}, mock_calls=${providerRequests.length}, data_chars=${JSON.stringify(offerBody.data || null).length}, local_reservation_and_rate=${diag})`);
     }
     assert(offerBody.data?.offers?.length === 1 && offerBody.data.offers[0].request_covered_by_declaration === true, 'eligible BRL offer was not used');
     assert(offerBody.data.offers[0].channels?.[0]?.fee_source === 'internal_configuration_unverified_by_marketplace', 'channel fee origin was not disclosed');
@@ -326,9 +360,11 @@ Deno.test('AI Sales: Auth real local, ferramentas comerciais/RLS, mock de geraç
       const cleanup = await localSql(`delete from public.companies where id in (${createdCompanies.map((id) => `'${id}'`).join(',')})`).then(() => true).catch(() => false);
       if (!cleanup) cleanupFailures.push('companies');
     }
-    if (testRateVersion) {
-      const escaped = testRateVersion.replaceAll("'", "''");
-      const cleanup = await localSql(`delete from public.ai_rate_cards where rate_version='${escaped}'`).then(() => true).catch(() => false);
+    if (testRateVersion || testConcurrencyRateVersion) {
+      const versions = [testRateVersion, testConcurrencyRateVersion].filter(Boolean).map((value) => `'${value.replaceAll("'", "''")}'`).join(',');
+      const pricingCleanup = await localSql(`delete from public.ai_credit_rate_pricing where rate_card_id in (select id from public.ai_rate_cards where rate_version in (${versions}))`).then(() => true).catch(() => false);
+      if (!pricingCleanup) cleanupFailures.push('rate_pricing');
+      const cleanup = await localSql(`delete from public.ai_rate_cards where rate_version in (${versions})`).then(() => true).catch(() => false);
       if (!cleanup) cleanupFailures.push('rate_card');
     }
     for (const userId of createdUsers) {

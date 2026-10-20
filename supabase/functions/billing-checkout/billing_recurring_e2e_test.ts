@@ -8,7 +8,7 @@ const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const dbContainer = Deno.env.get('E2E_DB_CONTAINER') || '';
 const local = baseUrl ? new URL(baseUrl) : null;
-if (!local || !['localhost', '127.0.0.1', '[::1]'].includes(local.hostname) || !anonKey || !serviceKey || !dbContainer || !dbContainer.startsWith('supabase_db_')) {
+if (!local || !['localhost', '127.0.0.1', '[::1]'].includes(local.hostname) || !anonKey || !serviceKey || !/^supabase(?:_db_|-[a-z0-9._-]*database-)/i.test(dbContainer)) {
   throw new Error('Recurring billing E2E requires an explicitly configured local-only Supabase stack.');
 }
 
@@ -85,14 +85,14 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
       assert(payload.external_reference && payload.status === 'authorized', 'provider subscription request missing checkout reference or authorized status');
       return new Response(JSON.stringify({ id: providerSubscriptionId, status: 'authorized', init_point: 'https://www.mercadopago.com.br/subscriptions/checkout/local' }), { status: 201 });
     }
-    if (url.pathname === `/preapproval/${providerSubscriptionId}`) return new Response(JSON.stringify({ id: providerSubscriptionId, status: subscriptionStatus, external_reference: currentCheckoutId }), { status: 200 });
+    if (url.pathname === `/preapproval/${providerSubscriptionId}`) return new Response(JSON.stringify({ id: providerSubscriptionId, collector_id: 987654321, status: subscriptionStatus, external_reference: currentCheckoutId }), { status: 200 });
     if (url.pathname === `/authorized_payments/${invoiceId}`) return new Response(JSON.stringify({
-      id: invoiceId, preapproval_id: providerSubscriptionId, external_reference: currentCheckoutId,
+      id: invoiceId, preapproval_id: providerSubscriptionId, collector_id: 987654321, external_reference: currentCheckoutId,
       currency_id: 'BRL', transaction_amount: '125.00', last_modified: new Date().toISOString(),
       status: 'scheduled', summarized: invoicePaymentStatus, payment: { id: invoicePaymentId, status: invoicePaymentStatus },
     }), { status: 200 });
     if (url.pathname === `/v1/payments/${invoicePaymentId}`) return new Response(JSON.stringify({
-      id: invoicePaymentId, status: providerPaymentStatus, transaction_amount: 125, currency_id: 'BRL', date_approved: new Date().toISOString(),
+      id: invoicePaymentId, collector_id: 987654321, status: providerPaymentStatus, transaction_amount: 125, currency_id: 'BRL', date_approved: new Date().toISOString(),
     }), { status: 200 });
     throw new Error('unexpected local provider operation');
   };
@@ -142,8 +142,8 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
     const originalFetch = providerFetch;
     const delinquencyFetch: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
-      if (url.pathname === `/authorized_payments/${failedInvoiceId}`) return new Response(JSON.stringify({ id: failedInvoiceId, preapproval_id: providerSubscriptionId, external_reference: currentCheckoutId, currency_id: 'BRL', transaction_amount: '125.00', payment: { id: failedPaymentId, status: 'rejected' } }), { status: 200 });
-      if (url.pathname === `/v1/payments/${failedPaymentId}`) return new Response(JSON.stringify({ id: failedPaymentId, status: 'rejected', transaction_amount: 125, currency_id: 'BRL' }), { status: 200 });
+      if (url.pathname === `/authorized_payments/${failedInvoiceId}`) return new Response(JSON.stringify({ id: failedInvoiceId, preapproval_id: providerSubscriptionId, collector_id: 987654321, external_reference: currentCheckoutId, currency_id: 'BRL', transaction_amount: '125.00', payment: { id: failedPaymentId, status: 'rejected' } }), { status: 200 });
+      if (url.pathname === `/v1/payments/${failedPaymentId}`) return new Response(JSON.stringify({ id: failedPaymentId, collector_id: 987654321, status: 'rejected', transaction_amount: 125, currency_id: 'BRL' }), { status: 200 });
       return originalFetch(input, init);
     };
     const failedEventId = `recurring-failed-invoice-${nonce}`; createdEvents.push(failedEventId);
@@ -170,12 +170,16 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
       body: JSON.stringify({ company_id: owner!.companyId, subscription_id: localSubscription.data.id, action }),
     }), { adminClient: admin, providerFetch: async (input, init) => {
       const url = new URL(String(input));
+      if (url.origin === 'https://api.mercadolibre.com' && url.pathname === '/users/me') {
+        return Response.json({ id: 987654321, site_id: 'MLB', tags: ['test_user'] });
+      }
       assert(url.pathname === `/preapproval/${providerSubscriptionId}` && init?.method === 'PUT', 'subscription control used an unexpected provider endpoint');
       assert(JSON.parse(String(init?.body || '{}')).status === providerStatus, 'subscription control sent an unexpected provider status');
       return new Response(JSON.stringify({ id: providerSubscriptionId, status: providerStatus }), { status: 200 });
     } });
     const paused = await manage('pause', 'paused');
-    assert(paused.status === 200 && (await paused.json()).status === 'paused', 'subscription pause was not persisted');
+    const pausedBody = await paused.json();
+    assert(paused.status === 200 && pausedBody.status === 'paused', `subscription pause was not persisted (http=${paused.status}, code=${String(pausedBody.code || 'none')}, status=${String(pausedBody.status || 'none')})`);
     const resumed = await manage('resume', 'authorized');
     assert(resumed.status === 200 && (await resumed.json()).status === 'authorized', 'subscription resumption was not persisted');
     const managedCancellation = await manage('cancel', 'canceled');
@@ -196,8 +200,8 @@ Deno.test('Billing recurring: tokenização, autorização, renovação, idempot
     const lateInvoiceId = `local-invoice-late-${nonce}`; const latePaymentId = `local-payment-late-${nonce}`;
     const lateFetch: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
-      if (url.pathname === `/authorized_payments/${lateInvoiceId}`) return new Response(JSON.stringify({ id: lateInvoiceId, preapproval_id: providerSubscriptionId, external_reference: currentCheckoutId, currency_id: 'BRL', transaction_amount: '125.00', payment: { id: latePaymentId, status: 'approved' } }), { status: 200 });
-      if (url.pathname === `/v1/payments/${latePaymentId}`) return new Response(JSON.stringify({ id: latePaymentId, status: 'approved', transaction_amount: 125, currency_id: 'BRL' }), { status: 200 });
+      if (url.pathname === `/authorized_payments/${lateInvoiceId}`) return new Response(JSON.stringify({ id: lateInvoiceId, preapproval_id: providerSubscriptionId, collector_id: 987654321, external_reference: currentCheckoutId, currency_id: 'BRL', transaction_amount: '125.00', payment: { id: latePaymentId, status: 'approved' } }), { status: 200 });
+      if (url.pathname === `/v1/payments/${latePaymentId}`) return new Response(JSON.stringify({ id: latePaymentId, collector_id: 987654321, status: 'approved', transaction_amount: 125, currency_id: 'BRL' }), { status: 200 });
       return originalFetch(input, init);
     };
     const lateEventId = `recurring-late-payment-${nonce}`; createdEvents.push(lateEventId);

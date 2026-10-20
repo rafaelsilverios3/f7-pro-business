@@ -1,8 +1,8 @@
 export const PLATFORM_ROLES = Object.freeze(['owner', 'admin', 'support', 'readonly']);
 
 const WRITE_ROLES = new Set(['owner', 'admin']);
-const READONLY_ACTIONS = new Set(['access', 'overview', 'companies', 'health', 'ai_financial_rates', 'ai_financial_usage']);
-const SUPPORT_ACTIONS = new Set(['access', 'overview', 'companies', 'company', 'subscriptions', 'whatsapp', 'health', 'ai_financial_rates', 'ai_financial_usage']);
+const READONLY_ACTIONS = new Set(['access', 'overview', 'companies', 'health', 'ai_financial_rates', 'ai_financial_usage', 'ai_credits_catalog', 'ai_credits_company_read']);
+const SUPPORT_ACTIONS = new Set(['access', 'overview', 'companies', 'company', 'subscriptions', 'whatsapp', 'health', 'ai_financial_rates', 'ai_financial_usage', 'ai_credits_catalog', 'ai_credits_company_read']);
 const ADMIN_MANAGEMENT_ACTIONS = new Set(['create_platform_admin', 'update_platform_admin']);
 const WRITE_ACTIONS = new Set([
   'update_company_plan', 'update_company_status', 'create_warning', 'resolve_warning',
@@ -10,11 +10,14 @@ const WRITE_ACTIONS = new Set([
   ...ADMIN_MANAGEMENT_ACTIONS,
 ]);
 const AI_FINANCIAL_ACTIONS = new Set([
-  'ai_financial_rates', 'ai_financial_usage',
+  'ai_financial_rates', 'ai_financial_usage', 'ai_owner_usage_read',
 ]);
 const AI_FINANCIAL_WRITE_ACTIONS = new Set([
   'ai_financial_budget', 'ai_financial_rate_create', 'ai_financial_rate_enable',
+  'ai_credits_plan_update', 'ai_credits_pricing_update', 'ai_credits_rate_pricing_update', 'ai_credits_package_update', 'ai_credits_company_adjust',
+  'ai_owner_usage_update',
 ]);
+const AI_CREDIT_RECOVERY_ACTIONS = new Set(['ai_credits_uncertain_list', 'ai_credits_uncertain_resolve']);
 
 export function isPlatformAdminCurrent(row, now = Date.now()) {
   if (!row || row.status !== 'active' || !PLATFORM_ROLES.includes(row.role)) return false;
@@ -42,6 +45,7 @@ export function normalizePlatformAdminExpiry(value, { required = false, allowPer
 
 export function platformAdminCanAccessAction(role, action) {
   if (!PLATFORM_ROLES.includes(role)) return false;
+  if (AI_CREDIT_RECOVERY_ACTIONS.has(action) && role !== 'owner') return false;
   if (role === 'readonly' && !READONLY_ACTIONS.has(action)) return false;
   if (role === 'support' && !SUPPORT_ACTIONS.has(action)) return false;
   if (AI_FINANCIAL_WRITE_ACTIONS.has(action) && role !== 'owner') return false;

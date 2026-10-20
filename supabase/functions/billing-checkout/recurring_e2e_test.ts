@@ -186,6 +186,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
     ) {
       return Response.json({
         id: providerSubscriptionId,
+        collector_id: 987654321,
         status: providerSubscriptionStatus,
         external_reference: checkoutExternalReference,
       }, { status: 200 });
@@ -210,6 +211,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       return Response.json({
         id: paymentId,
         preapproval_id: providerSubscriptionId,
+        collector_id: 987654321,
         external_reference: checkoutExternalReference,
         currency_id: "BRL",
         last_modified: new Date().toISOString(),
@@ -223,6 +225,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
     ) {
       return Response.json({
         id: decodeURIComponent(paymentMatch[1]),
+        collector_id: 987654321,
         status: "approved",
         transaction_amount: 125,
         currency_id: "BRL",
@@ -329,6 +332,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       !crossTenantBefore.error && crossTenantBefore.data.length === 0,
       "Other tenant could read the subscription fixture.",
     );
+    const callsBeforeForbiddenControl = calls.length;
     const forbiddenControl = await handleBillingSubscriptionManageRequest(
       new Request("http://127.0.0.1/functions/v1/billing-subscription-manage", {
         method: "POST",
@@ -350,7 +354,7 @@ Deno.test("Billing recurring: checkout, authorization, settlement, tenant access
       "Other tenant could control the subscription.",
     );
     assert(
-      calls.length === 1,
+      calls.length === callsBeforeForbiddenControl,
       "Unauthorized cross-tenant control called the provider.",
     );
 

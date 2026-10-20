@@ -1,5 +1,5 @@
 import { admin, auth, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
+import { blocksBillingEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
 import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -14,16 +14,19 @@ function safeHealthResponse(values: {
   environment: 'test' | 'production' | 'not_configured';
   state: 'ready' | 'configuration_required' | 'provider_unavailable' | 'payments_disabled';
   paymentsEnabled: boolean;
+  credentialsVerified?: boolean;
+  cardsEnabled?: boolean;
+  recurringEnabled?: boolean;
 }) {
   return {
     provider: 'mercado_pago',
     environment: values.environment,
     state: values.state,
+    credentials_verified: values.credentialsVerified === true,
     payments_enabled: values.paymentsEnabled,
     pix_allowed: values.paymentsEnabled,
-    // Card currently creates recurring subscriptions and remains disabled in
-    // homologation until its sandbox flow has been explicitly validated.
-    card_enabled: false,
+    card_enabled: values.cardsEnabled === true,
+    recurring_enabled: values.recurringEnabled === true,
   };
 }
 
@@ -75,11 +78,11 @@ export async function handleBillingHealthRequest(
     const token = getEnv('MERCADO_PAGO_ACCESS_TOKEN') || '';
     const webhookSecretConfigured = Boolean(getEnv('MERCADO_PAGO_WEBHOOK_SECRET'));
     const productionPaymentsEnabled = (getEnv('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
-    const isHomologation = blocksLiveBillingInHomologation(environmentValue);
+    const isEnvironmentBlocked = blocksBillingEnvironmentMismatch(environmentValue);
 
-    // Never probe a production credential in the homologation project, even
-    // though the endpoint itself only performs a read-only provider request.
-    if (isHomologation) {
+    // Never probe production credentials from a non-production Supabase
+    // project, or sandbox credentials against the production database.
+    if (isEnvironmentBlocked) {
       return json(safeHealthResponse({
         environment: environment === 'not_configured' ? 'not_configured' : environment,
         state: 'payments_disabled',
@@ -87,8 +90,7 @@ export async function handleBillingHealthRequest(
       }));
     }
 
-    const productionAllowed = environment !== 'production' || productionPaymentsEnabled;
-    if (!environmentIsValid || !token || !webhookSecretConfigured || !productionAllowed) {
+    if (!environmentIsValid || !token || !webhookSecretConfigured) {
       return json(safeHealthResponse({ environment, state: 'configuration_required', paymentsEnabled: false }));
     }
 
@@ -105,10 +107,20 @@ export async function handleBillingHealthRequest(
     }
 
     const paymentsEnabled = environment === 'test' || productionPaymentsEnabled;
+    // Production credentials can be checked with the provider's read-only
+    // identity endpoint while the charge gate is still closed. Card checkout
+    // is enabled only after that gate opens; subscriptions additionally wait
+    // for the recurring reconciliation job to be enabled.
+    const cardsEnabled = environment === 'production' && paymentsEnabled;
+    const recurringEnabled = cardsEnabled &&
+      (getEnv('BILLING_RECONCILIATION_ENABLED') || '').trim().toLowerCase() === 'true';
     return json(safeHealthResponse({
       environment,
       state: paymentsEnabled ? 'ready' : 'payments_disabled',
       paymentsEnabled,
+      credentialsVerified: true,
+      cardsEnabled,
+      recurringEnabled,
     }));
   } catch {
     console.error(JSON.stringify({ event: 'BILLING_HEALTH_REQUEST_FAILED' }));

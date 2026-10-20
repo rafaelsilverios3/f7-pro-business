@@ -63,6 +63,37 @@ Deno.serve(async (req) => {
     if (['ai_financial_rates', 'ai_financial_usage'].includes(action) && !['support', 'readonly'].includes(adminRow.data.role)) {
       await audit(service, { admin_user_id: actor.id, company_id: action === 'ai_financial_usage' ? clean(input.company_id, 80) || null : null, action: 'platform_admin.ai_financial.read', entity: 'ai_financial_admin', entity_id: action, after_data: { action }, reason: 'Financial AI data read' }, req);
     }
+    if (action.startsWith('ai_credits_')) {
+      const caller = userClient(jwt);
+      if (action === 'ai_credits_uncertain_list') {
+        const result = await caller.rpc('platform_admin_ai_credit_uncertain_list_v1');
+        if (result.error) throw result.error;
+        const rows = Array.isArray(result.data?.rows) ? result.data.rows : [];
+        await audit(service, { admin_user_id: actor.id, action: 'platform_admin.ai_credits_uncertain.read', entity: 'ai_credit_operations', after_data: { count: rows.length }, reason: 'Review unresolved AI credit reservations' }, req);
+        return json({ rows });
+      }
+      const procedures: Record<string, [string, Record<string, unknown>]> = {
+        ai_credits_catalog: ['platform_admin_ai_credit_catalog_v1', {}],
+        ai_credits_company_read: ['platform_admin_ai_credit_company_v1', { p_company: clean(input.company_id, 80) }],
+        ai_credits_plan_update: ['platform_admin_ai_credit_update_plan_v1', { p_plan: clean(input.plan_code, 20), p_credits: Number(input.monthly_credits), p_reason: clean(input.reason, 500) }],
+        ai_credits_pricing_update: ['platform_admin_ai_credit_update_pricing_v1', { p_usd_to_brl: input.usd_to_brl === '' ? null : input.usd_to_brl, p_markup_bps: Number(input.markup_bps), p_threshold: Number(input.confirmation_threshold_credits), p_balance_bps: Number(input.confirmation_balance_bps), p_reason: clean(input.reason, 500) }],
+        ai_credits_rate_pricing_update: ['platform_admin_ai_credit_update_rate_pricing_v1', { p_rate_card_id: clean(input.rate_card_id, 80), p_markup_bps: input.markup_bps === '' || input.markup_bps === undefined ? null : Number(input.markup_bps), p_fx_to_brl: input.fx_to_brl === '' || input.fx_to_brl === undefined ? null : Number(input.fx_to_brl), p_reason: clean(input.reason, 500) }],
+        ai_credits_package_update: ['platform_admin_ai_credit_update_package_v1', { p_package: clean(input.package_code, 40), p_credits: Number(input.credits), p_price_minor: Number(input.price_minor), p_active: input.active === true, p_reason: clean(input.reason, 500) }],
+        ai_credits_company_adjust: ['platform_admin_ai_credit_adjust_company_v1', { p_company: clean(input.company_id, 80), p_monthly: input.monthly_allowance === '' || input.monthly_allowance === undefined ? null : Number(input.monthly_allowance), p_bonus: Number(input.bonus_credits || 0), p_reference: clean(input.reference_key, 120), p_expires_at: input.expires_at || null, p_reason: clean(input.reason, 500) }],
+        ai_credits_uncertain_resolve: ['platform_admin_ai_credit_reconcile_uncertain_v1', { p_company: clean(input.company_id, 80), p_operation_id: clean(input.operation_id, 80), p_resolution: clean(input.resolution, 40), p_actual_input: input.actual_input === '' || input.actual_input === undefined ? null : Number(input.actual_input), p_actual_output: input.actual_output === '' || input.actual_output === undefined ? null : Number(input.actual_output), p_evidence_ref: clean(input.evidence_ref, 200), p_reason: clean(input.reason, 500) }],
+      };
+      const configured = procedures[action];
+      if (!configured) return json({ error: 'AI_CREDITS_ACTION_NOT_FOUND' }, 404);
+      const [procedure, args] = configured;
+      const { data, error } = await caller.rpc(procedure, args);
+      if (error) return json({ error: ['PLATFORM_OWNER_REQUIRED','AI_CREDITS_CONFIG_INVALID','AI_CREDITS_REFERENCE_REQUIRED','AI_CREDIT_RECONCILIATION_INPUT_INVALID','AI_CREDIT_USAGE_INVALID','AUTHENTICATED_OWNER_REQUIRED'].includes(error.message) ? error.message : 'AI_CREDITS_ADMIN_OPERATION_FAILED' }, error.code === '42501' ? 403 : 422);
+      await audit(service, { admin_user_id: actor.id, company_id: action === 'ai_credits_company_adjust' ? clean(input.company_id, 80) || null : null, action: `platform_admin.${action}`, entity: procedure, entity_id: clean(input.plan_code || input.package_code || input.company_id, 120) || null, after_data: action === 'ai_credits_catalog' ? { catalog_read: true } : data, reason: clean(input.reason, 500) || (action === 'ai_credits_catalog' ? 'Read AI Credits administration' : undefined) }, req);
+      if (action === 'ai_credits_catalog') return json(data);
+      if (action === 'ai_credits_company_read') return json(data);
+      if (action === 'ai_credits_company_adjust') return json({ wallet: data });
+      if (action === 'ai_credits_uncertain_resolve') return json({ result: data });
+      return json({ result: data });
+    }
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
     if (action === 'overview') {
@@ -155,6 +186,18 @@ Deno.serve(async (req) => {
     if (action === 'update_feature') { const companyId = clean(input.company_id, 80); const feature = clean(input.feature, 80).toLowerCase(); if (!feature) return json({ error: 'INVALID_FEATURE' }, 422); if (input.enabled === null) { const removed = await service.from('company_feature_overrides').delete().eq('company_id', companyId).eq('feature', feature); if (removed.error) throw removed.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: 'company.feature.removed', entity: 'company_feature_overrides', entity_id: feature, reason: input.reason }, req); return json({ removed: true }); } const result = await service.from('company_feature_overrides').upsert({ company_id: companyId, feature, enabled: Boolean(input.enabled), reason: clean(input.reason, 500) || null, updated_at: new Date().toISOString() }, { onConflict: 'company_id,feature' }).select('*').single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: input.enabled ? 'company.feature.enabled' : 'company.feature.disabled', entity: 'company_feature_overrides', entity_id: feature, after_data: result.data, reason: input.reason }, req); return json({ override: result.data }); }
     if (action === 'ai') { let query = service.from('company_assistant_settings').select('company_id,mode,automatic_reply_enabled,allow_web_research,allow_product_lookup,allow_price_lookup,allow_stock_lookup,allow_customer_lookup,allow_quote_draft,max_daily_ai_calls,max_daily_web_queries,max_tokens_per_request'); if (input.company_id) { const result = await query.eq('company_id', clean(input.company_id, 80)).maybeSingle(); if (result.error) throw result.error; return json({ settings: result.data }); } const result = await query; if (result.error) throw result.error; const companies = await service.from('companies').select('id,name'); if (companies.error) throw companies.error; const names = new Map((companies.data || []).map((row: any) => [row.id, row.name])); return json({ rows: (result.data || []).map((row: any) => ({ ...row, company_name: names.get(row.company_id) || '—' })) }); }
     if (action === 'update_ai') { const companyId = clean(input.company_id, 80); const allowed = ['mode','automatic_reply_enabled','allow_web_research','allow_product_lookup','allow_price_lookup','allow_stock_lookup','allow_customer_lookup','allow_quote_draft']; const payload: any = {}; for (const field of allowed) if (input[field] !== undefined) payload[field] = input[field]; if (!Object.keys(payload).length) return json({ error: 'AI_FINANCIAL_CONTROLS_REQUIRE_FINANCIAL_ACTION' }, 422); const before = await service.from('company_assistant_settings').select(allowed.join(',')).eq('company_id', companyId).maybeSingle(); if (before.error) throw before.error; const result = await service.from('company_assistant_settings').update(payload).eq('company_id', companyId).select(allowed.join(',')).single(); if (result.error) throw result.error; await audit(service, { admin_user_id: actor.id, company_id: companyId, action: 'company.ai_settings.changed', entity: 'company_assistant_settings', entity_id: companyId, before_data: before.data, after_data: result.data, reason: input.reason }, req); return json({ settings: result.data }); }
+    if (action === 'ai_owner_usage_read' || action === 'ai_owner_usage_update') {
+      const caller = userClient(jwt);
+      const result = action === 'ai_owner_usage_read'
+        ? await caller.rpc('platform_owner_ai_usage_policy_v1')
+        : await caller.rpc('platform_owner_ai_usage_policy_update_v1', { p_enabled: input.temporary_limits_enabled, p_daily_calls: input.daily_call_limit, p_daily_cost_brl: input.daily_budget_brl, p_reason: clean(input.reason, 500) });
+      if (result.error) {
+        const code = result.error.code === '42501' ? 403 : result.error.code === '22023' ? 422 : 500;
+        const error = result.error.message === 'PLATFORM_OWNER_REQUIRED' ? result.error.message : 'OWNER_AI_POLICY_OPERATION_FAILED';
+        return json({ error }, code);
+      }
+      return json({ policy: result.data });
+    }
     if (action === 'ai_financial_rates' || action === 'ai_financial_usage' || action === 'ai_financial_budget' || action === 'ai_financial_rate_create' || action === 'ai_financial_rate_enable') {
       // Keep the source tables revoked from service_role. The caller JWT reaches
       // tightly-scoped SECURITY DEFINER RPCs that re-check owner/admin in SQL.

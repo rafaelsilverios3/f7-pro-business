@@ -30,8 +30,11 @@ export function planModelReservation({ settings, rateCard, inputTokens, maxOutpu
   }
 
   const totalTokens = input + output;
-  if (!Number.isSafeInteger(totalTokens) || totalTokens > maxTokens) {
-    return { allowed: false, reason: 'request_tokens_exceeded' };
+  if (!Number.isSafeInteger(totalTokens)) {
+    return { allowed: false, reason: 'ai_token_reservation_invalid' };
+  }
+  if (output > maxTokens) {
+    return { allowed: false, reason: 'output_tokens_exceeded' };
   }
 
   const estimatedCost = roundCostUpToMicrounits((Number(rateCard.input_cost_per_1k) * input + Number(rateCard.output_cost_per_1k) * output) / 1000);

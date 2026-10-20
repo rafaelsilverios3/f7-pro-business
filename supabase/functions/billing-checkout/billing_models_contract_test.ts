@@ -54,7 +54,7 @@ const verifiedTestIdentity = (url: URL) => url.origin === "https://api.mercadoli
 
 Deno.test("Billing one-time card: uses server total, single-use token and waits for canonical webhook", async () => {
   await withEnv({
-    SUPABASE_URL: "https://vwylnjmapixtzhryiutt.supabase.co",
+    SUPABASE_URL: "https://f7-homologation.invalid",
     MERCADO_PAGO_ENVIRONMENT: "test",
     MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: "false",
     MERCADO_PAGO_ACCESS_TOKEN: "local-test-token",
@@ -103,7 +103,7 @@ Deno.test("Billing one-time card: uses server total, single-use token and waits 
 
 Deno.test("Billing card provider uncertainty stays pending and fails closed", async () => {
   await withEnv({
-    SUPABASE_URL: "https://vwylnjmapixtzhryiutt.supabase.co",
+    SUPABASE_URL: "https://f7-homologation.invalid",
     MERCADO_PAGO_ENVIRONMENT: "test",
     MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: "false",
     MERCADO_PAGO_ACCESS_TOKEN: "local-test-token",
@@ -130,7 +130,7 @@ Deno.test("Billing card provider uncertainty stays pending and fails closed", as
 
 Deno.test("Billing recurring annual card: uses a 12-month provider cycle and validated return URL", async () => {
   await withEnv({
-    SUPABASE_URL: "https://vwylnjmapixtzhryiutt.supabase.co",
+    SUPABASE_URL: "https://f7-homologation.invalid",
     MERCADO_PAGO_ENVIRONMENT: "test",
     MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED: "false",
     MERCADO_PAGO_ACCESS_TOKEN: "local-test-token",

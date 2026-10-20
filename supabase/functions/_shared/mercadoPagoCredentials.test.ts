@@ -1,4 +1,4 @@
-import { verifyMercadoPagoCredentialEnvironment } from './mercadoPagoCredentials.ts';
+import { getMercadoPagoCredentialIdentity, verifyMercadoPagoCredentialEnvironment } from './mercadoPagoCredentials.ts';
 
 function assertEquals(actual: unknown, expected: unknown) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -21,6 +21,18 @@ Deno.test('Orders APP_USR test credential is accepted only when provider identit
   );
   assertEquals(result, 'verified');
   assertEquals(calls, 1);
+});
+
+Deno.test('verified Mercado Pago identity returns only the provider seller ID needed for resource binding', async () => {
+  const result = await getMercadoPagoCredentialIdentity('APP_USR-synthetic-test-token', 'test', async () =>
+    Response.json({ id: 123456789, site_id: 'MLB', tags: ['test_user'] }));
+  assertEquals(result, { check: 'verified', sellerId: '123456789' });
+});
+
+Deno.test('malformed Mercado Pago seller identity fails closed', async () => {
+  const result = await getMercadoPagoCredentialIdentity('synthetic', 'test', async () =>
+    Response.json({ id: 'seller-unknown', site_id: 'MLB', tags: ['test_user'] }));
+  assertEquals(result, { check: 'mismatch', sellerId: null });
 });
 
 Deno.test('production account token is rejected in test mode regardless of APP_USR prefix', async () => {

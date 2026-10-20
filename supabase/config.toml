@@ -30,6 +30,9 @@ verify_jwt = true
 [functions.billing-subscription-manage]
 verify_jwt = true
 
+[functions.billing-subscription-reconcile]
+verify_jwt = false
+
 [functions.whatsapp-connect]
 verify_jwt = true
 

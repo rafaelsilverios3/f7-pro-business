@@ -1,11 +1,21 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
-import { blocksLiveBillingInHomologation } from '../_shared/billingEnvironment.ts';
-import { verifyMercadoPagoCredentialEnvironment } from '../_shared/mercadoPagoCredentials.ts';
+import { blocksBillingEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
+import { getMercadoPagoCredentialIdentity } from '../_shared/mercadoPagoCredentials.ts';
+import { mapVerifiedCreditStatus, releaseBillingWebhookForRetry, resolveVerifiedBillingPurchase } from '../_shared/billingPurchaseRouting.js';
 
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeProviderLabel = (value: unknown) => {
   const label = String(value || '').toLowerCase();
   return /^[a-z][a-z0-9_]{0,31}$/.test(label) ? label : null;
+};
+const safeDiagnosticId = (value: unknown) => {
+  const id = String(value || '').trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id) ? id : null;
+};
+const resourceFingerprint = async (value: string) => {
+  if (!value) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].slice(0, 8).map((byte) => byte.toString(16).padStart(2, '0')).join('');
 };
 
 const hexBytes = (value: string) => {
@@ -32,31 +42,53 @@ const isWebhookTimestampValid = (value: string, nowSeconds = Math.floor(Date.now
 
 const resolveDataId = (req: Request, body: any) => {
   const url = new URL(req.url);
-  const queryDataId = clean(url.searchParams.get('data.id') || url.searchParams.get('data_id'));
+  const queryDataId = url.searchParams.get('data.id') ?? url.searchParams.get('data_id');
   if (queryDataId) return { value: queryDataId, origin: 'query' };
-  const bodyDataId = clean(body?.data?.id || body?.id);
+  const rawBodyDataId = body?.data?.id ?? body?.id;
+  const bodyDataId = rawBodyDataId === null || rawBodyDataId === undefined ? '' : String(rawBodyDataId);
   return { value: bodyDataId, origin: bodyDataId ? 'body' : 'none' };
 };
 
-async function validateSignature(req: Request, body: any) {
+export async function validateSignature(req: Request, body: any) {
   const secret = Deno.env.get('MERCADO_PAGO_WEBHOOK_SECRET') || '';
   const signature = req.headers.get('x-signature') || '';
   const requestId = req.headers.get('x-request-id') || '';
   const resolvedDataId = resolveDataId(req, body);
   const dataId = resolvedDataId.value;
+  const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || 'unconfigured').trim().toLowerCase();
+  const diagnosticId = safeDiagnosticId(req.headers.get('x-f7-diagnostic-id'));
+  const diagnosticContext = {
+    timestamp: new Date().toISOString(),
+    diagnostic_id: diagnosticId,
+    environment: ['test', 'production'].includes(environment) ? environment : 'unconfigured',
+    type: safeProviderLabel(body?.type || body?.action) || 'unknown',
+    resource_fingerprint: await resourceFingerprint(dataId),
+  };
   const ts = signature.match(/(?:^|,)ts=([^,]+)/)?.[1] || '';
   const v1 = signature.match(/(?:^|,)v1=([^,]+)/)?.[1] || '';
-  const diagnostics = { event: 'BILLING_WEBHOOK_SIGNATURE_CHECK', x_request_id_present: Boolean(requestId), x_signature_present: Boolean(signature), timestamp_present: Boolean(ts), data_id_present: Boolean(dataId), data_id_origin: resolvedDataId.origin, received_digest_length: v1.length };
+  const diagnostics = { event: 'BILLING_WEBHOOK_SIGNATURE_CHECK', ...diagnosticContext, x_request_id_present: Boolean(requestId), x_signature_present: Boolean(signature), timestamp_present: Boolean(ts), data_id_present: Boolean(dataId), data_id_origin: resolvedDataId.origin, received_digest_length: v1.length };
   const invalid = (reason: string) => { console.error(JSON.stringify({ ...diagnostics, result: 'invalid', reason })); return { valid: false, dataId }; };
   if (!secret) return invalid('secret_missing');
   if (!ts || !v1 || !dataId) return invalid('required_signature_field_missing');
   if (!isWebhookTimestampValid(ts)) return invalid('timestamp_invalid_or_expired');
-  const manifest = [`id:${dataId};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(manifest));
-  const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  const valid = constantTimeEqual(expected, v1);
-  console.error(JSON.stringify({ ...diagnostics, result: valid ? 'valid' : 'invalid', reason: valid ? null : 'digest_mismatch' }));
+  const canonicalIds = [{ value: dataId, mode: 'raw' }];
+  // The Mercado Pago Go SDK lowercases alphanumeric data IDs before building
+  // the manifest. Keep the received ID intact for API lookup and try the raw
+  // form first; accept that documented canonical form as a compatibility
+  // variant without relaxing HMAC or timestamp verification.
+  if (/^[A-Za-z0-9]+$/.test(dataId) && dataId !== dataId.toLowerCase()) {
+    canonicalIds.push({ value: dataId.toLowerCase(), mode: 'lowercase_alphanumeric' });
+  }
+  let valid = false;
+  let canonicalization: string | null = null;
+  for (const candidate of canonicalIds) {
+    const manifest = [`id:${candidate.value};`, requestId ? `request-id:${requestId};` : '', `ts:${ts};`].join('');
+    const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(manifest));
+    const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    if (constantTimeEqual(expected, v1)) { valid = true; canonicalization = candidate.mode; break; }
+  }
+  console.error(JSON.stringify({ ...diagnostics, result: valid ? 'valid' : 'invalid', reason: valid ? null : 'digest_mismatch', canonicalization }));
   return { valid, dataId };
 }
 
@@ -96,16 +128,31 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   const signature = await validateSignature(req, body);
   if (!signature.valid) return json({ code: 'INVALID_WEBHOOK_SIGNATURE' }, 401);
   const environment = (Deno.env.get('MERCADO_PAGO_ENVIRONMENT') || '').trim().toLowerCase();
-  if (blocksLiveBillingInHomologation(environment)) return json({ code: 'HOMOLOGATION_LIVE_PAYMENTS_DISABLED' }, 409);
+  if (blocksBillingEnvironmentMismatch(environment)) return json({ code: 'BILLING_ENVIRONMENT_MISMATCH' }, 409);
   const providerToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN') || '';
   const productionPaymentsEnabled = (Deno.env.get('MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED') || '').trim().toLowerCase() === 'true';
   if (!['test', 'production'].includes(environment) || !providerToken) return json({ code: 'MERCADO_PAGO_NOT_CONFIGURED' }, 503);
   if (environment === 'production' && !productionPaymentsEnabled) return json({ code: 'MERCADO_PAGO_PRODUCTION_DISABLED' }, 503);
-  if (typeof body?.live_mode !== 'boolean' || body.live_mode !== (environment === 'production')) return json({ code: 'WEBHOOK_MODE_MISMATCH' }, 409);
-  const credentialCheck = await verifyMercadoPagoCredentialEnvironment(providerToken, environment as 'test' | 'production', providerFetch);
-  if (credentialCheck !== 'verified') {
-    return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialCheck === 'unavailable' ? 503 : 409);
+  if (typeof body?.live_mode !== 'boolean' || body.live_mode !== (environment === 'production')) {
+    console.error(JSON.stringify({
+      event: 'BILLING_WEBHOOK_MODE_CHECK',
+      timestamp: new Date().toISOString(),
+      diagnostic_id: safeDiagnosticId(req.headers.get('x-f7-diagnostic-id')),
+      environment: ['test', 'production'].includes(environment) ? environment : 'unconfigured',
+      type: safeProviderLabel(body?.type || body?.action) || 'unknown',
+      resource_fingerprint: await resourceFingerprint(signature.dataId),
+      live_mode_type: typeof body?.live_mode,
+      live_mode: typeof body?.live_mode === 'boolean' ? body.live_mode : null,
+      result: 'rejected',
+      reason: 'environment_mismatch',
+    }));
+    return json({ code: 'WEBHOOK_MODE_MISMATCH' }, 409);
   }
+  const credentialIdentity = await getMercadoPagoCredentialIdentity(providerToken, environment as 'test' | 'production', providerFetch);
+  if (credentialIdentity.check !== 'verified' || !credentialIdentity.sellerId) {
+    return json({ code: 'MERCADO_PAGO_CREDENTIAL_ENVIRONMENT_UNVERIFIED' }, credentialIdentity.check === 'unavailable' ? 503 : 409);
+  }
+  const expectedSellerId = credentialIdentity.sellerId;
   const eventId = clean(body?.id || body?.data?.id);
   const type = clean(body?.type || body?.action, 80);
   const resourceId = clean(signature.dataId || body?.data?.object_id);
@@ -144,8 +191,8 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   }
   const updateEvent = async (values: Record<string, unknown>, evidence: Record<string, unknown> = {}) => {
     const metadata: Record<string, unknown> = { ...eventMetadata, live_mode: Boolean(body?.live_mode), ...evidence };
-    const terminalOrRetryable = ['processed', 'ignored', 'failed'].includes(String(values.status || ''));
-    if (terminalOrRetryable) {
+    const releaseLease = ['processed', 'ignored', 'failed', 'received'].includes(String(values.status || ''));
+    if (releaseLease) {
       delete metadata.processing_token;
       delete metadata.processing_started_at;
     }
@@ -184,9 +231,10 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
           return json({ code: 'SUBSCRIPTION_LOOKUP_FAILED' }, 502);
         }
         const providerSubscriptionId = clean(value.id, 120);
-        if (!providerSubscriptionId || !value.status) {
-          await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' });
-          return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
+        if (!providerSubscriptionId || !value.status || String(value.collector_id ?? '') !== expectedSellerId) {
+          const sellerMismatch = Boolean(providerSubscriptionId && value.status) && String(value.collector_id ?? '') !== expectedSellerId;
+          await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: sellerMismatch ? 'PROVIDER_SELLER_MISMATCH' : 'PROVIDER_RESPONSE_INCOMPLETE' });
+          return json({ code: providerSubscriptionId && value.status ? 'PROVIDER_SELLER_MISMATCH' : 'PROVIDER_RESPONSE_INCOMPLETE' }, providerSubscriptionId && value.status ? 409 : 502);
         }
         const rawCheckoutId = clean(value.external_reference, 80);
         const checkoutId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawCheckoutId) ? rawCheckoutId : null;
@@ -210,9 +258,10 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
       const invoice = invoiceResult.value;
       const invoicePaymentId = clean(invoice.payment?.id, 120);
       const providerSubscriptionId = clean(invoice.preapproval_id, 120);
-      if (!invoicePaymentId || !providerSubscriptionId) {
-        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' });
-        return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
+      if (!invoicePaymentId || !providerSubscriptionId || String(invoice.collector_id ?? '') !== expectedSellerId) {
+        const sellerMismatch = Boolean(invoicePaymentId && providerSubscriptionId) && String(invoice.collector_id ?? '') !== expectedSellerId;
+        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: sellerMismatch ? 'PROVIDER_SELLER_MISMATCH' : 'PROVIDER_RESPONSE_INCOMPLETE' });
+        return json({ code: sellerMismatch ? 'PROVIDER_SELLER_MISMATCH' : 'PROVIDER_RESPONSE_INCOMPLETE' }, sellerMismatch ? 409 : 502);
       }
       const paymentResult = await fetchProviderObject(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(invoicePaymentId)}`);
       if (!paymentResult.response.ok) {
@@ -222,6 +271,10 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
       }
       const payment = paymentResult.value;
       const paymentId = clean(payment.id, 120);
+      if (String(payment.collector_id ?? '') !== expectedSellerId) {
+        await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_SELLER_MISMATCH' });
+        return json({ code: 'PROVIDER_SELLER_MISMATCH' }, 409);
+      }
       const paymentStatus = normalizeLegacyPaymentStatus(payment.status).status;
       const providerAmount = payment.transaction_amount;
       const amount = providerAmount === null || providerAmount === undefined || providerAmount === '' ? Number.NaN : Number(providerAmount);
@@ -274,6 +327,11 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
     return json({ code: isOrder ? 'ORDER_LOOKUP_FAILED' : 'PAYMENT_LOOKUP_FAILED' }, 502);
   }
   const payment = isOrder ? (resource.transactions?.payments?.[0] || {}) : resource;
+  const resourceSellerId = String((isOrder ? resource.user_id : payment.collector_id) ?? '');
+  if (!resourceSellerId || resourceSellerId !== expectedSellerId) {
+    await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_SELLER_MISMATCH' });
+    return json({ code: 'PROVIDER_SELLER_MISMATCH' }, 409);
+  }
   const providerEvidence = {
     provider_order_status: isOrder ? safeProviderLabel(resource.status) : null,
     provider_order_status_detail: isOrder ? safeProviderLabel(resource.status_detail) : null,
@@ -284,17 +342,67 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
     ? normalizeOrdersPaymentStatus({ orderStatus: resource.status, orderStatusDetail: resource.status_detail, transactionStatus: payment.status, transactionStatusDetail: payment.status_detail })
     : normalizeLegacyPaymentStatus(payment.status || resource.status);
   const evidence = { ...providerEvidence, normalized_payment_status: normalized.status, normalization_reason: normalized.reason };
-  console.error(JSON.stringify({ event: 'BILLING_WEBHOOK_STATUS_NORMALIZED', provider: 'mercado_pago', ...evidence }));
+  console.error(JSON.stringify({ event: 'BILLING_WEBHOOK_STATUS_NORMALIZED', provider: 'mercado_pago', timestamp: new Date().toISOString(), diagnostic_id: safeDiagnosticId(req.headers.get('x-f7-diagnostic-id')), environment, type: safeProviderLabel(type) || 'unknown', resource_fingerprint: await resourceFingerprint(signature.dataId), ...evidence }));
   const paymentId = clean(payment.id);
   const externalReference = clean(resource.external_reference || payment.external_reference);
   const providerAmountValue = payment.amount ?? resource.total_amount ?? resource.transaction_amount;
   const providerAmount = providerAmountValue === null || providerAmountValue === undefined || providerAmountValue === '' ? Number.NaN : Number(providerAmountValue);
   const providerAmountMinor = Number.isFinite(providerAmount) ? Math.round(providerAmount * 100) : null;
-  const providerCurrency = String(payment.currency_id || resource.currency_id || '').toUpperCase();
+  // Mercado Pago Orders responses omit currency_id for Brazilian PIX orders.
+  // `verified` here means the access token identity was verified as an MLB
+  // account, so BRL is the provider market currency. Explicit provider values
+  // remain authoritative and are still checked against the purchase/session.
+  const providerCurrency = String(payment.currency_id || resource.currency_id || (isOrder ? 'BRL' : '')).toUpperCase();
   if (!eventRecordId) return json({ code: 'WEBHOOK_EVENT_NOT_AVAILABLE' }, 503);
   if (!paymentId || providerAmountMinor === null || !providerCurrency) {
     await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' }, evidence);
     return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
+  }
+  const creditStatus = mapVerifiedCreditStatus(normalized.status, normalized.activationEligible);
+  const findPlanCheckout = async (reference: string) => {
+    const find = async (column: string, value: string) => sb.from('billing_checkout_sessions')
+      .select('id,provider').eq('provider', 'mercado_pago').eq(column, value).maybeSingle();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(reference);
+    let lookup = isUuid ? await find('id', reference) : { data: null, error: null };
+    if (lookup.error || lookup.data) return lookup;
+    if (isOrder && resourceId) {
+      lookup = await find('provider_order_id', resourceId);
+      if (lookup.error || lookup.data) return lookup;
+    }
+    if (paymentId) {
+      lookup = await find('provider_payment_id', paymentId);
+      if (lookup.error || lookup.data) return lookup;
+      // Older plan payments may be linked through billing_payments metadata.
+      const paymentLookup = await sb.from('billing_payments').select('metadata')
+        .eq('provider', 'mercado_pago').eq('provider_payment_id', paymentId).maybeSingle();
+      if (paymentLookup.error) return { data: null, error: paymentLookup.error };
+      const checkoutId = paymentLookup.data?.metadata?.checkout_id;
+      if (typeof checkoutId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(checkoutId)) {
+        lookup = await find('id', checkoutId);
+      }
+    }
+    return lookup;
+  };
+  const purchaseRoute = await resolveVerifiedBillingPurchase({
+    externalReference,
+    findPlanCheckout,
+    settleAICreditPurchase: (purchaseId: string) => sb.rpc('settle_ai_credit_purchase_v1', {
+      p_purchase_id: purchaseId,
+      p_payment_id: paymentId,
+      p_status: creditStatus,
+      p_amount_minor: providerAmountMinor,
+      p_currency: providerCurrency,
+    }),
+  });
+  if (purchaseRoute.kind === 'ai_credits') {
+    const marked = await updateEvent({ status: 'processed', processed: true, processed_at: new Date().toISOString() }, evidence);
+    if (!marked) return json({ code: 'AI_CREDIT_EVENT_STATE_RETRYABLE' }, 503);
+    return json({ code: 'OK', status: purchaseRoute.settlement.status || creditStatus, credited: Boolean(purchaseRoute.settlement.credited), duplicate: Boolean(purchaseRoute.settlement.duplicate) });
+  }
+  if (purchaseRoute.kind === 'pending' || purchaseRoute.kind === 'retryable') {
+    const saved = await releaseBillingWebhookForRetry(updateEvent, purchaseRoute.reason);
+    console.error(JSON.stringify({ event: 'BILLING_PURCHASE_REFERENCE_PENDING', provider: 'mercado_pago', reason: purchaseRoute.reason }));
+    return saved ? json({ code: 'BILLING_REFERENCE_PENDING' }, 503) : json({ code: 'WEBHOOK_PERSIST_FAILED' }, 500);
   }
   const settled = await sb.rpc('settle_billing_webhook_event', {
     p_event_id: eventRecordId,

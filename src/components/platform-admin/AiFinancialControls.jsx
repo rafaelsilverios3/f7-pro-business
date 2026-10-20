@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { platformAdminService } from '@/services/platformAdminService';
+import { dateTimeLocalToISOString, toDateTimeLocalValue } from '@/lib/dateTimeLocal';
+import { GlobalAiCreditsAdmin, CompanyAiCreditsAdmin } from '@/components/platform-admin/AiCreditsAdmin';
 
 const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 disabled:bg-slate-100';
 const buttonClass = 'rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50';
@@ -29,7 +31,7 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
   const [companyLookupError, setCompanyLookupError] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [form, setForm] = useState({ rate_kind: 'model_tokens', provider_key: '', model_key: '', rate_version: '', currency: '', input_cost_per_1k: '', output_cost_per_1k: '', cost_per_query: '', source_reference: '', effective_from: new Date(Date.now() + 60_000).toISOString().slice(0, 16), enabled: false, reason: '' });
+  const [form, setForm] = useState({ rate_kind: 'model_tokens', provider_key: '', model_key: '', rate_version: '', currency: '', input_cost_per_1k: '', output_cost_per_1k: '', cost_per_query: '', source_reference: '', effective_from: toDateTimeLocalValue(new Date(Date.now() + 60_000)), enabled: false, reason: '' });
   const isModel = form.rate_kind === 'model_tokens';
   const load = useCallback(async () => {
     if (!canRead) return;
@@ -68,7 +70,7 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
         input_cost_per_1k: isModel ? Number(form.input_cost_per_1k) : null,
         output_cost_per_1k: isModel ? Number(form.output_cost_per_1k) : null,
         cost_per_query: isModel ? null : Number(form.cost_per_query),
-        effective_from: new Date(form.effective_from).toISOString(),
+        effective_from: dateTimeLocalToISOString(form.effective_from),
         effective_until: null,
       });
       setMessage('Tarifa registrada. Os valores são imutáveis; para reajustar, crie nova versão com vigência não sobreposta.');
@@ -109,6 +111,7 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
       <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Provedor / modelo', 'Versão', 'Moeda', 'Entrada / saída por 1k', 'Estado / vigência', 'Fonte', ''].map((label) => <th key={label} className="px-3 py-2">{label}</th>)}</tr></thead><tbody>{cards.map((card) => <tr key={card.id} className="border-t border-slate-100"><td className="px-3 py-2">{card.provider_key}<br />{card.model_key || 'Consulta externa'}</td><td className="px-3 py-2">{card.rate_version}</td><td className="px-3 py-2">{card.currency}</td><td className="px-3 py-2">{card.rate_kind === 'model_tokens' ? `${money(card.input_cost_per_1k, card.currency)} / ${money(card.output_cost_per_1k, card.currency)}` : money(card.cost_per_query, card.currency)}</td><td className="px-3 py-2">{card.enabled ? 'Ativa' : 'Desativada'}<br />{dt(card.effective_from)}</td><td className="max-w-48 truncate px-3 py-2"><a href={card.source_reference} target="_blank" rel="noreferrer" className="text-blue-600">Fonte</a></td><td className="px-3 py-2"><button type="button" disabled={!canManage || busy} onClick={() => toggle(card)} className="font-semibold text-blue-700 disabled:opacity-50">{card.enabled ? 'Desabilitar' : 'Habilitar'}</button></td></tr>)}</tbody></table>{!cards.length && <p className="p-6 text-center text-sm text-slate-500">Nenhuma tarifa configurada.</p>}</div>
     </section>
     <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5"><h3 className="font-semibold">Controles por empresa</h3><p className="text-xs text-slate-500">Orçamentos e consumo são carregados com autorização server-side. Nenhum valor é ativado automaticamente por plano.</p><label className="block max-w-lg text-xs font-medium text-slate-600">Buscar empresa por nome ou identificador<input aria-label="Buscar empresa por nome ou identificador" value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} className={fieldClass} placeholder="Digite para pesquisar empresas" /></label>{companyLookupBusy && <p role="status" className="text-xs text-slate-500">Buscando empresas…</p>}{companyLookupError && <Notice tone="red">{companyLookupError}</Notice>}{!companyQuery.trim() && <p className="text-xs text-slate-500">A lista inicial contém as empresas recentes. Use a busca para localizar outras empresas.</p>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="text-xs text-slate-500"><th className="px-3 py-2">Empresa</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{companyRows.map((row) => <tr key={row.id} className="border-t border-slate-100"><td className="px-3 py-2">{row.name || row.company_name || row.id}</td><td className="px-3 py-2"><button type="button" onClick={() => setSelectedCompanyId(row.id)} className="font-semibold text-blue-700">Consultar orçamento e consumo</button></td></tr>)}</tbody></table>{!companyRows.length && <p className="p-5 text-center text-sm text-slate-500">Sem empresas retornadas.</p>}</div>{selectedCompanyId && <CompanyAiFinancialControls companyId={selectedCompanyId} canRead={canRead} canManage={canManage} />}</section>
+    <GlobalAiCreditsAdmin canManage={canManage} />
   </div>;
 }
 
@@ -166,6 +169,7 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
       <div className="grid gap-3 sm:grid-cols-4"><Metric label="Chamadas hoje" value={today.calls ?? '—'} /><Metric label="Tokens reservados" value={today.tokens_reserved ?? '—'} /><Metric label="Custo reservado" value={today.cost_reserved == null ? '—' : `${Number(today.cost_reserved).toFixed(6)} ${today.currency || ''}`} /><Metric label="Reservas no histórico" value={reservations.length} /></div>
       <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{['Criada', 'Provedor / modelo', 'Estado', 'Tokens reservados', 'Custo reservado', 'Custo liquidado', 'Código seguro'].map((label) => <th key={label} className="px-3 py-2">{label}</th>)}</tr></thead><tbody>{reservations.map((row) => <tr key={row.id} className="border-t border-slate-100"><td className="px-3 py-2">{dt(row.created_at)}</td><td className="px-3 py-2">{row.provider_key}<br />{row.model_key || 'Consulta externa'} · {row.rate_version}</td><td className="px-3 py-2">{row.status}</td><td className="px-3 py-2">{Number(row.reserved_input_tokens || 0) + Number(row.reserved_output_tokens || 0)}</td><td className="px-3 py-2">{money(row.reserved_cost, row.currency)}</td><td className="px-3 py-2">{money(row.actual_cost, row.currency)}</td><td className="px-3 py-2">{row.safe_reason_code || '—'}</td></tr>)}</tbody></table>{!reservations.length && <p className="p-6 text-center text-sm text-slate-500">Nenhuma reserva retornada.</p>}</div>
     </section>
+    <CompanyAiCreditsAdmin companyId={companyId} canManage={canManage} />
   </div>;
 }
 

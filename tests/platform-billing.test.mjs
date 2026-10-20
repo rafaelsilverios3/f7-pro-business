@@ -167,7 +167,7 @@ test('Mercado Pago reaches billing-webhook without Supabase JWT while HMAC remai
   assert.match(webhook, /received_digest_length/);
   assert.match(webhook, /v1\/orders/);
   assert.match(webhook, /body\.live_mode !== \(environment === 'production'\)/);
-  assert.match(webhook, /verifyMercadoPagoCredentialEnvironment\(providerToken, environment as 'test' \| 'production', providerFetch\)/);
+  assert.match(webhook, /getMercadoPagoCredentialIdentity\(providerToken, environment as 'test' \| 'production', providerFetch\)/);
   assert.doesNotMatch(webhook, /providerToken\.startsWith\(['\"](?:TEST-|APP_USR-)/);
 });
 
@@ -408,7 +408,7 @@ test('billing health requires tenant-scoped role authorization and only returns 
   assert.match(billingHealth, /!member\?\.active \|\| !\['admin', 'gestor'\]\.includes\(member\.role\)/);
   assert.match(billingHealth, /MERCADO_PAGO_ENVIRONMENT/);
   assert.match(billingHealth, /safeHealthResponse/);
-  assert.match(billingHealth, /card_enabled: false/);
+  assert.match(billingHealth, /card_enabled: values\.cardsEnabled === true/);
   assert.doesNotMatch(billingHealth, /provider_user_id|provider_site_id|environment_evidence|credentials_configured|access_token_configured/);
   assert.match(checkout, /MERCADO_PAGO_PRODUCTION_PAYMENTS_ENABLED/);
   assert.match(checkout, /PRODUCTION_PAYMENTS_DISABLED/);
@@ -434,7 +434,7 @@ test('production billing is server-controlled and fail-closed without creating a
 test('billing health explicitly requires JWT verification in Supabase config', () => {
   assert.match(fs.readFileSync('supabase/config.toml', 'utf8'), /\[functions\.billing-health\]\s+verify_jwt = true/);
   assert.match(billingHealth, /auth\.getUser\(jwt\)/);
-  assert.match(billingHealth, /blocksLiveBillingInHomologation/);
+  assert.match(billingHealth, /blocksBillingEnvironmentMismatch/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_ACCESS_TOKEN/);
   assert.doesNotMatch(billingHealth, /return[^\n]*MERCADO_PAGO_WEBHOOK_SECRET/);
   assert.match(service, /health: \(companyId\) => invokeEdgeFunction\('billing-health', null, \{ method: 'GET', query: \{ company_id: companyId \} \}\)/);

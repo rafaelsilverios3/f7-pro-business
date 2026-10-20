@@ -1,27 +1,33 @@
-/**
- * Prevent a mistaken provider secret/configuration from turning the authorized
- * Supabase homologation project into a live-payment environment.
- */
-export const F7_HOMOLOGATION_PROJECT_REF = "vwylnjmapixtzhryiutt";
+/** Supabase project officially designated as F7 PRO Business production. */
+export const F7_PRODUCTION_PROJECT_REF = "vwylnjmapixtzhryiutt";
 
-export function isF7HomologationProject(): boolean {
+export function isF7ProductionProject(): boolean {
   const configuredUrl = Deno.env.get("SUPABASE_URL") || "";
   try {
     return new URL(configuredUrl).hostname ===
-      `${F7_HOMOLOGATION_PROJECT_REF}.supabase.co`;
+      `${F7_PRODUCTION_PROJECT_REF}.supabase.co`;
   } catch {
     return false;
   }
 }
 
-export function blocksLiveBillingInHomologation(environment: string): boolean {
-  return isF7HomologationProject() &&
-    environment.trim().toLowerCase() === "production";
+/**
+ * Allow only production credentials on the designated production project and
+ * only test credentials everywhere else. This prevents both live payments in
+ * previews/homologation and sandbox events from touching the production DB.
+ */
+export function blocksBillingEnvironmentMismatch(environment: string): boolean {
+  const normalized = environment.trim().toLowerCase();
+  return isF7ProductionProject()
+    ? normalized !== "production"
+    : normalized === "production";
 }
 
-/** Recurring billing in homologation is permitted only with the verified test
- * environment; production credentials remain blocked by the separate guard. */
-export function blocksRecurringBillingInHomologation(model: string, environment: string): boolean {
-  return isF7HomologationProject() && model.trim().toLowerCase() === "recurring" &&
-    environment.trim().toLowerCase() !== "test";
+/** Keep recurring billing in the same isolated environment as its project. */
+export function blocksRecurringEnvironmentMismatch(model: string, environment: string): boolean {
+  if (model.trim().toLowerCase() !== "recurring") return false;
+  const normalized = environment.trim().toLowerCase();
+  return isF7ProductionProject()
+    ? normalized !== "production"
+    : normalized !== "test";
 }

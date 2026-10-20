@@ -31,6 +31,10 @@ export const billingService = {
     billing_period: billingPeriod, method,
     ...(method === 'card' && cardPayment ? { card_payment: cardPayment } : {}),
   }),
+  createAiCreditPackageCheckout: (companyId, packageCode, method, cardPayment = undefined, requestId = crypto.randomUUID()) => invokeEdgeFunction('billing-checkout', {
+    purchase_type: 'ai_credits', company_id: companyId, package_code: packageCode, method, billing_model: 'one_time', request_id: requestId,
+    ...(method === 'card' && cardPayment ? { card_payment: cardPayment } : {}),
+  }),
   manageSubscription: (companyId, subscriptionId, action) => invokeEdgeFunction('billing-subscription-manage', {
     company_id: companyId, subscription_id: subscriptionId, action,
   }),

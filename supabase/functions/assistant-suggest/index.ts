@@ -4,7 +4,8 @@ import { mergeProductIntelligenceCandidates, resolveProductOrPart } from '../_sh
 import { conductWebResearch, inferTechnicalResearchInput, isTechnicalResearchNeeded, manufacturerDomains, resolveResearchRegion } from '../_shared/webResearch.ts';
 import { ManufacturerAdapterRegistry } from '../_shared/manufacturerAdapterRegistry.ts';
 import { AgriculturalPartsSpecialist } from '../_shared/specialists/agriculturalParts.ts';
-import { markAIReservationUncertain, recordAIStage, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation } from '../_shared/aiObservability.ts';
+import { markAIReservationUncertain, recordAIStage, reserveAIModelBudget, reserveAIExternalBudget, settleAIReservation, type AIReservationResult } from '../_shared/aiObservability.ts';
+import { aiCreditRequestHash, hasPermanentGlobalOwnerAccess, reserveAIForOwnerOrCredits, settleAIForOwnerOrCredits, releaseAIForOwnerOrCredits, checkOwnerWebResearchPolicy } from '../_shared/aiCredits.ts';
 import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { conservativeInputTokenUpperBound, normalizeRequestKey, readProviderUsage } from '../_shared/aiBudgetPolicy.js';
 import { filterProductsForAssistant, filterSourcesForAssistant, filterSourcesForCustomer } from '../_shared/assistantCapabilities.ts';
@@ -16,6 +17,7 @@ import { FunctionModelProvider, ModelRouter } from '../_shared/modelRouter.ts';
 import { buildResearchQuery, normalizeIntentMessages, resolveConversationIntent } from '../_shared/conversationIntent.ts';
 
 const ALLOWED_ROLES = ['admin', 'gestor', 'comercial', 'vendedor', 'atendimento'];
+const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
 const MAX_CONTEXT_MESSAGES = 20;
 const MAX_PROVIDER_OUTPUT_TOKENS = 768;
 const MAX_MESSAGE_CONTEXT_CHARS = 8000;
@@ -364,6 +366,13 @@ Deno.serve(async (req) => {
       conversation = data;
     }
     if (!conversation) return json({ code: 'NOT_FOUND' }, 404);
+    const maintenance = aiMaintenanceResponse(Deno.env.get('AI_MAINTENANCE_MODE'), corsHeaders);
+    if (maintenance) return maintenance;
+    if (internalJobRequest) {
+      const eventResult = await sb.from('intelligence_events').select('*').eq('id', internalJobScope.intelligence_event_id).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
+      if (eventResult.error || !eventResult.data) return json({ code: 'INVALID_INTELLIGENCE_EVENT' }, 409);
+      intelligenceEvent = eventResult.data;
+    }
     diagnosticCompanyId = conversation.company_id;
     await logStage(sb, conversation.company_id, 'ASSISTANT_REQUEST_RECEIVED');
     await logStage(sb, conversation.company_id, stage);
@@ -377,17 +386,15 @@ Deno.serve(async (req) => {
       stage = 'PERMISSION_OK';
       await logStage(sb, conversation.company_id, stage);
     }
+    const entitlementActorId = internalJobRequest ? uuid(intelligenceEvent?.actor_id) : user?.id;
+    const globalOwner = entitlementActorId ? await hasPermanentGlobalOwnerAccess(sb, entitlementActorId) : { ok: true, is_owner: false };
+    if (!globalOwner.ok) return json({ code: 'AI_OWNER_AUTHORIZATION_UNAVAILABLE' }, 503);
     const { data: allowed, error: featureError } = await sb.rpc('company_has_feature_internal', { target_company: conversation.company_id, feature: 'ai' });
-    if (featureError) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o entitlement da empresa.', stage: 'feature_lookup', internal_error_code: safeInternalCode(featureError) }, 500);
-    if (!allowed) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
-    const maintenance = aiMaintenanceResponse(Deno.env.get('AI_MAINTENANCE_MODE'), corsHeaders);
-    if (maintenance) return maintenance;
+    if (featureError && !globalOwner.is_owner) return json({ success: false, error: 'INTERNAL_PROVIDER_ERROR', code: 'INTERNAL_PROVIDER_ERROR', message: 'Falha interna ao consultar o entitlement da empresa.', stage: 'feature_lookup', internal_error_code: safeInternalCode(featureError) }, 500);
+    if (!allowed && !globalOwner.is_owner) return json({ code: 'FEATURE_NOT_AVAILABLE' }, 403);
     stage = 'ENTITLEMENT_OK';
     await logStage(sb, conversation.company_id, stage);
     if (internalJobRequest) {
-      const eventResult = await sb.from('intelligence_events').select('*').eq('id', internalJobScope.intelligence_event_id).eq('company_id', conversation.company_id).eq('conversation_id', conversationId).maybeSingle();
-      if (eventResult.error || !eventResult.data) return json({ code: 'INVALID_INTELLIGENCE_EVENT' }, 409);
-      intelligenceEvent = eventResult.data;
       stage = 'JOB_SCOPE_OK';
       await logStage(sb, conversation.company_id, stage);
     }
@@ -501,6 +508,9 @@ Deno.serve(async (req) => {
         overrideLookupError = Boolean(override.error);
         researchAllowed = override.data?.enabled === true;
       }
+      const ownerActorId = internalJobRequest ? uuid(intelligenceEvent?.actor_id) : user?.id;
+      const ownerWebPolicy = ownerActorId ? await checkOwnerWebResearchPolicy(sb, ownerActorId) : { ok: false, is_owner: false, allowed: false };
+      if (!ownerWebPolicy.ok || (ownerWebPolicy.is_owner && !ownerWebPolicy.allowed)) researchAllowed = false;
       await logResearchEvent(sb, conversation.company_id, conversationId, 'PRODUCT_RESEARCH_FEATURE_CHECK', { technical_research_needed: true, feature_enabled: researchAllowed, reason: researchAllowed ? 'feature_enabled' : researchFeatureError || overrideLookupError ? 'feature_lookup_failed' : 'feature_denied' });
       await logResearchEvent(sb, conversation.company_id, conversationId, researchAllowed ? 'WEB_RESEARCH_STARTED' : 'WEB_RESEARCH_SKIPPED', { technical_research_needed: true, feature_enabled: Boolean(researchAllowed), reason: researchFeatureError ? 'feature_lookup_failed' : researchAllowed ? 'feature_enabled' : 'feature_denied' });
       if (researchAllowed) {
@@ -591,13 +601,23 @@ Deno.serve(async (req) => {
     // verified knowledge), not only the message/catalog subset.
     const estimatedTokens = conservativeInputTokenUpperBound(providerInput, 3000);
     const requestKey = requestId ? `${requestId}:model` : '';
-    const aiBudget = estimatedTokens && requestKey
+    const creditActorId = internalJobRequest ? uuid(intelligenceEvent?.actor_id) : user?.id;
+    const creditHash = await aiCreditRequestHash({ company_id: conversation.company_id, request_id: requestId, model, provider_input: providerInput, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS });
+    const creditResult = estimatedTokens && requestKey && creditActorId
+      ? await reserveAIForOwnerOrCredits(sb, { company_id: conversation.company_id, user_id: creditActorId, request_key: requestKey, request_hash: creditHash, model_key: model, input_tokens: estimatedTokens, output_token_limit: MAX_PROVIDER_OUTPUT_TOKENS, quote_id: uuid(body?.ai_credit_quote_id), confirmed: body?.confirm_ai_credits === true })
+      : { allowed: false, code: 'AI_CREDITS_ACTOR_REQUIRED', owner_exempt: false };
+    if (creditResult.code === 'AI_CREDITS_CONFIRMATION_REQUIRED') return json({ success: false, code: creditResult.code, ai_credit_quote: creditResult, requires_human: true }, 409);
+    const creditOwnerExempt = creditResult.owner_exempt === true;
+    let creditOperationId = creditResult.allowed && typeof creditResult.operation_id === 'string' ? creditResult.operation_id : null;
+    const financialBudget: AIReservationResult = creditResult.allowed && estimatedTokens && requestKey
       ? await reserveAIModelBudget(sb, { company_id: conversation.company_id, request_key: requestKey, model_key: model, settings, input_tokens: estimatedTokens, max_output_tokens: MAX_PROVIDER_OUTPUT_TOKENS })
-      : { allowed: false, reason: requestKey ? 'AI_INPUT_BOUND_INVALID' : 'AI_IDEMPOTENCY_KEY_REQUIRED' };
+      : { allowed: false, reason: creditResult.code || (requestKey ? 'AI_INPUT_BOUND_INVALID' : 'AI_IDEMPOTENCY_KEY_REQUIRED') };
+    const aiBudget: AIReservationResult = creditResult.allowed ? financialBudget : { allowed: false, reason: creditResult.code || 'AI_CREDITS_UNAVAILABLE' };
     const estimatedCost = Number(aiBudget.estimated_cost || 0);
     if (!aiBudget.allowed) {
+      if (creditOperationId) await releaseAIForOwnerOrCredits(sb, { company_id: conversation.company_id, user_id: creditActorId, operation_id: creditOperationId, owner_exempt: creditOwnerExempt });
       await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'FAILED', safe_error_code: aiBudget.reason, duration_ms: Date.now() - requestStartedAt });
-      return json({ success: false, code: 'AI_BUDGET_EXCEEDED', error: 'AI_BUDGET_EXCEEDED', message: 'Limite de uso da IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
+      return json({ success: false, code: aiBudget.reason === 'AI_CREDITS_INSUFFICIENT' ? 'AI_CREDITS_INSUFFICIENT' : 'AI_BUDGET_EXCEEDED', error: aiBudget.reason, message: 'Limite de créditos ou orçamento de IA atingido para esta empresa.', requires_human: true, decision: assistantDecision }, 429);
     }
     if (aiBudget.reservation_id) activeReservation = { id: aiBudget.reservation_id, requestKey, companyId: conversation.company_id };
     await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, assistant_job_id: internalJobRequest ? jobId : null, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'BUDGET_RESERVED', model, reserved_tokens: aiBudget.reserved_tokens, reserved_cost: estimatedCost });
@@ -615,6 +635,8 @@ Deno.serve(async (req) => {
       if (!settlement.settled) await markAIReservationUncertain(sb, { company_id: conversation.company_id, reservation_id: activeReservation.id, request_key: activeReservation.requestKey, reason_code: providerSuggestion.ok ? usage.reported ? 'settlement_unavailable' : 'provider_usage_missing' : providerSuggestion.code || 'provider_result_unknown' });
       activeReservation = null;
     }
+    if (creditOperationId && providerSuggestion.ok) await settleAIForOwnerOrCredits(sb, { company_id: conversation.company_id, user_id: creditActorId, operation_id: creditOperationId, owner_exempt: creditOwnerExempt, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0, usage_reliable: usage.reported });
+    else if (creditOperationId) await settleAIForOwnerOrCredits(sb, { company_id: conversation.company_id, user_id: creditActorId, operation_id: creditOperationId, owner_exempt: creditOwnerExempt, input_tokens: 0, output_tokens: 0, usage_reliable: false });
     const recordedCost = settlement.settled ? Number(settlement.actual_cost || 0) : estimatedCost;
     if (providerSuggestion.ok) await recordAIStage(sb, { company_id: conversation.company_id, conversation_id: conversationId, trace_id: traceId, mode: internalJobRequest ? 'supervised_autonomous' : 'assisted', stage: 'RESPONSE_CREATED', provider_usage_reported: usage.reported, input_tokens: recordedInputTokens, output_tokens: recordedOutputTokens });
     if (!providerSuggestion.ok) {
