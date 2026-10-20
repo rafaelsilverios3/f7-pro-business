@@ -8,6 +8,7 @@ import {
 } from '../supabase/functions/_shared/platformAdminAccess.js';
 
 const edge = fs.readFileSync('supabase/functions/platform-admin/index.ts', 'utf8');
+const adminUi = fs.readFileSync('src/pages/PlatformAdmin.jsx', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20261016233851_platform_admin_temporary_expiry.sql', 'utf8');
 const aiMigration = fs.readFileSync('supabase/migrations/20261016232326_20261016170000_platform_ai_financial_admin_controls.sql', 'utf8');
 
@@ -115,4 +116,16 @@ test('database serializes owner-set changes and protects the last permanent acti
   assert.match(migration, /LAST_PLATFORM_OWNER_PROTECTED/);
   assert.match(edge, /LAST_OWNER_PROTECTED/);
   assert.match(edge, /adminRow\.data\.role !== 'owner'.*PLATFORM_OWNER_REQUIRED/);
+});
+
+test('platform admin overview separates plan entitlement, assistant setup, provider readiness, and automation state', () => {
+  assert.match(edge, /getCompanyAiOverview/);
+  assert.match(edge, /from\('plan_features'\).*ai.*ai_sales/i);
+  assert.match(edge, /from\('company_feature_overrides'\).*ai.*ai_sales/i);
+  assert.match(edge, /AI_API_KEY.*AI_MODEL/);
+  assert.match(edge, /ai_overview: aiOverview/);
+  assert.match(adminUi, /IA incluída no plano/);
+  assert.match(adminUi, /Pendente de configuração/);
+  assert.match(adminUi, /Assistentes prontos no modo assistido/);
+  assert.match(adminUi, /automatic_reply_configured/);
 });

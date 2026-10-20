@@ -2,6 +2,7 @@
 import { admin, auth, corsHeaders, json, userClient } from '../_shared/core.ts';
 import { validateAiRateCard, validateAiRateCardEnabled, validateCompanyAiBudget } from '../_shared/platformAiFinancialPolicy.js';
 import { isPlatformAdminCurrent, normalizePlatformAdminExpiry, platformAdminCanAccessAction, PLATFORM_ROLES } from '../_shared/platformAdminAccess.js';
+import { getCompanyAiOverview } from '../_shared/platformAiOverview.js';
 
 const PLANS = ['free', 'pro', 'business', 'premium'];
 const STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'];
@@ -66,20 +67,53 @@ Deno.serve(async (req) => {
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
     if (action === 'overview') {
-      const [companies, members, subscriptions, integrations, ai, warnings, logs] = await Promise.all([
+      const [companies, members, subscriptions, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides] = await Promise.all([
         service.from('companies').select('id,name,created_at,updated_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(100),
         service.from('company_users').select('id,company_id,user_id,active,role', { count: 'exact' }).limit(1000),
-        service.from('company_subscriptions').select('company_id,plan,status'),
+        service.from('company_subscriptions').select('company_id,plan,status,current_period_end'),
         service.from('company_integrations').select('company_id,provider,status'),
         service.from('company_assistant_settings').select('company_id,mode,automatic_reply_enabled'),
         service.from('platform_company_warnings').select('id,company_id,status,severity', { count: 'exact' }).eq('status', 'open'),
         service.from('integration_logs').select('status,created_at').order('created_at', { ascending: false }).limit(100),
+        service.from('plans').select('id,code,active'),
+        service.from('plan_features').select('plan_id,feature,enabled').in('feature', ['ai','ai_sales']),
+        service.from('company_feature_overrides').select('company_id,feature,enabled').in('feature', ['ai','ai_sales']),
       ]);
-      const firstError = [companies, members, subscriptions, integrations, ai, warnings, logs].find((item) => item.error);
+      const firstError = [companies, members, subscriptions, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides].find((item) => item.error);
       if (firstError) throw firstError.error;
       const plans = new Map((subscriptions.data || []).map((row: any) => [row.company_id, row]));
-      const rows = (companies.data || []).map((company: any) => ({ ...company, subscription: plans.get(company.id) || null, user_count: (members.data || []).filter((row: any) => row.company_id === company.id && row.active).length, whatsapp: (integrations.data || []).some((row: any) => row.company_id === company.id && row.provider === 'whatsapp' && ['connected', 'active', 'enabled'].includes(row.status)), ai_enabled: (ai.data || []).some((row: any) => row.company_id === company.id), open_warning_count: (warnings.data || []).filter((row: any) => row.company_id === company.id).length }));
-      return json({ role: adminRow.data.role, metrics: { companies: companies.count || 0, users: (members.data || []).filter((row: any) => row.active).length, active_companies: rows.filter((row: any) => ['active', 'trial'].includes(row.subscription?.status)).length, trials: rows.filter((row: any) => row.subscription?.status === 'trial').length, suspended: rows.filter((row: any) => row.subscription?.status === 'suspended').length, cancelled: rows.filter((row: any) => row.subscription?.status === 'cancelled').length, whatsapp: (integrations.data || []).filter((row: any) => row.provider === 'whatsapp' && ['connected', 'active', 'enabled'].includes(row.status)).length, ai: (ai.data || []).filter((row: any) => row.automatic_reply_enabled || row.mode).length, warnings: warnings.count || 0, errors: (logs.data || []).filter((row: any) => ['error', 'failed'].includes(String(row.status).toLowerCase())).length }, companies: rows });
+      const planById = new Map((catalogPlans.data || []).map((row: any) => [row.id, row]));
+      const planByCode = new Map((catalogPlans.data || []).map((row: any) => [row.code, row]));
+      const planFeatureRows = (planFeatures.data || []).map((row: any) => ({ ...row, plan_code: planById.get(row.plan_id)?.code, plan_active: planById.get(row.plan_id)?.active === true }));
+      const providerStatus = {
+        enabled: Deno.env.get('AI_ENABLED')?.trim().toLowerCase() === 'true',
+        configured: Boolean(Deno.env.get('AI_API_KEY')?.trim() && Deno.env.get('AI_MODEL')?.trim()),
+        maintenance: Deno.env.get('AI_MAINTENANCE_MODE')?.trim().toLowerCase() === 'true',
+      };
+      const rows = (companies.data || []).map((company: any) => {
+        const subscription = plans.get(company.id) || null;
+        const companySettings = (ai.data || []).find((row: any) => row.company_id === company.id) || null;
+        const planCode = subscription?.plan || 'free';
+        const aiOverview = getCompanyAiOverview({
+          subscription,
+          planCode,
+          planActive: planByCode.get(planCode)?.active === true,
+          planFeatures: planFeatureRows.filter((row: any) => row.plan_code === planCode) as any[],
+          overrides: (featureOverrides.data || []).filter((row: any) => row.company_id === company.id) as any[],
+          assistantSettings: companySettings as any,
+          provider: providerStatus,
+        });
+        return {
+          ...company,
+          subscription,
+          user_count: (members.data || []).filter((row: any) => row.company_id === company.id && row.active).length,
+          whatsapp: (integrations.data || []).some((row: any) => row.company_id === company.id && row.provider === 'whatsapp' && ['connected', 'active', 'enabled'].includes(row.status)),
+          ai_enabled: aiOverview.state === 'assisted_ready',
+          ai_overview: aiOverview,
+          open_warning_count: (warnings.data || []).filter((row: any) => row.company_id === company.id).length,
+        };
+      });
+      return json({ role: adminRow.data.role, metrics: { companies: companies.count || 0, users: (members.data || []).filter((row: any) => row.active).length, active_companies: rows.filter((row: any) => ['active', 'trial'].includes(row.subscription?.status)).length, trials: rows.filter((row: any) => row.subscription?.status === 'trial').length, suspended: rows.filter((row: any) => row.subscription?.status === 'suspended').length, cancelled: rows.filter((row: any) => row.subscription?.status === 'cancelled').length, whatsapp: (integrations.data || []).filter((row: any) => row.provider === 'whatsapp' && ['connected', 'active', 'enabled'].includes(row.status)).length, ai: rows.filter((row: any) => row.ai_enabled).length, warnings: warnings.count || 0, errors: (logs.data || []).filter((row: any) => ['error', 'failed'].includes(String(row.status).toLowerCase())).length }, companies: rows });
     }
     if (action === 'companies') {
       const page = Math.max(1, Number(input.page) || 1); const pageSize = Math.min(100, Math.max(10, Number(input.page_size) || 25));
