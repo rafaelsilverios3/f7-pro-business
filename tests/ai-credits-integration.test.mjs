@@ -46,12 +46,15 @@ test('all live model-generation entry points reserve credits before provider req
 test('package checkout is server-priced and only the verified billing webhook settles credits', () => {
   const checkout = read('../supabase/functions/billing-checkout/index.ts');
   const webhook = read('../supabase/functions/billing-webhook/index.ts');
+  const purchaseRouting = read('../supabase/functions/_shared/billingPurchaseRouting.js');
   assert.match(checkout, /create_ai_credit_purchase_v1/);
   assert.match(checkout, /purchase\.amount_minor/);
   assert.match(checkout, /external_reference:\s*purchase\.id/);
   assert.match(checkout, /body\?\.billing_model\s*&&\s*body\.billing_model\s*!==\s*'one_time'/);
   assert.match(webhook, /settle_ai_credit_purchase_v1/);
-  assert.match(webhook, /normalized\.activationEligible\s*\?\s*'approved'/);
+  assert.match(webhook, /resolveVerifiedBillingPurchase/);
+  assert.match(purchaseRouting, /AI_CREDIT_PURCHASE_NOT_FOUND/);
+  assert.match(purchaseRouting, /planLookup\?\.data\?\.provider\s*===\s*'mercado_pago'/);
   assert.match(migration, /AI_CREDIT_PURCHASE_PAYMENT_MISMATCH/);
 });
 

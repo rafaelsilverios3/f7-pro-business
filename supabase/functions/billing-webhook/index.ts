@@ -1,6 +1,7 @@
 import { admin, corsHeaders, json } from '../_shared/core.ts';
 import { blocksBillingEnvironmentMismatch } from '../_shared/billingEnvironment.ts';
 import { getMercadoPagoCredentialIdentity } from '../_shared/mercadoPagoCredentials.ts';
+import { mapVerifiedCreditStatus, releaseBillingWebhookForRetry, resolveVerifiedBillingPurchase } from '../_shared/billingPurchaseRouting.js';
 
 const clean = (value: unknown, max = 120) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const safeProviderLabel = (value: unknown) => {
@@ -190,8 +191,8 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
   }
   const updateEvent = async (values: Record<string, unknown>, evidence: Record<string, unknown> = {}) => {
     const metadata: Record<string, unknown> = { ...eventMetadata, live_mode: Boolean(body?.live_mode), ...evidence };
-    const terminalOrRetryable = ['processed', 'ignored', 'failed'].includes(String(values.status || ''));
-    if (terminalOrRetryable) {
+    const releaseLease = ['processed', 'ignored', 'failed', 'received'].includes(String(values.status || ''));
+    if (releaseLease) {
       delete metadata.processing_token;
       delete metadata.processing_started_at;
     }
@@ -357,21 +358,51 @@ export async function handleBillingWebhookRequest(req: Request, dependencies: { 
     await updateEvent({ status: 'failed', processed: false, processed_at: null, error_message: 'PROVIDER_RESPONSE_INCOMPLETE' }, evidence);
     return json({ code: 'PROVIDER_RESPONSE_INCOMPLETE' }, 502);
   }
-  const purchaseId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(externalReference) ? externalReference : null;
-  if (purchaseId) {
-    const creditStatus = normalized.activationEligible ? 'approved'
-      : ['refunded','charged_back'].includes(normalized.status) ? 'refunded'
-        : ['rejected','cancelled'].includes(normalized.status) ? normalized.status : 'pending';
-    const creditSettlement = await sb.rpc('settle_ai_credit_purchase_v1', {
-      p_purchase_id: purchaseId, p_payment_id: paymentId, p_status: creditStatus,
-      p_amount_minor: providerAmountMinor, p_currency: providerCurrency,
-    });
-    if (creditSettlement.error) return json({ code: 'AI_CREDIT_PURCHASE_SETTLEMENT_RETRYABLE' }, 503);
-    if (creditSettlement.data?.code !== 'AI_CREDIT_PURCHASE_NOT_FOUND') {
-      if (creditSettlement.data?.code !== 'OK') return json({ code: clean(creditSettlement.data?.code, 80) || 'AI_CREDIT_PURCHASE_SETTLEMENT_REJECTED' }, 422);
-      await updateEvent({ status: 'processed', processed: true, processed_at: new Date().toISOString() }, evidence);
-      return json({ code: 'OK', status: creditSettlement.data.status || creditStatus, credited: Boolean(creditSettlement.data.credited), duplicate: Boolean(creditSettlement.data.duplicate) });
+  const creditStatus = mapVerifiedCreditStatus(normalized.status, normalized.activationEligible);
+  const findPlanCheckout = async (reference: string) => {
+    const find = async (column: string, value: string) => sb.from('billing_checkout_sessions')
+      .select('id,provider').eq('provider', 'mercado_pago').eq(column, value).maybeSingle();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(reference);
+    let lookup = isUuid ? await find('id', reference) : { data: null, error: null };
+    if (lookup.error || lookup.data) return lookup;
+    if (isOrder && resourceId) {
+      lookup = await find('provider_order_id', resourceId);
+      if (lookup.error || lookup.data) return lookup;
     }
+    if (paymentId) {
+      lookup = await find('provider_payment_id', paymentId);
+      if (lookup.error || lookup.data) return lookup;
+      // Older plan payments may be linked through billing_payments metadata.
+      const paymentLookup = await sb.from('billing_payments').select('metadata')
+        .eq('provider', 'mercado_pago').eq('provider_payment_id', paymentId).maybeSingle();
+      if (paymentLookup.error) return { data: null, error: paymentLookup.error };
+      const checkoutId = paymentLookup.data?.metadata?.checkout_id;
+      if (typeof checkoutId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(checkoutId)) {
+        lookup = await find('id', checkoutId);
+      }
+    }
+    return lookup;
+  };
+  const purchaseRoute = await resolveVerifiedBillingPurchase({
+    externalReference,
+    findPlanCheckout,
+    settleAICreditPurchase: (purchaseId: string) => sb.rpc('settle_ai_credit_purchase_v1', {
+      p_purchase_id: purchaseId,
+      p_payment_id: paymentId,
+      p_status: creditStatus,
+      p_amount_minor: providerAmountMinor,
+      p_currency: providerCurrency,
+    }),
+  });
+  if (purchaseRoute.kind === 'ai_credits') {
+    const marked = await updateEvent({ status: 'processed', processed: true, processed_at: new Date().toISOString() }, evidence);
+    if (!marked) return json({ code: 'AI_CREDIT_EVENT_STATE_RETRYABLE' }, 503);
+    return json({ code: 'OK', status: purchaseRoute.settlement.status || creditStatus, credited: Boolean(purchaseRoute.settlement.credited), duplicate: Boolean(purchaseRoute.settlement.duplicate) });
+  }
+  if (purchaseRoute.kind === 'pending' || purchaseRoute.kind === 'retryable') {
+    const saved = await releaseBillingWebhookForRetry(updateEvent, purchaseRoute.reason);
+    console.error(JSON.stringify({ event: 'BILLING_PURCHASE_REFERENCE_PENDING', provider: 'mercado_pago', reason: purchaseRoute.reason }));
+    return saved ? json({ code: 'BILLING_REFERENCE_PENDING' }, 503) : json({ code: 'WEBHOOK_PERSIST_FAILED' }, 500);
   }
   const settled = await sb.rpc('settle_billing_webhook_event', {
     p_event_id: eventRecordId,
