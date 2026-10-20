@@ -5,6 +5,7 @@ import { markAIReservationUncertain, reserveAIExternalBudget, settleAIReservatio
 import { aiMaintenanceResponse } from '../_shared/aiMaintenance.js';
 import { persistAIRunEvent } from '../_shared/aiRunPersistence.js';
 import { normalizeRequestKey } from '../_shared/aiBudgetPolicy.js';
+import { classifySupplierReservationFailure } from '../_shared/supplierReservationFailure.js';
 
 const ROLES = new Set(['admin', 'gestor', 'comercial']);
 const clean = (value: unknown, max = 600) => String(value || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -65,13 +66,18 @@ Deno.serve(async (req) => {
     const history = Array.isArray(body?.history) ? body.history.slice(-4).map((item: any) => clean(item?.query, 300)).filter(Boolean) : [];
     const contextQuery = [...history, query].join(' ').slice(-900);
     const settings = await sb.from('company_assistant_settings').select('allow_web_research,max_daily_web_queries,max_research_rounds').eq('company_id', companyId).maybeSingle();
-    if (settings.error || settings.data?.allow_web_research === false) return json({ code: 'EXTERNAL_RESEARCH_NOT_ALLOWED', trace_id: traceId, candidates: [], sources: [] }, 403);
+    if (settings.error) return json({ code: 'SUPPLIER_SETTINGS_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 503);
+    if (settings.data?.allow_web_research !== true) return json({ code: 'EXTERNAL_RESEARCH_NOT_ALLOWED', trace_id: traceId, candidates: [], sources: [] }, 403);
     const dailyQueryLimit = Number(settings.data.max_daily_web_queries);
     const requestedQueries = Math.min(depth === 'detailed' ? 3 : 1, Number.isSafeInteger(dailyQueryLimit) ? Math.max(0, dailyQueryLimit) : 0);
-    if (!requestId || requestedQueries < 1) return json({ code: !requestId ? 'AI_IDEMPOTENCY_KEY_REQUIRED' : 'EXTERNAL_RESEARCH_BUDGET_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 429);
+    if (!requestId) return json({ code: 'AI_IDEMPOTENCY_KEY_REQUIRED', trace_id: traceId, candidates: [], sources: [] }, 422);
+    if (requestedQueries < 1) return json({ code: 'WEB_RESEARCH_LIMIT_REACHED', trace_id: traceId, candidates: [], sources: [] }, 429);
     const requestKey = `${requestId}:supplier-research`;
     const budget = await reserveAIExternalBudget(sb, { company_id: companyId, settings: settings.data, web_queries: requestedQueries, request_key: requestKey });
-    if (!budget.allowed) return json({ code: 'EXTERNAL_RESEARCH_BUDGET_UNAVAILABLE', trace_id: traceId, candidates: [], sources: [] }, 429);
+    if (!budget.allowed) {
+      const failure = classifySupplierReservationFailure(budget.reason);
+      return json({ code: failure.code, trace_id: traceId, candidates: [], sources: [] }, failure.status);
+    }
     if (budget.reservation_id) activeReservation = { id: budget.reservation_id, requestKey, companyId };
     await event(sb, companyId, traceId, 'SUPPLIER_SEARCH_STARTED', 'success', { depth, query_length: query.length, opportunity_id: context.opportunity_id || null, product_id: context.product_id || null });
     await event(sb, companyId, traceId, 'EXTERNAL_RESEARCH_STARTED', 'success', { depth });

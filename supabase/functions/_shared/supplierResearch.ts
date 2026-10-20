@@ -59,7 +59,9 @@ export function buildSupplierCandidates(results: any[], requestedQuery: string, 
     const snippet = text(result?.snippet, 1000);
     if (!title && !snippet) continue;
     const evidence = `${title} ${snippet}`;
-    const productMatch = requestedQuery.split(/\s+/).filter((part) => part.length >= 3).slice(0, 8).some((part) => evidence.toLocaleLowerCase().includes(part.toLocaleLowerCase()));
+    const queryTerms = requestedQuery.split(/\s+/).map((part) => text(part, 60)).filter((part) => part.length >= 3).slice(0, 12);
+    const relatedTerms = [...new Set(queryTerms.filter((part) => evidence.toLocaleLowerCase().includes(part.toLocaleLowerCase())))];
+    const productMatch = relatedTerms.length > 0;
     const regional = regionMatch(evidence, requestedQuery);
     const trust = evaluateSourceTrust({ source_type: result?.source_type, domain, evidence_count: 1, retrieved_at: result?.retrieved_at || retrievedAt });
     const existing = grouped.get(domain);
@@ -67,11 +69,12 @@ export function buildSupplierCandidates(results: any[], requestedQuery: string, 
     if (existing) {
       existing.sources.push(source);
       existing.evidence = [...new Set([...existing.evidence, snippet])].slice(0, 6);
+      existing.related_terms = [...new Set([...existing.related_terms, ...relatedTerms])].slice(0, 12);
       existing.price = existing.price || price(evidence);
       existing.product_match ||= productMatch;
       existing.regional_match = existing.regional_match === true || regional === true ? true : existing.regional_match;
       existing.trust_score = Math.max(existing.trust_score, trust.score);
-    } else grouped.set(domain, { name: inferName(title, domain), type: inferType(evidence), product: text(requestedQuery, 180), location: regional === true ? 'Brasil/América do Sul (evidência pública)' : null, site: parsed.toString(), evidence: [snippet], sources: [source], price: price(evidence), product_match: productMatch, regional_match: regional, trust_score: trust.score, retrieved_at: result?.retrieved_at || retrievedAt });
+    } else grouped.set(domain, { name: inferName(title, domain), type: inferType(evidence), product: text(requestedQuery, 180), related_terms: relatedTerms, location: regional === true ? 'Brasil/América do Sul (evidência pública)' : null, site: parsed.toString(), evidence: [snippet], sources: [source], price: price(evidence), product_match: productMatch, regional_match: regional, trust_score: trust.score, trust_evidence: title || domain, retrieved_at: result?.retrieved_at || retrievedAt });
   }
   return [...grouped.values()].map((candidate) => {
     const sourceCount = candidate.sources.length;
