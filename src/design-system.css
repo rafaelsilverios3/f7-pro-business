@@ -184,6 +184,25 @@ body.light-theme .app-shell .f7-period-active { background: var(--sidebar-active
 body.light-theme .app-shell aside a.bg-gradient-to-r * { color: #fff !important; }
 body.light-theme .app-shell .recharts-text { fill: #52636e !important; }
 body.light-theme .app-shell .recharts-cartesian-grid line { stroke: rgb(82 99 110 / 24%) !important; }
+body.light-theme .app-shell [aria-labelledby="onboarding-checklist-title"] {
+  background: linear-gradient(135deg, #ffffff, #edf4f8) !important;
+  border-color: #c4d8e5 !important;
+  box-shadow: 0 8px 22px rgb(24 45 58 / 7%) !important;
+}
+body.light-theme .app-shell [aria-labelledby="onboarding-checklist-title"] h2 { color: #172630 !important; }
+body.light-theme .app-shell [aria-labelledby="onboarding-checklist-title"] p.text-blue-300 { color: #245b7c !important; }
+body.light-theme .app-shell [aria-labelledby="onboarding-checklist-title"] p.text-slate-300 { color: #52636e !important; }
+body.light-theme .app-shell [aria-labelledby="onboarding-checklist-title"] span.bg-blue-500\/20 { background: #dcecf5 !important; color: #176da8 !important; }
+body.light-theme .app-shell [data-executive-summary] > div:first-child {
+  background: linear-gradient(110deg, #edf3ff, #f5efff) !important;
+  border-color: #d8def0 !important;
+}
+body.light-theme .app-shell [data-executive-summary] > div:first-child p.text-indigo-600 { color: #4c4a9a !important; }
+body.light-theme .app-shell [data-executive-summary] > div:first-child h2 { color: #172630 !important; }
+body.light-theme .app-shell [data-executive-summary] > div:first-child p.text-slate-800 { color: #334650 !important; }
+body.light-theme .app-shell [data-executive-summary] > div:first-child .bg-indigo-600 { color: #fff !important; }
+body.light-theme .app-shell [data-executive-summary] > div:first-child span.bg-white { background: #fff !important; color: #37377f !important; }
+body.light-theme .app-shell [data-executive-summary] > div:first-child button.bg-white { background: #fff !important; color: #37377f !important; }
 
 @media (max-width: 900px) {
   .app-shell main > .sticky { gap: .5rem; padding-inline: 1rem; }
