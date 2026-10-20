@@ -23,6 +23,7 @@ declare
   before_data jsonb;
   after_data jsonb;
   calls_value integer;
+  web_queries_value integer;
   budget_value numeric;
   currency_value text;
 begin
@@ -43,8 +44,9 @@ begin
   select jsonb_build_object('max_daily_ai_calls', s.max_daily_ai_calls,
       'max_daily_web_queries', s.max_daily_web_queries,
       'max_daily_ai_cost', s.max_daily_ai_cost, 'ai_budget_currency', s.ai_budget_currency,
-      'max_tokens_per_request', s.max_tokens_per_request)
-    into before_data from public.company_assistant_settings s where s.company_id = target_company;
+      'max_tokens_per_request', s.max_tokens_per_request), s.max_daily_ai_calls, s.max_daily_web_queries
+    into before_data, calls_value, web_queries_value
+    from public.company_assistant_settings s where s.company_id = target_company;
 
   if consumption_enabled then
     if target_daily_calls is null or target_daily_calls not between 1 and 1000
@@ -66,15 +68,23 @@ begin
     budget_value := target_daily_budget;
     currency_value := target_currency;
   else
-    calls_value := 0;
-    target_daily_web_queries := 0;
+    if target_clear_budget then
+      -- Restore only the financial cap; retain the company's existing usage limits.
+      calls_value := coalesce(calls_value, 0);
+      web_queries_value := coalesce(web_queries_value, 0);
+    else
+      calls_value := 0;
+      web_queries_value := 0;
+    end if;
     budget_value := case when target_clear_budget then 0 else null end;
     currency_value := null;
   end if;
 
   insert into public.company_assistant_settings(company_id, max_daily_ai_calls, max_daily_web_queries, max_daily_ai_cost,
       ai_budget_currency, max_tokens_per_request)
-    values (target_company, calls_value, coalesce(target_daily_web_queries, 0), coalesce(budget_value, 0), currency_value,
+    values (target_company, calls_value,
+      case when consumption_enabled then target_daily_web_queries else coalesce(web_queries_value, 0) end,
+      coalesce(budget_value, 0), currency_value,
       coalesce(target_max_tokens, 8000))
   on conflict (company_id) do update set
     max_daily_ai_calls = excluded.max_daily_ai_calls,
