@@ -36,7 +36,8 @@ test('grant write actions are limited to global admins, with lifetime enforced b
 
 test('Brave can use the backend-only secret name and remains pending without it', () => {
   assert.match(provider, /Deno\.env\.get\('BRAVE_SEARCH_API_KEY'\)/);
-  assert.match(provider, /Deno\.env\.get\('WEB_SEARCH_API_KEY'\) \|\| braveKey/);
+  assert.match(provider, /if \(provider === 'brave'\) return \{ endpoint: BRAVE_ENDPOINT, key: braveKey, provider \}/);
+  assert.match(provider, /return \{ endpoint: Deno\.env\.get\('WEB_SEARCH_API_URL'\) \|\| '', key: legacyKey, provider \}/);
   assert.match(provider, /if \(!config\.key\).*WEB_SEARCH_NOT_CONFIGURED/s);
   assert.doesNotMatch(provider, /VITE_BRAVE_SEARCH_API_KEY/);
 });
