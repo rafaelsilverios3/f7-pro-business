@@ -6,6 +6,7 @@ import { validateAiRateCard, validateAiRateCardEnabled, validateCompanyAiBudget,
 const migration = fs.readFileSync('supabase/migrations/20261016232326_20261016170000_platform_ai_financial_admin_controls.sql', 'utf8');
 const lifecycleMigration = fs.readFileSync('supabase/migrations/20261016233851_platform_admin_temporary_expiry.sql', 'utf8');
 const budgetMigration = fs.readFileSync('supabase/migrations/20261014234651_ai_budget_reservations_and_settlement.sql', 'utf8');
+const clearZeroMigration = fs.readFileSync('supabase/migrations/20261020170000_ai_budget_admin_clear_zero.sql', 'utf8');
 const edge = fs.readFileSync('supabase/functions/platform-admin/index.ts', 'utf8');
 const accessPolicy = fs.readFileSync('supabase/functions/_shared/platformAdminAccess.js', 'utf8');
 const ui = fs.readFileSync('src/components/platform-admin/AiFinancialControls.jsx', 'utf8');
@@ -16,7 +17,10 @@ const validRate = { rate_kind: 'model_tokens', provider_key: 'https://api.openai
 
 test('budget policy accepts bounded explicit pilot input and safe disable', () => {
   assert.deepEqual(validateCompanyAiBudget(validBudget), { allowed: true });
+  assert.deepEqual(validateCompanyAiBudget({ ...validBudget, daily_web_queries: 0 }), { allowed: true });
   assert.deepEqual(validateCompanyAiBudget({ consumption_enabled: false, reason: 'Pause the AI spend' }), { allowed: true });
+  assert.deepEqual(validateCompanyAiBudget({ consumption_enabled: false, clear_budget: true, reason: 'Clear AI budget' }), { allowed: true });
+  assert.equal(validateCompanyAiBudget({ ...validBudget, clear_budget: true }).allowed, false);
   for (const patch of [
     { daily_calls: 0 }, { daily_calls: 1001 }, { daily_web_queries: -1 },
     { daily_budget: 0 }, { daily_budget: 1000.01 }, { daily_budget: 'NaN' }, { currency: 'XYZ' },
@@ -62,6 +66,11 @@ test('database keeps AI pricing and reservation ledger private and exposes only 
   assert.match(migration, /AI_FINANCIAL_RATE_OVERLAP/);
   assert.equal((migration.match(/target_currency not in \('BRL','EUR','USD'\)/g) || []).length, 2);
   assert.doesNotMatch(migration, /AI_ENABLED|ALTER SYSTEM|dblink/i);
+  assert.match(clearZeroMigration, /target_clear_budget boolean/i);
+  assert.match(clearZeroMigration, /target_daily_web_queries not between 0 and 1000/i);
+  assert.match(clearZeroMigration, /max_daily_ai_cost = case when consumption_enabled or target_clear_budget then excluded\.max_daily_ai_cost/i);
+  assert.match(clearZeroMigration, /company\.ai_financial_budget\.changed/i);
+  assert.match(clearZeroMigration, /platform_admin_ai_assert_financial_admin/i);
 });
 
 test('Edge financial actions use caller JWT RPCs and exclude limits from generic settings updates', () => {
@@ -91,5 +100,7 @@ test('admin UI exposes bounded tariff, company budget, pause, and sanitized rese
   assert.match(ui, /platformAdminService\.companies\(\{ search: query, page: 1, page_size: 100 \}\)/);
   assert.match(ui, /const loadUsage = useCallback\(async \(\) => \{ if \(!canRead\) return;/);
   assert.match(ui, /const budgetSettings = usage\.budget/);
+  assert.match(ui, /Restaurar orçamento a zero/);
+  assert.match(ui, /formDirty/);
   assert.doesNotMatch(ui, /data\?\.rows \|\| \[\]/);
 });
