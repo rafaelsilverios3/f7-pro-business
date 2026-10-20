@@ -23,8 +23,8 @@ function SubscriptionSummary({ subscription, loading, error, onRetry }) {
   if (loading) return <div aria-label="Carregando plano atual" className="hidden h-10 w-32 animate-pulse rounded-xl border border-slate-700/70 bg-slate-800/60 sm:block" />;
   if (error) return <div aria-label="Erro ao carregar plano atual" className="hidden min-w-0 items-center gap-2 rounded-xl border border-rose-400/40 bg-rose-400/10 px-3 py-1.5 sm:flex"><div className="min-w-0 leading-tight"><p className="truncate text-[10px] font-semibold uppercase tracking-wide text-rose-200">Plano indisponível</p><p className="truncate text-xs font-semibold text-rose-100">Tente novamente</p></div><button type="button" onClick={onRetry} className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-semibold text-rose-100 transition hover:bg-rose-500/20">Tentar novamente</button></div>;
   const isTrial = trialActive(subscription);
-  const expired = trialExpired(subscription);
   const resolved = resolveSubscriptionHeaderState(subscription);
+  const expired = trialExpired(subscription) || resolved.state === 'expired';
   const plan = String(subscription?.plan || '').trim().toUpperCase();
   const title = resolved.title;
   const detail = isTrial ? `${trialHoursRemaining(subscription)}h restantes` : expired ? 'Escolher plano' : resolved.detail;

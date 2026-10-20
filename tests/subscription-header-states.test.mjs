@@ -14,6 +14,17 @@ test('active plans are rendered from the canonical subscription plan', () => {
   }
 });
 
+test('active status with an ended period is shown as expired', () => {
+  const state = resolveSubscriptionHeaderState({
+    status: 'active',
+    plan: 'premium',
+    current_period_end: '2026-09-15T11:59:00.000Z',
+  }, { now });
+  assert.equal(state.state, 'expired');
+  assert.equal(state.title, 'Assinatura encerrada • PREMIUM');
+  assert.equal(state.detail, 'Escolher plano');
+});
+
 test('active and expired trials have explicit states', () => {
   const active = resolveSubscriptionHeaderState({ status: 'trial', trial_ends_at: '2026-09-16T12:00:00.000Z' }, { now });
   assert.equal(active.state, 'trial');
