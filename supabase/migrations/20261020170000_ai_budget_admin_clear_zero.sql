@@ -1,5 +1,8 @@
 begin;
 
+-- Conceptual rollback: restore the previous eight-argument function body and
+-- remove the nine-argument overload after all deployed callers stop sending
+-- target_clear_budget. Existing audit records remain immutable and untouched.
 -- Add an explicit audited operation to remove a configured budget. The existing
 -- eight-argument entry point remains available and retains its pause semantics.
 create or replace function public.platform_admin_ai_set_company_budget(
