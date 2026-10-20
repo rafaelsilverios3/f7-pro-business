@@ -67,20 +67,23 @@ export default function Produtos() {
 
   const stats = useMemo(() => {
     if (!items) return { total: 0, critical: 0, stockValue: 0 };
+    const currentItems = items.filter((p) => p.active !== false && (p.item_type || 'product') === tab);
     return {
-      total: items.filter((p) => p.active !== false && (p.item_type || 'product') === tab).length,
-      services: items.filter((p) => p.active !== false && p.item_type === 'service').length,
-      critical: tab === 'service' ? 0 : items.filter((p) => p.active !== false && (p.item_type || 'product') === tab && (p.stock || 0) <= (p.min_stock || 0)).length,
-      stockValue: tab === 'service' ? 0 : items.filter((p) => p.active !== false && p.item_type !== 'service' && (p.item_type || 'product') === tab).reduce((s, p) => s + (p.stock || 0) * (p.cost_price || 0), 0),
+      total: currentItems.length,
+      available: tab === 'service' ? null : currentItems.reduce((sum, p) => sum + (Number(p.stock) || 0), 0),
+      critical: tab === 'service' ? null : currentItems.filter((p) => (p.stock || 0) <= (p.min_stock || 0)).length,
+      stockValue: tab === 'service' ? null : currentItems.reduce((sum, p) => sum + (Number(p.stock) || 0) * (Number(p.cost_price ?? p.cost) || 0), 0),
     };
   }, [items, tab]);
+
+  const itemLabel = tab === 'material' ? 'matéria-prima' : tab === 'service' ? 'serviço' : 'produto';
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
       <PageHeader
         title="Catálogo"
         subtitle="Gerencie produtos, matérias-primas e serviços da empresa."
-        action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Novo {tab === 'material' ? 'material' : tab === 'service' ? 'serviço' : 'produto'}</Button>}
+        action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Cadastrar {itemLabel}</Button>}
       />
       {actionError && <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{actionError}</div>}
 
@@ -91,20 +94,20 @@ export default function Produtos() {
           <p className="text-xs text-slate-500">Total de {tab === 'material' ? 'materiais' : tab === 'service' ? 'serviços' : 'produtos'}</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{fmtNum(stats.total)}</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Total de serviços</p><p className="mt-1 text-xl font-semibold text-violet-600">{fmtNum(stats.services)}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">{tab === 'service' ? 'Controle de estoque' : 'Unidades disponíveis'}</p><p className="mt-1 text-xl font-semibold text-violet-600">{stats.available == null ? 'Não se aplica' : fmtNum(stats.available)}</p></div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-500">Estoque crítico</p>
-          <p className="mt-1 text-xl font-semibold text-rose-600">{fmtNum(stats.critical)}</p>
+          <p className="mt-1 text-xl font-semibold text-rose-600">{stats.critical == null ? 'Não se aplica' : fmtNum(stats.critical)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">Valor em estoque</p>
-          <p className="mt-1 text-xl font-semibold text-slate-900">{fmtMoney(stats.stockValue)}</p>
+          <p className="text-xs text-slate-500">{tab === 'material' ? 'Custo das matérias-primas em estoque' : 'Valor em estoque'}</p>
+          <p className="mt-1 text-xl font-semibold text-slate-900">{stats.stockValue == null ? 'Não se aplica' : fmtMoney(stats.stockValue)}</p>
         </div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2"><div className="relative max-w-sm flex-1">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, SKU ou subcategoria..." className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Buscar ${itemLabel}, código ou subcategoria...`} className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400" />
       </div>{items && [...new Set(items.filter((p) => (p.item_type || 'product') === tab).map((p) => p.subcategory).filter(Boolean))].length > 0 && <select value={subcategory} onChange={(e) => setSubcategory(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 text-sm"><option value="">Todas as subcategorias</option>{[...new Set(items.filter((p) => (p.item_type || 'product') === tab).map((p) => p.subcategory).filter(Boolean))].sort().map((value) => <option key={value} value={value}>{value}</option>)}</select>}</div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -113,21 +116,21 @@ export default function Produtos() {
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center">
             <Package className="mx-auto h-8 w-8 text-slate-300" />
-            <p className="mt-2 text-sm font-medium text-slate-700">Cadastre o que sua empresa vende.</p>
-            <p className="mt-1 text-xs text-slate-500">Produtos conectam preço e estoque; serviços ficam sem controle de estoque.</p>
-            <Button className="mt-4" size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Cadastrar {tab === 'material' ? 'material' : tab === 'service' ? 'serviço' : 'produto'}</Button>
+            <p className="mt-2 text-sm font-medium text-slate-700">{tab === 'material' ? 'Cadastre insumos usados na produção.' : tab === 'service' ? 'Cadastre serviços e mão de obra vendáveis.' : 'Cadastre produtos acabados ou para revenda.'}</p>
+            <p className="mt-1 text-xs text-slate-500">{tab === 'material' ? 'O saldo será consumido pelas ordens de produção e o custo comporá o custo do produto acabado.' : tab === 'service' ? 'Serviços não movimentam estoque.' : 'Produtos têm preço de venda e controle de estoque.'}</p>
+            <Button className="mt-4" size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Cadastrar {itemLabel}</Button>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-500">
-                  <th className="px-4 py-3 font-medium">Produto</th>
+                  <th className="px-4 py-3 font-medium">{tab === 'material' ? 'Matéria-prima' : tab === 'service' ? 'Serviço' : 'Produto'}</th>
                   <th className="px-4 py-3 font-medium">Categoria</th>
-                  <th className="px-4 py-3 text-right font-medium">Custo</th>
-                  <th className="px-4 py-3 text-right font-medium">Venda</th>
-                  <th className="px-4 py-3 text-right font-medium">Margem</th>
-                  <th className="px-4 py-3 text-center font-medium">Estoque</th>
+                  <th className="px-4 py-3 text-right font-medium">{tab === 'material' ? 'Custo unitário' : 'Custo'}</th>
+                  {tab !== 'material' && <th className="px-4 py-3 text-right font-medium">Venda</th>}
+                  {tab !== 'material' && <th className="px-4 py-3 text-right font-medium">Margem</th>}
+                  <th className="px-4 py-3 text-center font-medium">{tab === 'material' ? 'Saldo interno' : 'Estoque'}</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -148,8 +151,8 @@ export default function Produtos() {
                       </td>
                       <td className="px-4 py-3 text-slate-500"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${p.item_type === 'service' ? 'bg-violet-100 text-violet-700' : p.item_type === 'material' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.item_type === 'service' ? 'SERVIÇO' : p.item_type === 'material' ? 'MATERIAL' : 'PRODUTO'}</span><span className="ml-2">{p.subcategory || '—'}</span></td>
                       <td className="px-4 py-3 text-right text-slate-500">{costUnknown ? <span title="O custo não veio da origem da campanha">Não informado</span> : fmtMoney(costPrice)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(salePrice)}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{margin == null ? <span title="Margem indisponível enquanto o custo não for informado">—</span> : `${margin.toFixed(2)}%`}</td>
+                      {tab !== 'material' && <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(salePrice)}</td>}
+                      {tab !== 'material' && <td className="px-4 py-3 text-right text-slate-600">{margin == null ? <span title="Margem indisponível enquanto o custo não for informado">—</span> : `${margin.toFixed(2)}%`}</td>}
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${critical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
                           {p.item_type === 'service' ? '—' : <>{critical && <AlertTriangle className="h-3 w-3" />}{fmtNum(stock)}</>}
@@ -170,7 +173,7 @@ export default function Produtos() {
         )}
       </div>
 
-      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} defaultItemType={tab} fixedItemType={!editing || editing?.item_type === 'material'} companyId={company?.id} canManagePricing={canManagePricing} canManageCatalog={canManageCatalog} onApplyPricing={async ({ product, price, summary }) => { const updated = await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); return updated; }} />
+      <ProductDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSave={handleSave} initial={editing} defaultItemType={editing?.item_type || tab} fixedItemType companyId={company?.id} canManagePricing={canManagePricing} canManageCatalog={canManageCatalog} onApplyPricing={async ({ product, price, summary }) => { const updated = await applyProductPrice({ companyId: company.id, productId: product.id, newPrice: price, pricingData: { realCost: summary.realCost, targetMargin: summary.targetMargin, realMargin: summary.margin, variableRate: summary.variableRate }, canManage: canManagePricing }); await load(); return updated; }} />
     </div>
   );
 }
