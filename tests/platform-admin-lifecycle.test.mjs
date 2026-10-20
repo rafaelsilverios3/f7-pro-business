@@ -125,6 +125,9 @@ test('platform admin overview separates plan entitlement, assistant setup, provi
   assert.match(edge, /AI_API_KEY.*AI_MODEL/);
   assert.match(edge, /ai_overview: aiOverview/);
   assert.match(adminUi, /IA incluída no plano/);
+  assert.match(adminUi, /Entitlement efetivo/);
+  assert.match(adminUi, /provider_ready \? 'Disponível' : 'Indisponível'/);
+  assert.match(adminUi, /assistant_configured \? 'Configurado' : 'Não configurado'/);
   assert.match(adminUi, /Pendente de configuração/);
   assert.match(adminUi, /Assistentes prontos no modo assistido/);
   assert.match(adminUi, /automatic_reply_configured/);
