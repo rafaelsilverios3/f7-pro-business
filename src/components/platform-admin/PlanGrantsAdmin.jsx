@@ -5,6 +5,12 @@ const planOptions = [
   ['free', 'Starter'], ['pro', 'Pro'], ['business', 'Business'], ['premium', 'Premium'],
 ];
 const formatDate = (value) => value ? new Date(value).toLocaleString('pt-BR') : '—';
+const billingState = (value) => {
+  if (!value) return 'sem registro';
+  const deadline = value.status === 'trial' ? value.trial_ends_at : value.current_period_end;
+  if (['active', 'trial'].includes(value.status) && deadline && new Date(deadline).getTime() <= Date.now()) return 'expirada';
+  return value.status || 'sem registro';
+};
 const toLocalInput = (date) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
@@ -91,9 +97,9 @@ export function PlanGrantsAdmin({ companies = [], role = 'readonly' }) {
       {companyId && <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-5">
         <div><p className="text-xs text-slate-500">Plano contratado</p><strong>{subscription?.paid_subscription?.plan || subscription?.plan || 'Starter'}</strong></div>
         <div><p className="text-xs text-slate-500">Plano efetivo</p><strong className={subscription?.manual_grant?.grant_type === 'lifetime' ? 'text-amber-700' : ''}>{subscription?.plan === 'free' ? 'Starter' : subscription?.plan || 'Starter'}{subscription?.manual_grant?.grant_type === 'lifetime' ? ' — VITALÍCIO' : ''}</strong></div>
-        <div><p className="text-xs text-slate-500">Status de cobrança</p><strong>{subscription?.paid_subscription?.status || subscription?.status || 'sem registro'}</strong></div>
+        <div><p className="text-xs text-slate-500">Status de cobrança</p><strong>{billingState(subscription?.paid_subscription || subscription)}</strong></div>
         <div><p className="text-xs text-slate-500">Origem do acesso</p><strong>{accessOrigin}</strong></div>
-        <div><p className="text-xs text-slate-500">Validade da assinatura</p><strong>{formatDate(subscription?.current_period_end)}</strong></div>
+        <div><p className="text-xs text-slate-500">Validade do acesso</p><strong>{formatDate(subscription?.current_period_end)}</strong></div>
       </div>}
     </section>
     {companyId && <>
