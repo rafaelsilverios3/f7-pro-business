@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/0076_current_subscription_rpc.sql', 'utf8');
+const grantMigration = fs.readFileSync('supabase/migrations/20261020154400_fix_lifetime_grant_subscription_validity.sql', 'utf8');
 const service = fs.readFileSync('src/services/subscriptionService.js', 'utf8');
 
 test('current subscription RPC returns only the canonical minimum and checks active membership', () => {
@@ -42,4 +43,13 @@ test('RPC contract is fail-closed for cross-tenant, inactive, anonymous and miss
   ]) assert.match(migration, pattern);
   assert.match(migration, /grant execute on function public\.get_current_subscription\(uuid\) to authenticated/i);
   assert.doesNotMatch(migration, /grant execute on function public\.get_current_subscription\(uuid\) to anon/i);
+});
+
+test('effective lifetime grants keep a null end date instead of inheriting expired billing validity', () => {
+  assert.match(grantMigration, /case when g\.id is not null then g\.ends_at else s\.current_period_end end/i);
+  assert.match(grantMigration, /case when g\.id is not null then g\.starts_at else s\.current_period_start end/i);
+  assert.match(grantMigration, /auth\.uid\(\) is not null/i);
+  assert.match(grantMigration, /cu\.active = true/i);
+  assert.match(grantMigration, /revoke all on function public\.get_current_subscription\(uuid\) from public, anon/i);
+  assert.match(grantMigration, /grant execute on function public\.get_current_subscription\(uuid\) to authenticated/i);
 });
