@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { platformAdminService } from '@/services/platformAdminService';
 
 const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 disabled:bg-slate-100';
@@ -115,6 +115,7 @@ export function GlobalAiFinancialAdmin({ companies = [], canRead, canManage }) {
 export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSaved }) {
   const [usage, setUsage] = useState(null);
   const [usageCompanyId, setUsageCompanyId] = useState(null);
+  const usageRequestId = useRef(0);
   const [formDirty, setFormDirty] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [calls, setCalls] = useState('');
@@ -126,8 +127,8 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  useEffect(() => { setUsage(null); setUsageCompanyId(null); setFormDirty(false); setError(''); setMessage(''); }, [companyId]);
-  const loadUsage = useCallback(async () => { if (!canRead) return; try { const result = await platformAdminService.aiFinancialUsage(companyId); setUsage(result.usage); setUsageCompanyId(companyId); } catch (cause) { setError(cause.message || 'Não foi possível carregar consumo e reservas.'); } }, [canRead, companyId]);
+  useEffect(() => { usageRequestId.current += 1; setUsage(null); setUsageCompanyId(null); setFormDirty(false); setError(''); setMessage(''); }, [companyId]);
+  const loadUsage = useCallback(async () => { if (!canRead) return; const requestId = ++usageRequestId.current; try { const result = await platformAdminService.aiFinancialUsage(companyId); if (requestId !== usageRequestId.current) return; setUsage(result?.usage && typeof result.usage === 'object' ? result.usage : null); setUsageCompanyId(companyId); } catch (cause) { if (requestId === usageRequestId.current) setError(cause.message || 'Não foi possível carregar consumo e reservas.'); } }, [canRead, companyId]);
   useEffect(() => { loadUsage(); }, [loadUsage]);
   useEffect(() => {
     if (!usage || usageCompanyId !== companyId || formDirty) return;
@@ -136,7 +137,7 @@ export function CompanyAiFinancialControls({ companyId, canRead, canManage, onSa
     setEnabled(active); setCalls(String(budgetSettings?.max_daily_ai_calls ?? 0)); setWebQueries(String(budgetSettings?.max_daily_web_queries ?? 0)); setBudget(String(budgetSettings?.max_daily_ai_cost ?? 0)); setCurrency(budgetSettings?.ai_budget_currency || ''); setTokens(String(budgetSettings?.max_tokens_per_request ?? 8000));
   }, [companyId, formDirty, usage, usageCompanyId]);
   const today = usage?.today || {};
-  const reservations = usage?.reservations || [];
+  const reservations = Array.isArray(usage?.reservations) ? usage.reservations : [];
   if (!canRead) return <Notice>Consulta de orçamento e consumo não está disponível para este papel.</Notice>;
   const submit = async (event) => {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
