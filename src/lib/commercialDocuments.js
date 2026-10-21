@@ -14,6 +14,10 @@ export function saleReference(sale) {
   return `VEN-${datePart(sale?.sale_date || sale?.created_at).slice(0, 4)}-${String(sale?.id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || 'NOVA'}`;
 }
 
+export function saleReceiptFilename(sale) {
+  return `${saleReference(sale)}-nao-fiscal.pdf`;
+}
+
 function drawDocument({ title, reference, company, customer, date, items = [], subtotal = 0, discount = 0, addition = 0, total = 0, nonFiscal = false }) {
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
   const width = pdf.internal.pageSize.getWidth();
@@ -93,7 +97,7 @@ export function createSaleReceiptPdf(sale, company) {
 
 export function downloadSaleReceiptPdf(sale, company) {
   const pdf = createSaleReceiptPdf(sale, company);
-  pdf.save(`${reference}-nao-fiscal.pdf`);
+  pdf.save(saleReceiptFilename(sale));
 }
 
 export function buildQuoteShareText(quote, company, customerName = '') {
