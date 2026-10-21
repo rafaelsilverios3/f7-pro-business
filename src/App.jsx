@@ -118,6 +118,8 @@ const AuthenticatedApp = () => {
   const publicPaths = ['/login', '/register', '/cadastro', '/forgot-password', '/reset-password', '/aceitar-convite'];
   const publicSitePages = {
     '/': 'home',
+    '/sistemas': 'systems',
+    '/f7food': 'food-entry',
     '/produtos': 'products',
     '/pro-business': 'pro-business',
     '/planos': 'plans',
