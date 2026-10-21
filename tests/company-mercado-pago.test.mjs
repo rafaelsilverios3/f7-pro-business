@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const migration = await readFile(new URL('../supabase/migrations/20261022090000_company_mercado_pago_connect.sql', import.meta.url), 'utf8');
+const oauthFixMigration = await readFile(new URL('../supabase/migrations/20261021120000_company_mp_oauth_state_rpc.sql', import.meta.url), 'utf8');
 const shared = await readFile(new URL('../supabase/functions/_shared/mercadoPagoCompany.ts', import.meta.url), 'utf8');
+const connect = await readFile(new URL('../supabase/functions/mercado-pago-company-connect/index.ts', import.meta.url), 'utf8');
 const payments = await readFile(new URL('../supabase/functions/mercado-pago-company-payments/index.ts', import.meta.url), 'utf8');
 const webhook = await readFile(new URL('../supabase/functions/mercado-pago-company-webhook/index.ts', import.meta.url), 'utf8');
 const status = await readFile(new URL('../supabase/functions/mercado-pago-company-status/index.ts', import.meta.url), 'utf8');
@@ -17,6 +19,10 @@ test('company OAuth uses explicit authorization, one-use state, PKCE S256, and s
   assert.match(shared, /code_challenge/);
   assert.match(migration, /pkce_verifier text not null/);
   assert.match(migration, /company_mp_consume_oauth_state/);
+  assert.match(oauthFixMigration, /company_mp_create_oauth_state/);
+  assert.match(oauthFixMigration, /current_company_role\(p_company\) not in \('admin','gestor','financeiro'\)/);
+  assert.match(connect, /access\.sb\.rpc\([\s\S]*?company_mp_create_oauth_state/);
+  assert.doesNotMatch(connect, /from\(["']company_mp_oauth_states["']\)\.insert/);
   assert.match(migration, /consumed_at is null and s\.expires_at>now\(\)/);
   assert.match(migration, /vault\.create_secret/);
   assert.match(migration, /grant execute on function public\.company_mp_save_connection[^;]*to service_role/);

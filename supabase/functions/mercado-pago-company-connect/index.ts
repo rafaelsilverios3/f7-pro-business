@@ -31,17 +31,21 @@ export async function handleMercadoPagoCompanyConnect(req: Request) {
     const state = base64Url(crypto.getRandomValues(new Uint8Array(32)));
     const verifier = base64Url(crypto.getRandomValues(new Uint8Array(48)));
     const challenge = await pkceChallenge(verifier);
-    const { error } = await access.sb.from("company_mp_oauth_states").insert({
-      state_hash: await sha256(state),
-      company_id: companyId,
-      user_id: access.user.id,
-      pkce_verifier: verifier,
-      expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-    });
-    if (error) return json({ code: "MP_OAUTH_STATE_CREATE_FAILED" }, 500);
-    await access.sb.from("company_mp_oauth_states").delete().lt(
+    const { data: created, error } = await access.sb.rpc(
+      "company_mp_create_oauth_state",
+      {
+        p_company: companyId,
+        p_state_hash: await sha256(state),
+        p_pkce_verifier: verifier,
+      },
+    );
+    if (error || created !== true) {
+      return json({ code: "MP_OAUTH_STATE_CREATE_FAILED" }, 500);
+    }
+    const service = admin();
+    await service.from("company_mp_oauth_states").delete().lt(
       "expires_at",
-      new Date(Date.now() - 24 * 60 * 60_000).toISOString(),
+      new Date().toISOString(),
     );
     await access.sb.from("integration_logs").insert({
       company_id: companyId,
