@@ -1,6 +1,6 @@
 -- Route approved quotes into a pending sale, preserving a separate explicit
 -- billing confirmation before inventory, revenue, and receivable mutations.
--- Rollback: stop new quote billing first; reconcile pending sales manually,
+-- Conceptual rollback: stop new quote billing first; reconcile pending sales manually,
 -- then restore the previous RPCs/triggers before dropping added columns.
 
 alter table public.quotes
