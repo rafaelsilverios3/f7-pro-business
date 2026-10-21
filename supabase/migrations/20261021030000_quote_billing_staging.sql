@@ -14,6 +14,10 @@ create table if not exists public.quote_number_sequences (
 alter table public.quote_number_sequences enable row level security;
 revoke all on public.quote_number_sequences from public, anon, authenticated;
 
+-- This is an administrative backfill of the new identifier only. The existing
+-- validation trigger requires an authenticated tenant member, which migrations
+-- do not have; keep all other triggers and re-enable validation immediately.
+alter table public.quotes disable trigger quotes_validate_commercial;
 with numbered as (
   select id, company_id, row_number() over (partition by company_id order by created_at, id) as n
   from public.quotes where quote_number is null
@@ -21,6 +25,7 @@ with numbered as (
 update public.quotes q
 set quote_number = 'ORC-' || to_char(q.created_at, 'YYYY') || '-' || lpad(numbered.n::text, 6, '0')
 from numbered where q.id = numbered.id;
+alter table public.quotes enable trigger quotes_validate_commercial;
 
 insert into public.quote_number_sequences(company_id, last_number)
 select company_id, greatest(count(*), coalesce(max(case when quote_number ~ '[0-9]+$' then substring(quote_number from '([0-9]+)$')::bigint else 0 end), 0)) from public.quotes group by company_id
