@@ -33,6 +33,7 @@ export default function Vendas() {
   const [viewing, setViewing] = useState(null);
   const [billingSale, setBillingSale] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const load = async () => {
     if (!company) return;
@@ -64,6 +65,12 @@ export default function Vendas() {
       cancelled: items.filter((sale) => ['cancelled', 'canceled'].includes(sale.status)).length,
     };
   }, [items]);
+  const visibleSales = useMemo(() => (items || []).filter((sale) => {
+    if (statusFilter === 'pending') return sale.status === 'draft' && Boolean(sale.origin_quote_id);
+    if (statusFilter === 'completed') return sale.status === 'completed';
+    if (statusFilter === 'cancelled') return ['cancelled', 'canceled'].includes(sale.status);
+    return true;
+  }), [items, statusFilter]);
 
   const handleCancel = async (sale) => {
     const reason = prompt(sale.status === 'draft' ? 'Motivo para cancelar a venda pendente:' : 'Motivo para cancelar e estornar a venda:');
@@ -90,7 +97,7 @@ export default function Vendas() {
         action={<Button onClick={() => setDialogOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Nova venda</Button>}
       />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-500">Vendas no total</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{stats.count}</p>
@@ -104,7 +111,11 @@ export default function Vendas() {
           <p className="mt-1 text-xl font-semibold text-emerald-600">{fmtMoney(stats.profit)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Canceladas</p><p className="mt-1 text-xl font-semibold text-rose-600">{stats.cancelled}</p></div>
-        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 shadow-sm"><p className="text-xs text-violet-700">Aguardando faturamento</p><p className="mt-1 text-xl font-semibold text-violet-800">{items?.filter((sale) => sale.status === 'draft' && sale.origin_quote_id).length || 0}</p></div>
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 shadow-sm dark:border-violet-500/30 dark:bg-violet-950/30"><p className="text-xs text-violet-700 dark:text-violet-300">Aguardando faturamento</p><p className="mt-1 text-xl font-semibold text-violet-800 dark:text-violet-200">{items?.filter((sale) => sale.status === 'draft' && sale.origin_quote_id).length || 0}</p></div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2" aria-label="Filtrar vendas por situação">
+        {[['all', 'Todas'], ['pending', 'Aguardando faturamento'], ['completed', 'Concluídas'], ['cancelled', 'Canceladas']].map(([value, label]) => <button key={value} type="button" onClick={() => setStatusFilter(value)} aria-pressed={statusFilter === value} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${statusFilter === value ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>{label}</button>)}
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -115,6 +126,8 @@ export default function Vendas() {
             <p className="text-sm font-medium text-slate-700">Nenhuma venda registrada</p>
             <p className="mt-1 text-xs text-slate-400">Registre sua primeira venda para ver o estoque e o financeiro atualizarem.</p>
           </div>
+        ) : visibleSales.length === 0 ? (
+          <div className="p-12 text-center text-sm text-slate-500">Nenhuma venda neste grupo.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -130,7 +143,7 @@ export default function Vendas() {
                 </tr>
               </thead>
               <tbody>
-                {[...items].sort((a, b) => Number(Boolean(b.origin_quote_id && b.status === 'draft')) - Number(Boolean(a.origin_quote_id && a.status === 'draft'))).map((s) => (
+                {[...visibleSales].sort((a, b) => Number(Boolean(b.origin_quote_id && b.status === 'draft')) - Number(Boolean(a.origin_quote_id && a.status === 'draft'))).map((s) => (
                   <tr key={s.id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${s.status === 'cancelled' || s.status === 'canceled' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3 font-medium text-slate-800"><span>{customers.find((customer) => customer.id === s.customer_id)?.name || 'Cliente'}</span><span className="mt-1 block font-mono text-[10px] text-slate-400">{saleReference(s)}{s.origin_quote_number ? ` · ${s.origin_quote_number}` : ''}</span></td>
                     <td className="px-4 py-3 text-slate-500">{fmtDate(s.sale_date)}</td>

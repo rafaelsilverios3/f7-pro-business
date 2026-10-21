@@ -16,8 +16,6 @@ const STATUS_OPTIONS = [
   { value: 'viewed', label: 'Visualizado' },
   { value: 'negotiating', label: 'Em negociação' },
   { value: 'approved', label: 'Aprovado' },
-  { value: 'refused', label: 'Recusado' },
-  { value: 'expired', label: 'Expirado' },
 ];
 
 export default function QuoteDialog({ open, onClose, company, onDone, quote = null }) {
@@ -52,7 +50,7 @@ export default function QuoteDialog({ open, onClose, company, onDone, quote = nu
         const d = new Date(); d.setDate(d.getDate() + 15); setValidUntil(d.toISOString().slice(0, 10));
       }
     })();
-  }, [open, company]);
+  }, [open, company, quote]);
 
   const productResults = useMemo(() => {
     if (!productQuery) return products.slice(0, 5);
