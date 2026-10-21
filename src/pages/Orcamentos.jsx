@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { Plus, Eye, FileCheck, FileDown, Mail, MessageCircle, Printer, Send } from 'lucide-react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { Plus, Eye, Edit2, FileCheck, FileDown, Mail, MessageCircle, Printer, Send } from 'lucide-react';
 import { quotesRepository } from '@/data/repositories/quotesRepository';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import { quotesService } from '@/services/quotesService';
@@ -18,6 +18,7 @@ const STATUS_STYLE = {
   viewed: 'bg-cyan-100 text-cyan-700',
   negotiating: 'bg-amber-100 text-amber-700',
   approved: 'bg-emerald-100 text-emerald-700',
+  billing_pending: 'bg-violet-100 text-violet-700',
   refused: 'bg-rose-100 text-rose-700',
   expired: 'bg-slate-200 text-slate-500',
   converted: 'bg-emerald-100 text-emerald-700',
@@ -26,26 +27,37 @@ const STATUS_STYLE = {
 const STATUS_LABEL = {
   draft: 'Rascunho', sent: 'Enviado', viewed: 'Visualizado', negotiating: 'Em negociação',
   approved: 'Aprovado', refused: 'Recusado', expired: 'Expirado',
-  converted: 'Convertido', cancelled: 'Cancelado',
+  billing_pending: 'Aguardando faturamento', converted: 'Convertido', cancelled: 'Cancelado',
 };
 const FILTERS = [
   { id: 'all', label: 'Todos', statuses: null },
   { id: 'open', label: 'Aberto', statuses: ['draft'] },
   { id: 'sent', label: 'Enviado', statuses: ['sent'] },
   { id: 'negotiating', label: 'Em negociação', statuses: ['viewed', 'negotiating', 'approved'] },
+  { id: 'billing', label: 'Aguardando faturamento', statuses: ['billing_pending'] },
   { id: 'cancelled', label: 'Cancelado', statuses: ['cancelled', 'refused', 'expired'] },
   { id: 'converted', label: 'Convertido', statuses: ['converted'] },
 ];
-const STATUS_FLOW = ['draft', 'sent', 'viewed', 'negotiating', 'approved', 'refused', 'expired', 'cancelled', 'converted'];
+const STATUS_FLOW = ['draft', 'sent', 'viewed', 'negotiating', 'approved', 'billing_pending', 'refused', 'expired', 'cancelled', 'converted'];
+const STATUS_OPTIONS = {
+  draft: ['draft', 'sent', 'negotiating', 'approved', 'cancelled'],
+  sent: ['sent', 'viewed', 'negotiating', 'approved', 'cancelled'],
+  viewed: ['viewed', 'negotiating', 'approved', 'cancelled'],
+  negotiating: ['negotiating', 'approved', 'cancelled'],
+  approved: ['approved', 'cancelled'],
+  billing_pending: ['billing_pending', 'cancelled'],
+};
 
 export default function Orcamentos() {
   const { company } = useOutletContext();
   const [items, setItems] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filter, setFilter] = useState('all');
   const [customers, setCustomers] = useState([]);
   const [members, setMembers] = useState([]);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = async () => {
     if (!company) return;
@@ -60,6 +72,14 @@ export default function Orcamentos() {
     setMembers(memberRows);
   };
   useEffect(() => { load(); }, [company]);
+  useEffect(() => {
+    const quoteId = searchParams.get('open');
+    if (quoteId && items) {
+      const quote = items.find((row) => row.id === quoteId);
+      if (quote) setViewing(quote);
+      setSearchParams({}, { replace: true });
+    }
+  }, [items, searchParams, setSearchParams]);
 
   const stats = useMemo(() => {
     if (!items) return { count: 0, total: 0, approved: 0, byStatus: {} };
@@ -80,18 +100,25 @@ export default function Orcamentos() {
   }, [items, filter]);
 
   const handleStatusChange = async (quote, status) => {
-    await quotesService.updateStatus(company.id, quote.id, status);
-    setViewing((current) => current?.id === quote.id ? { ...current, status } : current);
-    if (status === 'approved' && import.meta.env.VITE_DATA_PROVIDER !== 'supabase') await runAutomations(company.id, 'quote_approved', { ...quote, _type: 'quote', customer_name: quote.customer_name });
-    await load();
+    try {
+      if (status === 'cancelled') {
+        const reason = prompt('Informe o motivo do cancelamento do orçamento:');
+        if (reason === null) return;
+        await quotesService.cancel(quote, reason);
+      } else await quotesService.updateStatus(company.id, quote.id, status);
+      setViewing((current) => current?.id === quote.id ? { ...current, status } : current);
+      if (status === 'approved' && import.meta.env.VITE_DATA_PROVIDER !== 'supabase') await runAutomations(company.id, 'quote_approved', { ...quote, _type: 'quote', customer_name: quote.customer_name });
+      await load();
+    } catch (error) { alert(`Não foi possível atualizar o orçamento: ${error.message}`); }
   };
 
-  const handleConvert = async (quote) => {
-    if (!confirm('Converter este orçamento em venda? O estoque e o financeiro serão atualizados automaticamente.')) return;
+  const handleSendToSales = async (quote) => {
+    if (!confirm(`Enviar ${quoteReference(quote)} para Vendas? A venda ficará aguardando faturamento, sem movimentar estoque ou financeiro.`)) return;
     try {
-      const sale = await quotesService.convertToSale(quote);
-      alert(`Venda criada com sucesso! Total: ${fmtMoney(sale.total)}`);
-      load();
+      const sale = await quotesService.sendToSales(quote);
+      setViewing(null);
+      await load();
+      window.location.assign(`/vendas?open=${encodeURIComponent(sale.id)}`);
     } catch (err) {
       alert('Erro: ' + err.message);
     }
@@ -105,8 +132,8 @@ export default function Orcamentos() {
     <div className="mx-auto max-w-7xl px-5 py-8">
       <PageHeader
         title="Orçamentos"
-        subtitle="Crie orçamentos profissionais e converta em venda com um clique."
-        action={<Button onClick={() => setDialogOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Novo orçamento</Button>}
+        subtitle="Crie propostas numeradas e envie para faturamento quando aprovadas."
+        action={<Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="mr-1.5 h-4 w-4" /> Novo orçamento</Button>}
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -166,17 +193,21 @@ export default function Orcamentos() {
                         onChange={(e) => handleStatusChange(q, e.target.value)}
                         className={`rounded-full border-0 px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[q.status]}`}
                       >
-                        {STATUS_FLOW.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                        {(STATUS_OPTIONS[q.status] || [q.status]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                       </select>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
                         <button onClick={() => setViewing(q)} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Eye className="h-4 w-4" /></button>
+                        {['draft', 'sent', 'viewed', 'negotiating'].includes(q.status) && <button onClick={() => { setEditing(q); setDialogOpen(true); }} title="Editar orçamento" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Edit2 className="h-4 w-4" /></button>}
                         {q.status === 'approved' && !q.sale_id && (
-                          <button onClick={() => handleConvert(q)} title="Converter em venda" className="rounded-md p-1.5 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"><FileCheck className="h-4 w-4" /></button>
+                          <button onClick={() => handleSendToSales(q)} title="Enviar para vendas — aguarda faturamento" className="rounded-md p-1.5 text-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"><FileCheck className="h-4 w-4" /></button>
                         )}
-                        {q.sale_id && (
-                          <span className="flex items-center rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-600">Vendido</span>
+                        {q.status === 'billing_pending' && q.sale_id && (
+                          <a href={`/vendas?open=${encodeURIComponent(q.sale_id)}`} className="flex items-center rounded-md bg-violet-50 px-2 text-[10px] font-medium text-violet-700">Abrir venda</a>
+                        )}
+                        {q.status === 'converted' && (
+                          <span className="flex items-center rounded-md bg-emerald-50 px-2 text-[10px] font-medium text-emerald-700">Faturado</span>
                         )}
                       </div>
                     </td>
@@ -188,7 +219,7 @@ export default function Orcamentos() {
         )}
       </div>
 
-      <QuoteDialog open={dialogOpen} onClose={() => setDialogOpen(false)} company={company} onDone={load} />
+      <QuoteDialog open={dialogOpen} onClose={() => { setDialogOpen(false); setEditing(null); }} company={company} quote={editing} onDone={load} />
 
       <Dialog open={!!viewing} onOpenChange={() => setViewing(null)}>
         <DialogContent className="max-w-lg">
@@ -220,11 +251,12 @@ export default function Orcamentos() {
                 <div className="flex justify-between font-semibold text-slate-900"><span>Total</span><span>{fmtMoney(viewing.total)}</span></div>
               </div>
               {viewing.notes && <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700">{viewing.notes}</div>}
-              {viewing.status === 'approved' && !viewing.sale_id && (
-                <Button onClick={() => { handleConvert(viewing); setViewing(null); }} className="w-full bg-emerald-600 hover:bg-emerald-700">
-                  <FileCheck className="mr-1.5 h-4 w-4" /> Converter em venda
+                {viewing.status === 'approved' && !viewing.sale_id && (
+                <Button onClick={() => handleSendToSales(viewing)} className="w-full bg-emerald-600 hover:bg-emerald-700">
+                  <FileCheck className="mr-1.5 h-4 w-4" /> Enviar para vendas — aguarda faturamento
                 </Button>
               )}
+              {viewing.status === 'billing_pending' && viewing.sale_id && <a className="block rounded-lg bg-violet-600 px-4 py-2 text-center font-semibold text-white" href={`/vendas?open=${encodeURIComponent(viewing.sale_id)}`}>Abrir venda para faturamento</a>}
             </div>
           )}
         </DialogContent>

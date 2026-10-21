@@ -6,6 +6,7 @@ const datePart = (value) => {
 };
 
 export function quoteReference(quote) {
+  if (quote?.quote_number) return quote.quote_number;
   const year = datePart(quote?.created_at).slice(0, 4);
   return `ORC-${year}-${String(quote?.id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || 'NOVO'}`;
 }
