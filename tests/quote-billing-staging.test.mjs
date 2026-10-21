@@ -40,7 +40,7 @@ test('UI exposes explicit quote transfer and billing confirmation, with audit-sa
   assert.match(quotePage, /billing_pending/);
   assert.match(salesPage, /FATURAR/);
   assert.match(billingDialog, /Confirmar faturamento/);
-  assert.match(billingDialog, /Nenhum pagamento externo será cobrado/);
+  assert.match(billingDialog, /Nenhuma cobrança externa será iniciada nesta forma de pagamento/);
   assert.match(billingDialog, /Retornar para orçamento/);
   assert.match(billingDialog, /Cancelar venda/);
   assert.match(billingDialog, /Agrupar vendas \(indisponível\)/);

@@ -171,7 +171,7 @@ export default function Vendas() {
       </div>
 
       <SaleDialog open={dialogOpen} onClose={() => setDialogOpen(false)} company={company} onDone={load} />
-      <QuoteBillingDialog sale={billingSaleWithCustomer} onClose={() => setBillingSale(null)} onFinalized={async (sale) => { setBillingSale(null); await load(); setViewing(sale); }} onReturnToQuote={() => billingSale && returnToQuote(billingSale)} onCancelSale={() => billingSale && cancelPending(billingSale)} />
+      <QuoteBillingDialog sale={billingSaleWithCustomer} onClose={() => setBillingSale(null)} onFinalized={async (sale, keepDialog = false) => { await load(); if (!keepDialog) { setBillingSale(null); setViewing(sale); } }} onReturnToQuote={() => billingSale && returnToQuote(billingSale)} onCancelSale={() => billingSale && cancelPending(billingSale)} />
 
       {/* View dialog */}
       <Dialog open={!!viewing} onOpenChange={() => setViewing(null)}>
