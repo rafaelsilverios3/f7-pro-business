@@ -422,6 +422,6 @@ grant execute on function public.product_platform_admin_set_offer(uuid,text,text
 -- increments, gated until the official production project is identified.
 commit;
 
--- Rollback is intentionally not automatic: export commercial accounts, product
+-- Conceptual rollback: this is intentionally not automatic. Export commercial accounts, product
 -- licenses, history, and checkout rows before any manual rollback. Never alter
 -- existing company_subscriptions or company_has_feature during rollback.
