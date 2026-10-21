@@ -1,6 +1,7 @@
 import { admin, corsHeaders, json } from "../_shared/core.ts";
 import {
-  hasConnectorConfig,
+  hasOAuthConfig,
+  oauthTokenPayload,
   parseOAuthTokens,
   sha256,
   validUuid,
@@ -66,7 +67,7 @@ export async function handleMercadoPagoCompanyCallback(
         String(member.role || "").toLowerCase(),
       )
     ) return redirectResult("access_revoked");
-    if (!hasConnectorConfig()) {
+    if (!hasOAuthConfig()) {
       return redirectResult("connector_not_configured");
     }
     const credentials = {
@@ -86,7 +87,7 @@ export async function handleMercadoPagoCompanyCallback(
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify(credentials),
+        body: JSON.stringify(oauthTokenPayload(credentials)),
         signal: AbortSignal.timeout(12_000),
       },
     );

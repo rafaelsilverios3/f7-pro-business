@@ -17,6 +17,8 @@ test('company OAuth uses explicit authorization, one-use state, PKCE S256, and s
   assert.match(shared, /response_type["']?, ["']code["']/);
   assert.match(shared, /code_challenge_method["']?, ["']S256["']/);
   assert.match(shared, /code_challenge/);
+  assert.match(shared, /MP_COMPANY_CONNECTION_ENABLED/);
+  assert.match(connect, /hasOAuthConfig/);
   assert.match(migration, /pkce_verifier text not null/);
   assert.match(migration, /company_mp_consume_oauth_state/);
   assert.match(oauthFixMigration, /company_mp_create_oauth_state/);
@@ -46,7 +48,9 @@ test('online payments use the tenant OAuth token, exact billed value and provide
   assert.match(payments, /external_reference: payment\.id/);
   assert.match(payments, /X-Idempotency-Key/);
   assert.match(payments, /record\.seller_id/);
-  assert.match(payments, /MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED/);
+  assert.match(payments, /hasPaymentConfig/);
+  assert.match(shared, /MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED/);
+  assert.match(shared, /MP_COMPANY_TEST_PAYMENTS_ENABLED/);
   assert.match(payments, /sale\?\.status !== ["']completed["']/);
   assert.match(payments, /sale\.total\) !== Number\(payment\.amount\)/);
   assert.match(payments, /safeHttpsMercadoPago/);
@@ -72,6 +76,7 @@ test('webhook confirmation validates HMAC and authoritative provider details bef
 test('status is available to permitted sales roles and browser returns never settle a payment', () => {
   assert.match(status, /companyAccess\(req, companyId, ["']sales["']\)/);
   assert.match(status, /access\.sb\.from\(["']company_mp_connections["']\)/);
+  assert.match(status, /oauth_enabled/);
   assert.match(billingDialog, /A cobrança só será solicitada ao Mercado Pago quando você confirmar o faturamento/);
   assert.match(billingDialog, /await onFinalized\(targetSale, true\)/);
   assert.match(salesPage, /onFinalized=\{async \(sale, keepDialog = false\)/);

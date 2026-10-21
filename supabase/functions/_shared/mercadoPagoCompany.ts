@@ -15,17 +15,8 @@ export const validUuid = (value: unknown): value is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     .test(value);
 
-export function hasConnectorConfig(): boolean {
-  const id = Deno.env.get("MP_COMPANY_CLIENT_ID")?.trim() || "";
-  const secret = Deno.env.get("MP_COMPANY_CLIENT_SECRET")?.trim() || "";
+function validRedirectUri(): boolean {
   const redirect = Deno.env.get("MP_COMPANY_REDIRECT_URI")?.trim() || "";
-  const webhook = Deno.env.get("MP_COMPANY_WEBHOOK_SECRET")?.trim() || "";
-  const enabled =
-    Deno.env.get("MP_COMPANY_PAYMENTS_ENABLED")?.trim().toLowerCase() ===
-      "true";
-  if (!/^\d{5,30}$/.test(id) || secret.length < 12 || !webhook || !enabled) {
-    return false;
-  }
   try {
     const callback = new URL(redirect);
     const project = new URL(Deno.env.get("SUPABASE_URL") || "");
@@ -37,6 +28,47 @@ export function hasConnectorConfig(): boolean {
     return false;
   }
 }
+
+/** OAuth connection is independent and can never enable charges. */
+export function hasOAuthConfig(): boolean {
+  const id = Deno.env.get("MP_COMPANY_CLIENT_ID")?.trim() || "";
+  const secret = Deno.env.get("MP_COMPANY_CLIENT_SECRET")?.trim() || "";
+  return Deno.env.get("MP_COMPANY_CONNECTION_ENABLED")?.trim().toLowerCase() ===
+      "true" && /^\d{5,30}$/.test(id) && secret.length >= 12 &&
+    validRedirectUri();
+}
+
+/** Payments remain fail-closed unless each environment gate is explicit. */
+export function hasPaymentConfig(): boolean {
+  if (
+    !hasOAuthConfig() || !Deno.env.get("MP_COMPANY_WEBHOOK_SECRET")?.trim() ||
+    Deno.env.get("MP_COMPANY_PAYMENTS_ENABLED")?.trim().toLowerCase() !==
+      "true"
+  ) return false;
+  const environment = Deno.env.get("MP_COMPANY_ENVIRONMENT")?.trim()
+    .toLowerCase();
+  if (environment === "test") {
+    return Deno.env.get("MP_COMPANY_TEST_PAYMENTS_ENABLED")?.trim()
+        .toLowerCase() === "true";
+  }
+  if (environment === "production") {
+    return Deno.env.get("MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED")?.trim()
+        .toLowerCase() === "true";
+  }
+  return false;
+}
+
+export function oauthTokenPayload(
+  credentials: Record<string, string>,
+  environment = Deno.env.get("MP_COMPANY_ENVIRONMENT")?.trim().toLowerCase(),
+) {
+  return environment === "test"
+    ? { ...credentials, test_token: "true" }
+    : credentials;
+}
+
+/** Compatibility alias: legacy connector readiness means OAuth readiness. */
+export const hasConnectorConfig = hasOAuthConfig;
 
 export function makeAuthorizationUrl(state: string, challenge: string): string {
   const url = new URL(MP_AUTH);

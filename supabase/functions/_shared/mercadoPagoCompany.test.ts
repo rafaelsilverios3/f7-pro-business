@@ -1,4 +1,7 @@
 import {
+  hasOAuthConfig,
+  hasPaymentConfig,
+  oauthTokenPayload,
   mpRequest,
   parseOAuthTokens,
   pkceChallenge,
@@ -126,4 +129,38 @@ Deno.test("provider requests stay on the Mercado Pago API and sanitize HTTP fail
     pathRejected = true;
   }
   if (!pathRejected) throw new Error("foreign provider host accepted");
+});
+
+
+Deno.test("OAuth readiness is separate from payment enablement", () => {
+  const names = ["MP_COMPANY_CLIENT_ID", "MP_COMPANY_CLIENT_SECRET", "MP_COMPANY_REDIRECT_URI", "MP_COMPANY_CONNECTION_ENABLED", "MP_COMPANY_WEBHOOK_SECRET", "MP_COMPANY_PAYMENTS_ENABLED", "MP_COMPANY_TEST_PAYMENTS_ENABLED", "MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED", "MP_COMPANY_ENVIRONMENT", "SUPABASE_URL"];
+  const previous = new Map(names.map((key) => [key, Deno.env.get(key)]));
+  try {
+    Deno.env.set("MP_COMPANY_CLIENT_ID", "123456789");
+    Deno.env.set("MP_COMPANY_CLIENT_SECRET", "fixture-client-secret-123");
+    Deno.env.set("MP_COMPANY_REDIRECT_URI", "https://test-project.supabase.co/functions/v1/mercado-pago-company-callback");
+    Deno.env.set("SUPABASE_URL", "https://test-project.supabase.co");
+    Deno.env.set("MP_COMPANY_CONNECTION_ENABLED", "true");
+    Deno.env.set("MP_COMPANY_ENVIRONMENT", "test");
+    for (const key of ["MP_COMPANY_WEBHOOK_SECRET", "MP_COMPANY_PAYMENTS_ENABLED", "MP_COMPANY_TEST_PAYMENTS_ENABLED", "MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED"]) Deno.env.delete(key);
+    if (!hasOAuthConfig()) throw new Error("OAuth should be ready without payment credentials");
+    if (hasPaymentConfig()) throw new Error("OAuth readiness must not enable payments");
+    Deno.env.set("MP_COMPANY_WEBHOOK_SECRET", "fixture-webhook-secret");
+    Deno.env.set("MP_COMPANY_PAYMENTS_ENABLED", "true");
+    if (hasPaymentConfig()) throw new Error("test payments require their own explicit flag");
+    Deno.env.set("MP_COMPANY_TEST_PAYMENTS_ENABLED", "true");
+    if (!hasPaymentConfig()) throw new Error("explicit test payment gates should enable sandbox readiness");
+    Deno.env.set("MP_COMPANY_ENVIRONMENT", "production");
+    if (hasPaymentConfig()) throw new Error("production must remain disabled without its separate gate");
+    Deno.env.set("MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED", "true");
+    if (!hasPaymentConfig()) throw new Error("explicit production gates should be recognized");
+  } finally {
+    for (const [key, value] of previous) value === undefined ? Deno.env.delete(key) : Deno.env.set(key, value);
+  }
+});
+
+Deno.test("OAuth token exchange requests test tokens only for test environment", () => {
+  const credentials = { grant_type: "authorization_code" };
+  if (oauthTokenPayload(credentials, "test").test_token !== "true") throw new Error("sandbox OAuth must request test token");
+  if ("test_token" in oauthTokenPayload(credentials, "production")) throw new Error("production OAuth must not request test token");
 });

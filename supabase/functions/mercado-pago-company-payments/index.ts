@@ -1,7 +1,7 @@
 import { admin, corsHeaders, json } from "../_shared/core.ts";
 import {
   companyAccess,
-  hasConnectorConfig,
+  hasPaymentConfig,
   mpRequest,
   parseOAuthTokens,
   validUuid,
@@ -153,19 +153,14 @@ export async function handleMercadoPagoCompanyPayments(
   ) return json({ code: "INVALID_PAYLOAD" }, 400);
   const access = await companyAccess(req, companyId, "sales");
   if ("error" in access) return json({ code: access.error }, access.status);
-  if (!hasConnectorConfig()) {
-    return json({ code: "MP_COMPANY_CONNECTOR_NOT_CONFIGURED" }, 503);
+  if (!hasPaymentConfig()) {
+    return json({ code: "MP_COMPANY_PAYMENTS_DISABLED" }, 409);
   }
   const env = (Deno.env.get("MP_COMPANY_ENVIRONMENT") || "").trim()
     .toLowerCase();
   if (!["test", "production"].includes(env)) {
     return json({ code: "MP_COMPANY_ENVIRONMENT_NOT_CONFIGURED" }, 409);
   }
-  if (
-    env === "production" &&
-    Deno.env.get("MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED")?.trim()
-        .toLowerCase() !== "true"
-  ) return json({ code: "MP_COMPANY_PRODUCTION_PAYMENTS_DISABLED" }, 409);
   // Validate the billed sale and payer before creating an intent. A missing
   // customer email must not leave a synthetic pending attempt in the ledger.
   const sb = admin();
