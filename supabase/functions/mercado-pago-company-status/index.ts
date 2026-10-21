@@ -1,7 +1,8 @@
 import { corsHeaders, json } from "../_shared/core.ts";
 import {
   companyAccess,
-  hasConnectorConfig,
+  hasOAuthConfig,
+  hasPaymentConfig,
   validUuid,
 } from "../_shared/mercadoPagoCompany.ts";
 
@@ -26,16 +27,12 @@ Deno.serve(async (req) => {
     if (error) return json({ code: "MP_CONNECTION_STATUS_UNAVAILABLE" }, 503);
     const env = (Deno.env.get("MP_COMPANY_ENVIRONMENT") || "").trim()
       .toLowerCase();
-    const paymentsEnabled = hasConnectorConfig() &&
-      Deno.env.get("MP_COMPANY_PAYMENTS_ENABLED")?.trim().toLowerCase() ===
-        "true" &&
-      (env === "test" ||
-        (env === "production" &&
-          Deno.env.get("MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED")?.trim()
-              .toLowerCase() === "true"));
+    const oauthEnabled = hasOAuthConfig();
+    const paymentsEnabled = hasPaymentConfig();
     return json({
       code: "OK",
-      connector_configured: hasConnectorConfig(),
+      oauth_enabled: oauthEnabled,
+      connector_configured: oauthEnabled,
       payments_enabled: paymentsEnabled,
       environment: ["test", "production"].includes(env)
         ? env

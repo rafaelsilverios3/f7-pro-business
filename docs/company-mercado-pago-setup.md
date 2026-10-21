@@ -1,24 +1,38 @@
 # Mercado Pago por empresa
 
-O conector de recebimentos das empresas é independente do Billing das assinaturas F7. O F7 nunca usa o token recebedor da plataforma para cobrar uma venda de empresa.
+O conector de recebimentos de cada empresa é independente do Billing das assinaturas F7. A integração de pagamentos de Marketplace usa o token OAuth individual do vendedor e nunca usa o token recebedor da plataforma para cobrar uma venda da empresa.
 
-## Configuração do ambiente seguro
+## Configuração segura no Supabase
 
-Cadastre os valores abaixo como segredos das Supabase Edge Functions, nunca no frontend:
+Cadastre as variáveis abaixo exclusivamente nos segredos das Supabase Edge Functions. Não coloque credenciais no frontend, no GitHub, em logs ou no navegador:
 
-- `MP_COMPANY_CLIENT_ID` e `MP_COMPANY_CLIENT_SECRET`: aplicação OAuth criada no Mercado Pago Developers.
-- `MP_COMPANY_REDIRECT_URI`: URL exata `https://vwylnjmapixtzhryiutt.supabase.co/functions/v1/mercado-pago-company-callback`, também registrada na aplicação OAuth.
-- `MP_COMPANY_WEBHOOK_SECRET`: chave secreta de assinatura das notificações do Mercado Pago.
-- `MP_COMPANY_PAYMENTS_ENABLED=true`: habilita o conector depois de validar as configurações acima.
-- `MP_COMPANY_ENVIRONMENT=test` para credenciais de teste. Cobranças online em produção continuam bloqueadas.
-- `APP_ORIGIN=https://f7business.com.br` para o retorno pós-autorização.
+- `MP_COMPANY_CLIENT_ID` e `MP_COMPANY_CLIENT_SECRET`: credenciais de uma aplicação Mercado Pago criada para o modelo Marketplace/recebimentos multiempresa.
+- `MP_COMPANY_REDIRECT_URI`: URL exata `https://vwylnjmapixtzhryiutt.supabase.co/functions/v1/mercado-pago-company-callback`, também registrada na aplicação.
+- `MP_COMPANY_CONNECTION_ENABLED=true`: libera somente o início e callback OAuth. Não habilita cobranças.
+- `MP_COMPANY_ENVIRONMENT=test`: mantém o fluxo no ambiente de teste.
+- `APP_ORIGIN=https://f7business.com.br`: origem do retorno após OAuth.
 
-O retorno OAuth usa estado de uso único, PKCE S256 e validação do ID do vendedor antes de guardar tokens no Supabase Vault. A conta precisa ser autorizada por um administrador/gestor/financeiro da própria empresa.
+OAuth pode ser configurado e homologado sem habilitar pagamentos. No callback, a troca por credenciais de teste solicita `test_token=true`; a autorização do vendedor é explícita, usa state de uso único, PKCE S256 e confere a identidade do vendedor antes de armazenar os tokens no Supabase Vault.
 
-No painel Mercado Pago Developers, configure notificações `payment` para `https://vwylnjmapixtzhryiutt.supabase.co/functions/v1/mercado-pago-company-webhook` e use a chave de assinatura correspondente em `MP_COMPANY_WEBHOOK_SECRET`.
+## Preparar pagamentos de teste
 
-## Habilitação de produção
+Só depois de conectar uma conta vendedora de teste e configurar o webhook assinado, complete os controles de cobrança:
 
-Para habilitar pagamentos reais em produção, depois de testes aprovados e autorização financeira específica, configure `MP_COMPANY_ENVIRONMENT=production` e `MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED=true`. Enquanto essa chave não for habilitada, tentativas de cobrança retornam bloqueio seguro, mesmo que uma conta OAuth esteja conectada.
+- `MP_COMPANY_WEBHOOK_SECRET`: segredo de assinatura configurado para esta aplicação e para notificações de pagamentos.
+- `MP_COMPANY_PAYMENTS_ENABLED=true`: chave mestre de pagamentos desta integração.
+- `MP_COMPANY_TEST_PAYMENTS_ENABLED=true`: gate independente e explícito para cobranças de teste.
+- `MP_COMPANY_ENVIRONMENT=test`.
 
-Pix usa o endpoint de pagamento da conta OAuth da empresa. Cartões usam Checkout Pro hospedado pelo Mercado Pago; os dados do cartão não transitam pelo F7. O valor é derivado do recebível já faturado, cada tentativa tem chave idempotente, e a baixa financeira ocorre somente após consulta autenticada ou webhook assinado que confira vendedor, transação, BRL e valor.
+A configuração de pagamento continua desativada se qualquer uma dessas condições faltar. Para habilitar produção, exige-se também `MP_COMPANY_ENVIRONMENT=production` e `MP_COMPANY_PRODUCTION_PAYMENTS_ENABLED=true`; a flag de teste não substitui nem libera o gate de produção. Não habilite esses valores sem autorização financeira específica.
+
+No painel da aplicação Mercado Pago, configure o evento `payment` para `https://vwylnjmapixtzhryiutt.supabase.co/functions/v1/mercado-pago-company-webhook` e associe o segredo do webhook acima. Para testes ponta a ponta, crie/ative contas de teste vendedor, comprador e integrador da mesma região, use cartões de teste e nunca contas ou meios de pagamento reais.
+
+## Escolha da aplicação
+
+A aplicação atual do Billing usa credenciais próprias da plataforma (variáveis `MERCADO_PAGO_*`). Não altere nem reutilize esses segredos para conectar vendedores. Embora o Mercado Pago não documente que Marketplace precise obrigatoriamente de uma segunda aplicação, crie uma aplicação dedicada para recebimentos F7: isso separa redirect URI, configuração Marketplace, webhook e rotação de credenciais do Billing. Configure-a no modelo Marketplace conforme as opções habilitadas para a conta da plataforma.
+
+## Segurança e funcionamento
+
+Tokens de vendedor são salvos somente no Vault via RPCs protegidos. A empresa e o vendedor são verificados no backend; todas as operações financeiras derivam da venda já faturada e permanecem idempotentes. Cartão usa checkout hospedado Mercado Pago e não recebe dados de cartão no F7. PIX e cartão só são oferecidos depois que o ambiente informa pagamentos habilitados.
+
+Desconectar remove a cópia local dos tokens e preserva o histórico. Para retirar também o consentimento concedido ao aplicativo, o administrador revoga o acesso no Mercado Pago.

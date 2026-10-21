@@ -2,7 +2,7 @@ import { admin, corsHeaders, json } from "../_shared/core.ts";
 import {
   base64Url,
   companyAccess,
-  hasConnectorConfig,
+  hasOAuthConfig,
   makeAuthorizationUrl,
   pkceChallenge,
   sha256,
@@ -24,7 +24,7 @@ export async function handleMercadoPagoCompanyConnect(req: Request) {
   if (!validUuid(companyId)) return json({ code: "INVALID_PAYLOAD" }, 400);
   const access = await companyAccess(req, companyId, "manage");
   if ("error" in access) return json({ code: access.error }, access.status);
-  if (!hasConnectorConfig()) {
+  if (!hasOAuthConfig()) {
     return json({ code: "MP_COMPANY_CONNECTOR_NOT_CONFIGURED" }, 503);
   }
   try {
