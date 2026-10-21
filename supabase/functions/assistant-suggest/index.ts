@@ -296,7 +296,7 @@ async function generateWithProvider(input: { settings: Record<string, unknown>; 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
     let response;
-    try { response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, max_tokens: MAX_PROVIDER_OUTPUT_TOKENS, messages: [{ role: 'system', content: system }, { role: 'user', content: context }], response_format: ASSISTANT_RESPONSE_FORMAT }), signal: controller.signal }); }
+    try { response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, max_completion_tokens: MAX_PROVIDER_OUTPUT_TOKENS, messages: [{ role: 'system', content: system }, { role: 'user', content: context }], response_format: ASSISTANT_RESPONSE_FORMAT }), signal: controller.signal }); }
     catch (error) { clearTimeout(timeout); return { ok: false, code: error instanceof Error && error.name === 'AbortError' ? 'AI_PROVIDER_TIMEOUT' as const : 'AI_PROVIDER_UNAVAILABLE' as const }; }
     clearTimeout(timeout);
     const payload = await response.json().catch(() => null);
