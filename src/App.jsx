@@ -120,6 +120,7 @@ const AuthenticatedApp = () => {
     '/': 'home',
     '/sistemas': 'systems',
     '/f7food': 'food-entry',
+    '/f7-food': 'food-entry',
     '/produtos': 'products',
     '/pro-business': 'pro-business',
     '/planos': 'plans',

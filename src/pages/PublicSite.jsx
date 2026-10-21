@@ -5,7 +5,7 @@ import { billingService } from '@/services/billingService';
 import { resolvePublicAppUrl } from '@/lib/publicAppUrl';
 
 const appUrl = resolvePublicAppUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.hostname);
-const foodAppUrl = 'https://f7-food.vercel.app/';
+const foodAppUrl = '/f7-food/';
 const trialPath = '/register?returnTo=' + encodeURIComponent('/checkout?plan=pro');
 const contactEmail = import.meta.env.VITE_PUBLIC_CONTACT_EMAIL || '';
 const commercialCodes = new Set(['pro', 'business', 'premium']);
