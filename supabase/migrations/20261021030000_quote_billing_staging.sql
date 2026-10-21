@@ -97,6 +97,7 @@ begin
   subtotal_value := round(subtotal_value, 2); discount_value := greatest(0, coalesce(new.discount, 0)); addition_value := greatest(0, coalesce(new.addition, 0));
   new.subtotal := subtotal_value; new.discount := discount_value; new.addition := addition_value; new.total := greatest(0, round(subtotal_value - discount_value + addition_value, 2)); new.updated_at := now();
   if new.status not in ('draft','sent','viewed','negotiating','approved','billing_pending','refused','expired','converted','cancelled') then raise exception 'Status de orçamento inválido'; end if;
+  if tg_op = 'UPDATE' and new.status='cancelled' and old.status is distinct from new.status and length(trim(coalesce(new.cancellation_reason,''))) < 3 then raise exception 'Informe o motivo do cancelamento do orçamento'; end if;
   if tg_op = 'UPDATE' and new.status is distinct from old.status then
     if old.status in ('cancelled','refused','expired') or (old.status = 'converted' and not (new.status = 'cancelled' and exists (select 1 from public.sales s where s.id = old.sale_id and s.company_id = old.company_id and s.status = 'cancelled'))) then raise exception 'Orçamento em estado terminal'; end if;
     allowed_transition := case old.status
@@ -122,6 +123,10 @@ begin
       or (old.status='billing_pending' and new.status='approved' and new.sale_id is null and exists (select 1 from public.sales s where s.id=old.sale_id and s.company_id=old.company_id and s.status='cancelled'))) then
       raise exception 'Vínculo da venda só pode mudar por uma transição comercial validada';
     end if;
+  end if;
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data)
+    values(new.company_id,auth.uid(),'quote.status_changed','Quote',new.id,jsonb_build_object('status',old.status,'sale_id',old.sale_id),jsonb_build_object('status',new.status,'sale_id',new.sale_id,'quote_number',new.quote_number,'reason',new.cancellation_reason));
   end if;
   return new;
 end; $$;

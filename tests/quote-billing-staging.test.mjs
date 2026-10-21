@@ -10,6 +10,8 @@ const quoteService = await readFile(new URL('../src/services/quotesService.js', 
 
 test('approved quote enters a unique, tenant scoped pending sale without stock or ledger changes', () => {
   assert.match(migration, /quotes_company_number_key/);
+  assert.match(migration, /Informe o motivo do cancelamento do orçamento/);
+  assert.match(migration, /quote\.status_changed/);
   assert.match(migration, /function public\.send_quote_to_sales\(target_quote uuid\)/);
   const sendFlow = migration.slice(migration.indexOf('function public.send_quote_to_sales'), migration.indexOf('function public.return_quote_sale_to_quote'));
   assert.match(sendFlow, /'draft'/);
