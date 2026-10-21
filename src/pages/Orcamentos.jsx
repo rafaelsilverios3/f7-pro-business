@@ -115,10 +115,9 @@ export default function Orcamentos() {
   const handleSendToSales = async (quote) => {
     if (!confirm(`Enviar ${quoteReference(quote)} para Vendas? A venda ficará aguardando faturamento, sem movimentar estoque ou financeiro.`)) return;
     try {
-      const sale = await quotesService.sendToSales(quote);
+      await quotesService.sendToSales(quote);
       setViewing(null);
       await load();
-      window.location.assign(`/vendas?open=${encodeURIComponent(sale.id)}`);
     } catch (err) {
       alert('Erro: ' + err.message);
     }
