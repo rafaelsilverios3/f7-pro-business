@@ -108,10 +108,10 @@ test('all generative providers cap output, and reservation remains company scope
   const assistantSales = fs.readFileSync('supabase/functions/ai-sales-assistant/index.ts', 'utf8');
   const intelligence = fs.readFileSync('supabase/functions/intelligence-query/index.ts', 'utf8');
   const supplier = fs.readFileSync('supabase/functions/supplier-intelligence/index.ts', 'utf8');
-  assert.match(assistant, /max_tokens: MAX_PROVIDER_OUTPUT_TOKENS/);
+  assert.match(assistant, /max_completion_tokens: MAX_PROVIDER_OUTPUT_TOKENS/);
   assert.match(assistantSales, /max_completion_tokens: MAX_PROVIDER_OUTPUT_TOKENS/);
   assert.doesNotMatch(assistantSales, /gpt-4o-mini/);
-  assert.match(intelligence, /max_tokens: MAX_AI_OUTPUT_TOKENS/);
+  assert.match(intelligence, /max_completion_tokens: MAX_AI_OUTPUT_TOKENS/);
   assert.match(`${assistant}\n${assistantSales}\n${intelligence}\n${supplier}`, /AI_ENABLED[^\n]*!== 'true'/);
   assert.doesNotMatch(`${assistant}\n${assistantSales}\n${intelligence}\n${supplier}`, /\.rpc\('reserve_ai_budget'/);
   assert.match(budgetMigration, /pg_advisory_xact_lock\(hashtextextended\(target_company::text \|\| ':' \|\| day::text \|\| ':ai-budget-v2', 0\)\)/);
