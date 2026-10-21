@@ -19,6 +19,22 @@ test('static Pix BR Code carries the fixed amount, merchant and transaction refe
   assert.equal(payload.slice(crcOffset + 4), crc16ccitt(payload.slice(0, crcOffset + 4)));
 });
 
+test('synthetic R$100 Pix code has a valid amount and CRC without initiating payment', () => {
+  const payload = buildStaticPixPayload({
+    pixKey: 'f7-homologacao@invalid.example',
+    receiver: 'HOMOLOGACAO F7 NAO UTILIZAR',
+    city: 'CUIABA',
+    amount: 100,
+    txid: 'HOMOLOG-F7-100',
+  });
+  assert.ok(payload.includes('f7-homologacao@invalid.example'));
+  assert.ok(payload.includes('5406100.00'));
+  assert.ok(payload.includes('HOMOLOG-F7-100'));
+  const crcOffset = payload.lastIndexOf('6304');
+  assert.notEqual(crcOffset, -1);
+  assert.equal(payload.slice(crcOffset + 4), crc16ccitt(payload.slice(0, crcOffset + 4)));
+});
+
 test('static Pix BR Code rejects missing receiver data and invalid amount', () => {
   assert.throws(() => buildStaticPixPayload({ pixKey: 'key', receiver: '', city: 'CUIABA', amount: 5 }), /nome do recebedor/);
   assert.throws(() => buildStaticPixPayload({ pixKey: 'key', receiver: 'F7', city: '', amount: 5 }), /cidade/);
