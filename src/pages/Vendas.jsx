@@ -50,7 +50,7 @@ export default function Vendas() {
     const saleId = searchParams.get('open');
     if (saleId && items) {
       const target = items.find((sale) => sale.id === saleId);
-      if (target?.origin_quote_id && target.status === 'draft') setBillingSale(target);
+      if (target?.origin_quote_id && target.status === 'draft') setViewing(target);
       setSearchParams({}, { replace: true });
     }
   }, [items, searchParams, setSearchParams]);

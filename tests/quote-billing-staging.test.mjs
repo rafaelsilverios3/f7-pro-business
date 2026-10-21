@@ -46,4 +46,11 @@ test('UI exposes explicit quote transfer and billing confirmation, with audit-sa
   assert.match(billingDialog, /Agrupar vendas \(indisponível\)/);
   assert.match(quoteService, /send_quote_to_sales/);
   assert.doesNotMatch(quoteService, /convert_quote_to_sale/);
+  const sendHandler = quotePage.slice(quotePage.indexOf('const handleSendToSales'), quotePage.indexOf('const customerName'));
+  assert.doesNotMatch(sendHandler, /window\.location\.(assign|href)/);
+  assert.match(sendHandler, /await quotesService\.sendToSales\(quote\)/);
+  const routeOpenEffect = salesPage.slice(salesPage.indexOf('const saleId = searchParams.get'), salesPage.indexOf('}, \[items, searchParams'));
+  assert.match(routeOpenEffect, /setViewing\(target\)/);
+  assert.doesNotMatch(routeOpenEffect, /setBillingSale\(target\)/);
+  assert.match(salesPage, /onClick=\{\(\) => setBillingSale\(s\)\} title="Faturar"/);
 });
