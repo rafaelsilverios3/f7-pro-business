@@ -92,7 +92,7 @@ export default function Configuracoes() {
           <Input value={form.address || ''} onChange={(e) => set('address', e.target.value)} />
         </div>
 
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+        <div className="rounded-xl border border-blue-400/25 bg-blue-500/10 p-4">
           <p className="text-sm font-semibold text-slate-800">Loja online</p>
           <p className="mt-1 text-xs text-slate-500">Defina o endereço público e publique somente produtos ativos com estoque.</p>
           <div className="mt-3 grid grid-cols-2 gap-4">

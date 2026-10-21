@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Eye, FileCheck } from 'lucide-react';
+import { Plus, Eye, FileCheck, FileDown, Mail, MessageCircle, Printer, Send } from 'lucide-react';
 import { quotesRepository } from '@/data/repositories/quotesRepository';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import { quotesService } from '@/services/quotesService';
@@ -9,6 +9,7 @@ import { runAutomations } from '@/lib/automations';
 import PageHeader from '@/components/layout/PageHeader';
 import QuoteDialog from '@/components/orcamentos/QuoteDialog';
 import { Button } from '@/components/ui/button';
+import { buildQuoteShareText, downloadQuotePdf, openWhatsAppDraft, printQuote, quoteReference } from '@/lib/commercialDocuments';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const STATUS_STYLE = {
@@ -27,6 +28,14 @@ const STATUS_LABEL = {
   approved: 'Aprovado', refused: 'Recusado', expired: 'Expirado',
   converted: 'Convertido', cancelled: 'Cancelado',
 };
+const FILTERS = [
+  { id: 'all', label: 'Todos', statuses: null },
+  { id: 'open', label: 'Aberto', statuses: ['draft'] },
+  { id: 'sent', label: 'Enviado', statuses: ['sent'] },
+  { id: 'negotiating', label: 'Em negociação', statuses: ['viewed', 'negotiating', 'approved'] },
+  { id: 'cancelled', label: 'Cancelado', statuses: ['cancelled', 'refused', 'expired'] },
+  { id: 'converted', label: 'Convertido', statuses: ['converted'] },
+];
 const STATUS_FLOW = ['draft', 'sent', 'viewed', 'negotiating', 'approved', 'refused', 'expired', 'cancelled', 'converted'];
 
 export default function Orcamentos() {
@@ -53,24 +62,28 @@ export default function Orcamentos() {
   useEffect(() => { load(); }, [company]);
 
   const stats = useMemo(() => {
-    if (!items) return { count: 0, total: 0, approved: 0 };
+    if (!items) return { count: 0, total: 0, approved: 0, byStatus: {} };
+    const byStatus = Object.fromEntries(STATUS_FLOW.map((status) => [status, items.filter((quote) => quote.status === status).length]));
     return {
       count: items.length,
       total: items.reduce((s, q) => s + (q.total || 0), 0),
       approved: items.filter((q) => q.status === 'approved').length,
+      byStatus,
     };
   }, [items]);
 
   const filtered = useMemo(() => {
     if (!items) return [];
-    if (filter === 'all') return items;
-    return items.filter((q) => q.status === filter);
+    const selected = FILTERS.find((item) => item.id === filter);
+    if (!selected?.statuses) return items;
+    return items.filter((q) => selected.statuses.includes(q.status));
   }, [items, filter]);
 
   const handleStatusChange = async (quote, status) => {
     await quotesService.updateStatus(company.id, quote.id, status);
+    setViewing((current) => current?.id === quote.id ? { ...current, status } : current);
     if (status === 'approved' && import.meta.env.VITE_DATA_PROVIDER !== 'supabase') await runAutomations(company.id, 'quote_approved', { ...quote, _type: 'quote', customer_name: quote.customer_name });
-    load();
+    await load();
   };
 
   const handleConvert = async (quote) => {
@@ -85,6 +98,7 @@ export default function Orcamentos() {
   };
 
   const customerName = (quote) => customers.find((customer) => customer.id === quote.customer_id)?.name || quote.customer_name || 'Cliente não informado';
+  const quoteCustomer = (quote) => customers.find((customer) => customer.id === quote.customer_id);
   const sellerName = (quote) => members.find((member) => member.user_id === quote.seller_user_id)?.name || members.find((member) => member.user_id === quote.seller_user_id)?.email || '—';
 
   return (
@@ -95,25 +109,26 @@ export default function Orcamentos() {
         action={<Button onClick={() => setDialogOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Novo orçamento</Button>}
       />
 
-      <div className="mb-5 grid grid-cols-3 gap-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-500">Total de orçamentos</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{stats.count}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">Valor total</p>
+          <p className="text-xs text-slate-500">Valor total cotado</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{fmtMoney(stats.total)}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">Aprovados</p>
-          <p className="mt-1 text-xl font-semibold text-emerald-600">{stats.approved}</p>
+          <p className="text-xs text-slate-500">Abertos</p><p className="mt-1 text-xl font-semibold text-blue-600">{stats.byStatus.draft || 0}</p>
         </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Enviados</p><p className="mt-1 text-xl font-semibold text-blue-600">{stats.byStatus.sent || 0}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Em negociação</p><p className="mt-1 text-xl font-semibold text-amber-600">{(stats.byStatus.viewed || 0) + (stats.byStatus.negotiating || 0) + stats.approved}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Convertidos</p><p className="mt-1 text-xl font-semibold text-emerald-600">{stats.byStatus.converted || 0}</p></div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <button onClick={() => setFilter('all')} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${filter === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>Todos</button>
-        {STATUS_FLOW.map((s) => (
-          <button key={s} onClick={() => setFilter(s)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${filter === s ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>{STATUS_LABEL[s]}</button>
+        {FILTERS.map((item) => (
+          <button key={item.id} onClick={() => setFilter(item.id)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${filter === item.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>{item.label}</button>
         ))}
       </div>
 
@@ -141,7 +156,7 @@ export default function Orcamentos() {
               <tbody>
                 {filtered.map((q) => (
                   <tr key={q.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{customerName(q)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800"><span>{customerName(q)}</span><span className="mt-1 block font-mono text-[10px] text-slate-400">{quoteReference(q)}</span></td>
                     <td className="px-4 py-3 text-slate-500">{sellerName(q)}</td>
                     <td className="px-4 py-3 text-slate-500">{fmtDate(q.valid_until)}</td>
                     <td className="px-4 py-3 text-right font-medium text-slate-700">{fmtMoney(q.total)}</td>
@@ -179,7 +194,14 @@ export default function Orcamentos() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Orçamento — {viewing && customerName(viewing)}</DialogTitle></DialogHeader>
           {viewing && (
-            <div className="space-y-3 text-sm">
+              <div className="space-y-3 text-sm">
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => { printQuote(viewing, company, customerName(viewing)); if (['draft', 'sent', 'viewed'].includes(viewing.status)) void handleStatusChange(viewing, 'negotiating'); }}><Printer className="mr-1.5 h-4 w-4" /> Imprimir</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => { downloadQuotePdf(viewing, company, customerName(viewing)); if (['draft', 'sent', 'viewed'].includes(viewing.status)) void handleStatusChange(viewing, 'negotiating'); }}><FileDown className="mr-1.5 h-4 w-4" /> Gerar PDF</Button>
+                <Button type="button" size="sm" variant="outline" disabled={!quoteCustomer(viewing)?.email} onClick={() => { const text = buildQuoteShareText(viewing, company, customerName(viewing)); window.location.href = `mailto:${encodeURIComponent(quoteCustomer(viewing).email)}?subject=${encodeURIComponent(`Orçamento ${quoteReference(viewing)}`)}&body=${encodeURIComponent(text)}`; }}><Mail className="mr-1.5 h-4 w-4" /> Preparar e-mail</Button>
+                <Button type="button" size="sm" variant="outline" disabled={!quoteCustomer(viewing)?.phone} onClick={() => openWhatsAppDraft(quoteCustomer(viewing).phone, buildQuoteShareText(viewing, company, customerName(viewing)))}><MessageCircle className="mr-1.5 h-4 w-4" /> Preparar WhatsApp</Button>
+                {viewing.status === 'draft' && <Button type="button" size="sm" variant="outline" onClick={() => handleStatusChange(viewing, 'sent')}><Send className="mr-1.5 h-4 w-4" /> Marcar enviado</Button>}
+              </div>
               <div className="flex justify-between"><span className="text-slate-500">Vendedor</span><span>{sellerName(viewing)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Validade</span><span>{fmtDate(viewing.valid_until)}</span></div>
               <div className="rounded-lg border border-slate-200">

@@ -99,7 +99,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
       <DialogContent className="flex min-h-0 max-w-2xl flex-col overflow-hidden">
         <DialogHeader><DialogTitle>Novo orçamento</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pr-1">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Cliente</Label>
               <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
@@ -115,7 +115,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Válido até</Label>
               <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
@@ -181,7 +181,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="resize-none" />
           </div>
 
-          <div className="rounded-lg bg-slate-50 p-3 text-sm">
+          <div className="f7-financial-summary rounded-lg p-3 text-sm">
             <div className="flex justify-between text-slate-500"><span>Produtos</span><span>{fmtMoney(items.filter((i) => i.item_type !== 'service').reduce((s, i) => s + i.qty * i.price, 0))}</span></div><div className="flex justify-between text-slate-500"><span>Serviços</span><span>{fmtMoney(items.filter((i) => i.item_type === 'service').reduce((s, i) => s + i.qty * i.price, 0))}</span></div><div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
             <div className="flex justify-between text-slate-500"><span>Desconto</span><span>- {fmtMoney(Number(discount) || 0)}</span></div>
             <div className="flex justify-between text-slate-500"><span>Acréscimo</span><span>+ {fmtMoney(Number(addition) || 0)}</span></div>
