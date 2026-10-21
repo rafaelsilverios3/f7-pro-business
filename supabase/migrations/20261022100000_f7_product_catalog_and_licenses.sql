@@ -152,3 +152,10 @@ revoke all on function public.company_has_product_license(uuid,text) from public
 grant execute on function public.company_has_product_license(uuid,text) to authenticated, service_role;
 
 commit;
+
+-- Conceptual rollback: restore any product catalog, offer, license, license
+-- event, and tenant-link rows that existed before deployment, then drop the
+-- helper function and tables in reverse FK order. This is destructive to
+-- product-scoped license history and verified cross-system links; export and
+-- reconcile all rows before any rollback. Do not roll back by changing the
+-- existing company_subscriptions rows or company_has_feature gate.
