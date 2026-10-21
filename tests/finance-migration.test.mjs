@@ -60,7 +60,7 @@ test('capital contribution is a confirmed non-operating cash entry', () => {
 });
 
 test('financial entry payloads use only the remote schema and defer paid_by to settlement', () => {
-  const remoteColumns = ['company_id', 'sale_id', 'purchase_id', 'type', 'nature', 'entry_class', 'capital_type', 'is_operating', 'status', 'description', 'category', 'amount', 'total_amount', 'received_amount', 'paid_amount', 'due_date', 'paid_date', 'paid_at', 'paid_by', 'source_type', 'source_detail', 'notes', 'account', 'payment_method', 'cancelled_at'];
+  const remoteColumns = ['company_id', 'sale_id', 'purchase_id', 'bank_account_id', 'type', 'nature', 'entry_class', 'capital_type', 'is_operating', 'status', 'description', 'category', 'amount', 'total_amount', 'received_amount', 'paid_amount', 'due_date', 'paid_date', 'paid_at', 'paid_by', 'source_type', 'source_detail', 'notes', 'account', 'payment_method', 'cancelled_at'];
   const match = provider.match(/FinancialEntry: \[([^\]]+)\]/);
   assert.ok(match);
   const columns = [...match[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, column]) => column);
