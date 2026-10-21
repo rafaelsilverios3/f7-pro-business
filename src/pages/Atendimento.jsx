@@ -570,19 +570,19 @@ export default function Atendimento() {
                 <span className="ml-auto flex gap-2">{activeHandoff?.status === 'pending' && handoffCanManage && <Button size="sm" variant="outline" onClick={claimHandoff} disabled={handoffLoading}>Assumir atendimento</Button>}{activeHandoff?.status === 'assigned' && handoffCanManage && <Button size="sm" variant="outline" onClick={resolveHandoff} disabled={handoffLoading}>Concluir handoff</Button>}</span>
               </div>}
 
-              {(activeProposal || proposalError) && <div className="border-b border-blue-200 bg-blue-50 px-5 py-3 text-sm text-slate-800">
+              {(activeProposal || proposalError) && <div className="border-b border-blue-400/25 bg-blue-950/45 px-5 py-3 text-sm text-blue-50">
                 {activeProposal && <div className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-semibold text-blue-800">F7 IA · analisado automaticamente</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">Especialista: {activeProposal.payload?.specialist || 'geral'}</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">Confiança: {ASSISTANT_CONFIDENCE_LABEL[activeProposal.confidence] || activeProposal.confidence || 'não calculada'}</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-slate-600">Risco: {activeProposal.risk_level || 'não classificado'}</span>
+                    <span className="font-semibold text-blue-200">F7 IA · analisado automaticamente</span>
+                    <span className="rounded-full bg-slate-900/70 px-2 py-0.5 text-slate-100">Especialista: {activeProposal.payload?.specialist || 'geral'}</span>
+                    <span className="rounded-full bg-slate-900/70 px-2 py-0.5 text-slate-100">Confiança: {ASSISTANT_CONFIDENCE_LABEL[activeProposal.confidence] || activeProposal.confidence || 'não calculada'}</span>
+                    <span className="rounded-full bg-slate-900/70 px-2 py-0.5 text-slate-100">Risco: {activeProposal.risk_level || 'não classificado'}</span>
                   </div>
                   <div>
-                    <p className="mb-1 text-xs font-medium text-slate-600">Ação proposta: {activeProposal.title || activeProposal.action_type}</p>
-                    <Textarea value={proposalDraft} onChange={(event) => setProposalDraft(event.target.value)} className="min-h-20 bg-white" placeholder="Proposta preparada pela F7 para revisão humana" />
+                    <p className="mb-1 text-xs font-medium text-blue-100">Ação proposta: {activeProposal.title || activeProposal.action_type}</p>
+                    <Textarea value={proposalDraft} onChange={(event) => setProposalDraft(event.target.value)} className="min-h-20 border-blue-300/30 bg-slate-950/70 text-slate-50" placeholder="Proposta preparada pela F7 para revisão humana" />
                   </div>
-                  <p className="text-xs text-slate-500">Aprovar ou editar apenas leva o texto ao campo de mensagem. O envio continua sendo uma ação humana separada.</p>
+                  <p className="text-xs text-blue-100/80">Aprovar ou editar apenas leva o texto ao campo de mensagem. O envio continua sendo uma ação humana separada.</p>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" size="sm" onClick={() => reviewAutonomousProposal('APPROVE')} disabled={proposalLoading}>Aprovar e usar</Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => reviewAutonomousProposal('EDIT')} disabled={proposalLoading || !proposalDraft.trim()}>Editar e usar</Button>
@@ -600,11 +600,11 @@ export default function Atendimento() {
                   <div key={idx} className={`flex gap-2 ${m.sender === 'customer' ? 'justify-start' : 'justify-end'}`}>
                     {m.sender === 'customer' && <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-300 text-xs text-white"><User className="h-3.5 w-3.5" /></div>}
                     <div className={`max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${
-                      m.sender === 'customer' ? 'bg-white text-slate-700' :
-                      m.sender === 'ai' ? 'bg-violet-100 text-violet-800' :
+                      m.sender === 'customer' ? 'bg-slate-800 text-slate-100' :
+                      m.sender === 'ai' ? 'bg-violet-900/70 text-violet-100' :
                       'bg-indigo-600 text-white'
                     }`}>
-                      {m.sender === 'ai' && <div className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-violet-500"><Bot className="h-3 w-3" /> IA</div>}
+                      {m.sender === 'ai' && <div className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-violet-200"><Bot className="h-3 w-3" /> IA</div>}
                       <MediaContent message={m} />
                       <p className={`mt-0.5 flex items-center gap-1 text-[10px] ${m.sender === 'agent' ? 'text-indigo-200' : 'text-slate-400'}`}>
                         {new Date(m.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}

@@ -458,3 +458,17 @@ body.light-theme .app-shell [data-commerce] .commerce-muted-icon { color: #47556
 }
 .app-shell .campaigns-page .campaign-source-divergence .text-slate-600 { color: #e4c77f !important; }
 .app-shell .campaigns-page .campaign-source-divergence .text-slate-900 { color: #fff3c7 !important; }
+
+/* Shared dark surfaces for financial summaries that render in Radix portals. */
+.f7-financial-summary {
+  background: color-mix(in srgb, var(--app-accent) 8%, var(--surface-elevated)) !important;
+  border: 1px solid color-mix(in srgb, var(--app-accent) 30%, var(--app-border)) !important;
+  color: var(--text-secondary) !important;
+}
+.f7-financial-summary .text-slate-900 { color: var(--text-primary) !important; }
+body.light-theme .f7-financial-summary {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #475569 !important;
+}
+body.light-theme .f7-financial-summary .text-slate-900 { color: #0f172a !important; }

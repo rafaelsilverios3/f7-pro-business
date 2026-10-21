@@ -1,14 +1,16 @@
 // F7 PRO BUSINESS — Vendas
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Plus, Eye, Ban } from 'lucide-react';
+import { Plus, Eye, Ban, FileDown, Mail, MessageCircle, Printer } from 'lucide-react';
 import { salesRepository } from '@/data/repositories/salesRepository';
 import { fmtMoney, fmtDate } from '@/lib/business';
 import { isRevenueSale, saleItemTotal } from '@/lib/saleStatus';
 import { salesService } from '@/services/salesService';
+import { getDataProvider } from '@/data/providerSelector';
 import PageHeader from '@/components/layout/PageHeader';
 import SaleDialog from '@/components/vendas/SaleDialog';
 import { Button } from '@/components/ui/button';
+import { downloadSaleReceiptPdf, saleReference } from '@/lib/commercialDocuments';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -24,22 +26,30 @@ const STATUS_LABEL = { draft: 'Rascunho', paid: 'Pago', pending: 'Pendente', com
 export default function Vendas() {
   const { company } = useOutletContext();
   const [items, setItems] = useState(null);
+  const [customers, setCustomers] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewing, setViewing] = useState(null);
 
   const load = async () => {
     if (!company) return;
-    setItems(await salesRepository.list(company.id, '-sale_date'));
+    const provider = getDataProvider();
+    const [sales, customerRows] = await Promise.all([
+      salesRepository.list(company.id, '-sale_date'),
+      provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500),
+    ]);
+    setItems(sales);
+    setCustomers(customerRows);
   };
   useEffect(() => { load(); }, [company]);
 
   const stats = useMemo(() => {
-    if (!items) return { count: 0, total: 0, profit: 0 };
+    if (!items) return { count: 0, total: 0, profit: 0, cancelled: 0 };
     const valid = items.filter(isRevenueSale);
     return {
       count: valid.length,
       total: valid.reduce((s, x) => s + (x.total || 0), 0),
       profit: valid.reduce((s, x) => s + (x.profit || 0), 0),
+      cancelled: items.filter((sale) => ['cancelled', 'canceled'].includes(sale.status)).length,
     };
   }, [items]);
 
@@ -51,6 +61,7 @@ export default function Vendas() {
     await salesService.cancel(sale);
     load();
   };
+  const viewingCustomer = viewing && customers.find((customer) => customer.id === viewing.customer_id);
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8">
@@ -60,7 +71,7 @@ export default function Vendas() {
         action={<Button onClick={() => setDialogOpen(true)}><Plus className="mr-1.5 h-4 w-4" /> Nova venda</Button>}
       />
 
-      <div className="mb-5 grid grid-cols-3 gap-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-500">Vendas no total</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{stats.count}</p>
@@ -73,6 +84,7 @@ export default function Vendas() {
           <p className="text-xs text-slate-500">Lucro</p>
           <p className="mt-1 text-xl font-semibold text-emerald-600">{fmtMoney(stats.profit)}</p>
         </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs text-slate-500">Canceladas</p><p className="mt-1 text-xl font-semibold text-rose-600">{stats.cancelled}</p></div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -100,7 +112,7 @@ export default function Vendas() {
               <tbody>
                 {items.map((s) => (
                   <tr key={s.id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${s.status === 'cancelled' || s.status === 'canceled' ? 'opacity-50' : ''}`}>
-                    <td className="px-4 py-3 font-medium text-slate-800">{s.customer_name}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800"><span>{s.customer_name}</span><span className="mt-1 block font-mono text-[10px] text-slate-400">{saleReference(s)}</span></td>
                     <td className="px-4 py-3 text-slate-500">{fmtDate(s.sale_date)}</td>
                     <td className="px-4 py-3 text-slate-500">{s.seller || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{s.payment_method || '—'}</td>
@@ -128,10 +140,11 @@ export default function Vendas() {
 
       {/* View dialog */}
       <Dialog open={!!viewing} onOpenChange={() => setViewing(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Venda — {viewing?.customer_name}</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Venda {viewing ? saleReference(viewing) : ''} — {viewing?.customer_name}</DialogTitle></DialogHeader>
           {viewing && (
             <div className="space-y-3 text-sm">
+              <p className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">Comprovante comercial não fiscal. A emissão de NF-e/NFC-e exige integração com emissor autorizado e dados fiscais válidos.</p>
               <div className="flex justify-between"><span className="text-slate-500">Data</span><span>{fmtDate(viewing.sale_date)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Vendedor</span><span>{viewing.seller || '—'}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Pagamento</span><span>{viewing.payment_method} · {viewing.installments}x</span></div>
@@ -150,6 +163,12 @@ export default function Vendas() {
                 {viewing.discount > 0 && <div className="flex justify-between text-slate-500"><span>Desconto</span><span>- {fmtMoney(viewing.discount)}</span></div>}
                 <div className="flex justify-between font-semibold text-slate-900"><span>Total</span><span>{fmtMoney(viewing.total)}</span></div>
                 <div className="flex justify-between text-emerald-600"><span>Lucro</span><span>{fmtMoney(viewing.profit)}</span></div>
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-slate-700 pt-3">
+                <Button type="button" variant="outline" size="sm" onClick={() => downloadSaleReceiptPdf({ ...viewing, customer_name: viewingCustomer?.name || viewing.customer_name }, company)}><FileDown className="mr-1.5 h-4 w-4" /> PDF não fiscal</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => downloadSaleReceiptPdf({ ...viewing, customer_name: viewingCustomer?.name || viewing.customer_name }, company)}><Printer className="mr-1.5 h-4 w-4" /> Imprimir comprovante</Button>
+                <Button type="button" variant="outline" size="sm" disabled={!viewingCustomer?.email} onClick={() => { window.location.href = `mailto:${encodeURIComponent(viewingCustomer.email)}?subject=${encodeURIComponent(`Comprovante ${saleReference(viewing)}`)}&body=${encodeURIComponent(`Olá, segue o comprovante não fiscal ${saleReference(viewing)} no valor de ${fmtMoney(viewing.total)}.`)}`; }}><Mail className="mr-1.5 h-4 w-4" /> Preparar e-mail</Button>
+                <Button type="button" variant="outline" size="sm" disabled={!viewingCustomer?.phone} onClick={() => { const text = `Comprovante comercial não fiscal ${saleReference(viewing)} · ${fmtMoney(viewing.total)}. Documento não substitui NF-e/NFC-e.`; window.open(`https://wa.me/${String(viewingCustomer.phone).replace(/\\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }}><MessageCircle className="mr-1.5 h-4 w-4" /> Preparar WhatsApp</Button>
               </div>
             </div>
           )}
