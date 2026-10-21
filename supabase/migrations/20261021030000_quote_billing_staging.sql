@@ -157,7 +157,7 @@ end; $$;
 
 create or replace function public.return_quote_sale_to_quote(target_sale uuid)
 returns public.sales language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
-declare s public.sales; q public.quotes;
+declare s public.sales; q public.quotes; previous_sale public.sales; previous_quote public.quotes;
 begin
   if auth.uid() is null then raise exception 'Sessão obrigatória'; end if;
   select * into s from public.sales where id=target_sale and public.is_company_member(company_id) for update;
@@ -166,10 +166,11 @@ begin
   if s.status <> 'draft' then raise exception 'Retorno permitido somente antes do faturamento'; end if;
   select * into q from public.quotes where id=s.origin_quote_id and company_id=s.company_id for update;
   if q.status <> 'billing_pending' or q.sale_id <> s.id then raise exception 'Vínculo do orçamento mudou'; end if;
+  previous_sale := s; previous_quote := q;
   perform set_config('f7.quote_sale_transition',s.id::text,true);
   update public.sales set status='cancelled',cancelled_at=now(),cancelled_by=auth.uid() where id=s.id returning * into s;
   update public.quotes set status='approved',sale_id=null where id=q.id returning * into q;
-  insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(s.company_id,auth.uid(),'sale.returned_to_quote','Sale',s.id,to_jsonb(s),jsonb_build_object('quote_id',q.id,'quote_number',q.quote_number,'status',q.status));
+  insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(s.company_id,auth.uid(),'sale.returned_to_quote','Sale',s.id,to_jsonb(previous_sale),jsonb_build_object('sale_id',s.id,'sale_status',s.status,'quote_id',q.id,'quote_number',q.quote_number,'quote_status',q.status,'previous_quote_status',previous_quote.status));
   return s;
 end; $$;
 
@@ -292,7 +293,7 @@ end; $$;
 
 create or replace function public.cancel_quote(target_quote uuid, reason text)
 returns public.quotes language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
-declare q public.quotes; s public.sales;
+declare q public.quotes; s public.sales; previous_status text;
 begin
   if auth.uid() is null then raise exception 'Sessão obrigatória'; end if;
   select * into q from public.quotes where id=target_quote and public.is_company_member(company_id) for update;
@@ -300,9 +301,10 @@ begin
   if public.current_company_role(q.company_id) not in ('admin','gestor','comercial','vendedor') then raise exception 'Sem permissão para cancelar orçamento'; end if;
   if length(trim(coalesce(reason,''))) < 3 then raise exception 'Informe o motivo do cancelamento'; end if;
   if q.status in ('converted','cancelled','refused','expired') then raise exception 'Orçamento não pode ser cancelado neste estado'; end if;
+  previous_status := q.status;
   if q.sale_id is not null then select * into s from public.sales where id=q.sale_id and company_id=q.company_id for update; if s.status='completed' then raise exception 'Venda faturada exige cancelamento pela tela de Vendas'; end if; if s.origin_quote_id is not null then perform set_config('f7.quote_sale_transition',s.id::text,true); end if; update public.sales set status='cancelled',cancelled_at=now(),cancelled_by=auth.uid() where id=q.sale_id and company_id=q.company_id and status='draft'; end if;
   update public.quotes set status='cancelled',cancelled_at=now(),cancellation_reason=left(trim(reason),500) where id=q.id returning * into q;
-  insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(q.company_id,auth.uid(),'quote.cancelled','Quote',q.id,jsonb_build_object('status',q.status),jsonb_build_object('status','cancelled','reason',q.cancellation_reason)); return q;
+  insert into public.audit_logs(company_id,user_id,action,entity,entity_id,old_data,new_data) values(q.company_id,auth.uid(),'quote.cancelled','Quote',q.id,jsonb_build_object('status',previous_status,'sale_id',q.sale_id),jsonb_build_object('status','cancelled','reason',q.cancellation_reason)); return q;
 end; $$;
 
 create or replace function public.cancel_sale_with_reason(target_sale uuid, reason text)
