@@ -20,7 +20,7 @@ const STATUS_OPTIONS = [
   { value: 'expired', label: 'Expirado' },
 ];
 
-export default function QuoteDialog({ open, onClose, company, onDone }) {
+export default function QuoteDialog({ open, onClose, company, onDone, quote = null }) {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [members, setMembers] = useState([]);
@@ -42,8 +42,15 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
       setCustomers(await provider.entity('Customer').filter({ company_id: company.id }, '-created_date', 500));
       setProducts((await provider.entity('Product').filter({ company_id: company.id }, '-created_date', 500)).filter((product) => product.item_type === 'product' || product.item_type === 'service'));
       setMembers(provider.listMembers ? (await provider.listMembers(company.id)).filter((member) => member.active) : []);
-      const d = new Date(); d.setDate(d.getDate() + 15);
-      setValidUntil(d.toISOString().slice(0, 10));
+      if (quote) {
+        setCustomerId(quote.customer_id || '');
+        setItems((quote.items || []).map((item) => ({ ...item, qty: item.qty ?? item.quantity, price: item.unit_price ?? item.price, cost: item.unit_cost ?? item.cost })));
+        setDiscount(quote.discount || 0); setAddition(quote.addition || 0); setSellerUserId(quote.seller_user_id || '');
+        setValidUntil(quote.valid_until || ''); setNotes(quote.notes || ''); setStatus(quote.status || 'draft');
+      } else {
+        setCustomerId(''); setItems([]); setDiscount(0); setAddition(0); setSellerUserId(''); setNotes(''); setStatus('draft');
+        const d = new Date(); d.setDate(d.getDate() + 15); setValidUntil(d.toISOString().slice(0, 10));
+      }
     })();
   }, [open, company]);
 
@@ -78,7 +85,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
     if (items.length === 0 || submitting) return;
     setSubmitting(true);
     try {
-      await quotesService.create(company.id, {
+      const payload = {
         customer_id: customerId || null,
         items: totals.items.map((item) => ({ ...item, price: item.unit_price, cost: Number(item.cost) || 0 })),
         discount: Number(discount) || 0,
@@ -87,7 +94,9 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
         valid_until: validUntil,
         notes,
         status,
-      });
+      };
+      if (quote) await quotesService.update(company.id, quote.id, payload);
+      else await quotesService.create(company.id, payload);
       reset();
       onDone?.();
       onClose();
@@ -97,7 +106,7 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="flex min-h-0 max-w-2xl flex-col overflow-hidden">
-        <DialogHeader><DialogTitle>Novo orçamento</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{quote ? `Editar orçamento ${quote.quote_number || ''}` : 'Novo orçamento'}</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pr-1">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -120,12 +129,12 @@ export default function QuoteDialog({ open, onClose, company, onDone }) {
               <Label className="text-xs">Válido até</Label>
               <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
+            {!quote && <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
               <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm">
                 {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
-            </div>
+            </div>}
           </div>
 
           <div className="space-y-1.5">

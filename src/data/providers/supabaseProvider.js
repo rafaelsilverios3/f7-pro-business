@@ -40,7 +40,7 @@ const columns = {
   IntelligenceInsight: ['company_id', 'type', 'severity', 'title', 'description', 'entity', 'entity_id', 'data', 'status', 'resolved_at'],
     CompanySubscription: ['company_id', 'plan', 'status', 'trial_started_at', 'trial_ends_at', 'trial_used', 'current_period_start', 'current_period_end'],
   CompanyInvite: ['company_id', 'email', 'role', 'token_hash', 'status', 'expires_at', 'invited_by'],
-  Quote: ['company_id', 'customer_id', 'status', 'items', 'total', 'subtotal', 'discount', 'addition', 'valid_until', 'notes', 'seller_user_id', 'opportunity_id', 'approved_at', 'rejected_at', 'cancelled_at', 'converted_at'],
+    Quote: ['company_id', 'customer_id', 'status', 'items', 'total', 'subtotal', 'discount', 'addition', 'valid_until', 'notes', 'seller_user_id', 'opportunity_id', 'approved_at', 'rejected_at', 'cancelled_at', 'converted_at', 'quote_number', 'cancellation_reason', 'sale_id'],
   ProductOpportunity: ['company_id', 'title', 'description', 'status', 'source', 'source_url', 'collected_at', 'source_type', 'confidence_level', 'scores', 'opportunity_score', 'supplier_score', 'trust_score', 'channel_score', 'metadata'],
   OpportunityProductDraft: ['company_id', 'opportunity_id', 'name', 'description', 'category', 'price', 'cost', 'stock', 'active', 'status'],
   SupplierIntelligence: ['company_id', 'supplier_id', 'reputation_score', 'history_score', 'price_score', 'delivery_score', 'returns_score', 'complaints_score', 'consistency_score', 'supplier_score', 'trust_score', 'trust_label', 'data_confidence', 'source_summary', 'metadata'],

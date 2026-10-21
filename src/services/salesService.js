@@ -18,4 +18,6 @@ export const salesService = {
     return createSale(companyId, { ...data, idempotency_key: data.idempotency_key || undefined });
   },
   cancel: async (sale) => import.meta.env.VITE_DATA_PROVIDER === 'supabase' ? getDataProvider().rpc('cancel_sale', { target_sale: sale.id }) : cancelSale(sale),
+  cancelWithReason: async (sale, reason) => getDataProvider().rpc('cancel_sale_with_reason', { target_sale: sale.id, reason }),
+  finalizeQuote: async (sale, billing) => getDataProvider().rpc('finalize_quote_sale', { target_sale: sale.id, billing_payload: billing }),
 };
