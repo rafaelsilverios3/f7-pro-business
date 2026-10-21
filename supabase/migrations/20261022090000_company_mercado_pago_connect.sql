@@ -1,3 +1,4 @@
+-- Conceptual rollback: first disable company Mercado Pago feature flags and disconnect merchants through the audited flow. Only after no open payment attempts remain, remove the new functions, trigger, policies, tables and index; retain audit logs, reconciled financial movements, and existing Billing data. Do not delete financial history to roll back the UI.
 -- Company-owned Mercado Pago OAuth connections and payment attempt ledger.
 -- SaaS subscription billing remains in billing_* and uses platform credentials.
 create table if not exists public.company_mp_connections (
