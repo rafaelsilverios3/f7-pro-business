@@ -62,3 +62,24 @@ verify_jwt = false
 
 [functions.mercadolivre-notification-worker]
 verify_jwt = true
+
+[functions.mercado-pago-company-connect]
+verify_jwt = true
+
+[functions.mercado-pago-company-callback]
+verify_jwt = false
+
+[functions.mercado-pago-company-disconnect]
+verify_jwt = true
+
+[functions.mercado-pago-company-status]
+verify_jwt = true
+
+[functions.mercado-pago-company-payments]
+verify_jwt = true
+
+[functions.mercado-pago-company-payment-status]
+verify_jwt = true
+
+[functions.mercado-pago-company-webhook]
+verify_jwt = false
