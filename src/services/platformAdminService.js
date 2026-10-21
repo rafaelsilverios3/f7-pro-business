@@ -49,4 +49,7 @@ export const platformAdminService = {
   platformAdmins: () => call('platform_admins'),
   createPlatformAdmin: (payload) => call('create_platform_admin', payload),
   updatePlatformAdmin: (payload) => call('update_platform_admin', payload),
+  productCommerceOverview: () => call('product_commerce_overview'),
+  setProductOffer: (payload) => call('product_commerce_set_offer', payload),
+  setProductLicense: (payload) => call('product_commerce_set_license', payload),
 };

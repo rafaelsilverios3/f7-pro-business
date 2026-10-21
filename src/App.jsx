@@ -50,6 +50,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Invite from './pages/Invite.jsx';
 import Checkout from './pages/Checkout.jsx';
+import ProductCheckout from './pages/ProductCheckout.jsx';
 import SubscriptionBilling from './pages/SubscriptionBilling.jsx';
 import TrialExpired from './pages/TrialExpired.jsx';
 import FeatureLocked from './pages/FeatureLocked.jsx';
@@ -179,6 +180,7 @@ const AuthenticatedApp = () => {
           <Route path="/treinamento" element={<RoleGuard permission="dashboard.view"><Academy /></RoleGuard>} />
           <Route path="/treinamento/:moduleId" element={<RoleGuard permission="dashboard.view"><Academy /></RoleGuard>} />
           <Route path="/checkout" element={<Checkout />} />
+          <Route path="/checkout-produto" element={<ProductCheckout />} />
         <Route path="/invite/:token" element={<Invite />} />
         <Route element={<CompanyGuard />}>
           <Route path="/f7probusiness" element={<RoleGuard permission="dashboard.view"><Dashboard /></RoleGuard>} />
