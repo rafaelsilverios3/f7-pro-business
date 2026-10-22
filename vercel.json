@@ -9,6 +9,10 @@
       "destination": "https://f7-food.vercel.app/assets/:path*"
     },
     {
+      "source": "/f7-food/",
+      "destination": "https://f7-food.vercel.app/f7-food"
+    },
+    {
       "source": "/f7-food",
       "destination": "https://f7-food.vercel.app/f7-food"
     },
