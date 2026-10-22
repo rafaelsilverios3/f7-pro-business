@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const migration = await readFile(new URL('../supabase/migrations/20261022100000_f7_product_catalog_and_licenses.sql', import.meta.url), 'utf8');
+const adminEdge = await readFile(new URL('../supabase/functions/platform-admin/index.ts', import.meta.url), 'utf8');
+const adminUi = await readFile(new URL('../src/components/platform-admin/ProductCommerceAdmin.jsx', import.meta.url), 'utf8');
 
 test('commercial accounts are independent from app tenants and licenses are product scoped', () => {
   assert.match(migration, /create table if not exists public\.commercial_accounts/i);
@@ -37,4 +39,23 @@ test('checkout is separate, idempotent, and product subscriptions require truste
   assert.match(migration, /confirm_product_checkout_payment/);
   assert.match(migration, /request\.jwt\.claim\.role',true\)<>\x27service_role\x27/i);
   assert.match(migration, /live_charges_enabled boolean not null default false/i);
+});
+
+test('manual product-license grants replay idempotently and reject key reuse with different data', () => {
+  const start = migration.indexOf('create or replace function public.product_platform_admin_set_license');
+  const end = migration.indexOf('create or replace function public.product_platform_admin_set_offer', start);
+  const grant = migration.slice(start, end);
+  assert.match(grant, /pg_advisory_xact_lock\(hashtextextended\(p_actor_id::text \|\| ':' \|\| p_command_id::text, 0\)\)/i);
+  assert.match(grant, /where actor_id=p_actor_id and command_id=p_command_id for update/i);
+  assert.match(grant, /PRODUCT_LICENSE_IDEMPOTENCY_KEY_REUSED/);
+  assert.match(grant, /return new_row/i);
+});
+
+test('commercial admin exposes checkout reconciliation and license audit history', () => {
+  assert.match(adminEdge, /product_checkout_sessions/);
+  assert.match(adminEdge, /product_checkout_webhook_events/);
+  assert.match(adminEdge, /commercial_product_license_events/);
+  assert.match(adminUi, /Contratações e histórico/);
+  assert.match(adminUi, /Auditoria de licenças/);
+  assert.match(adminUi, /Eventos do provedor/);
 });

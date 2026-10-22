@@ -358,6 +358,7 @@ language plpgsql security definer
 set search_path = pg_catalog, public, auth
 as $$
 declare old_row public.commercial_product_licenses; new_row public.commercial_product_licenses;
+  previous_event public.commercial_product_license_events;
 begin
   if current_setting('request.jwt.claim.role',true) <> 'service_role' then
     raise exception using errcode='42501',message='SERVICE_ROLE_REQUIRED';
@@ -365,6 +366,25 @@ begin
   if p_product_key not in ('f7_pro_business','f7_food') or p_status not in ('trial','active','suspended','expired','cancelled')
      or coalesce(length(btrim(p_reason)),0) not between 5 and 500 or p_command_id is null or p_actor_id is null then
     raise exception using errcode='22023',message='PRODUCT_LICENSE_INPUT_INVALID';
+  end if;
+  -- Serialize retries so concurrent requests with the same command are replayed
+  -- exactly once. Reusing an idempotency key with different content is rejected.
+  perform pg_advisory_xact_lock(hashtextextended(p_actor_id::text || ':' || p_command_id::text, 0));
+  select * into previous_event from public.commercial_product_license_events
+    where actor_id=p_actor_id and command_id=p_command_id for update;
+  if previous_event.id is not null then
+    if previous_event.commercial_account_id<>p_account_id
+       or previous_event.product_key<>p_product_key
+       or previous_event.reason<>btrim(p_reason)
+       or (previous_event.after_state->>'offer_id')::uuid is distinct from p_offer_id
+       or previous_event.after_state->>'status' is distinct from p_status
+       or (previous_event.after_state->>'starts_at')::timestamptz is distinct from coalesce(p_starts_at,now())
+       or (previous_event.after_state->>'ends_at')::timestamptz is distinct from p_ends_at then
+      raise exception using errcode='23505',message='PRODUCT_LICENSE_IDEMPOTENCY_KEY_REUSED';
+    end if;
+    select * into new_row from public.commercial_product_licenses where id=previous_event.license_id;
+    if new_row.id is null then raise exception using errcode='P0002',message='PRODUCT_LICENSE_REPLAY_TARGET_MISSING'; end if;
+    return new_row;
   end if;
   select * into old_row from public.commercial_product_licenses
     where commercial_account_id=p_account_id and product_key=p_product_key for update;

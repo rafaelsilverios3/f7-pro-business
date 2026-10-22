@@ -69,19 +69,28 @@ Deno.serve(async (req) => {
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
     if (action === 'product_commerce_overview') {
-      const [products, offers, accounts, licenses, companies] = await Promise.all([
+      const [products, offers, accounts, licenses, companies, licenseEvents, checkouts, webhookEvents] = await Promise.all([
         service.from('product_catalog').select('product_key,name,description,access_url,active,sort_order').order('sort_order'),
         service.from('product_offers').select('id,product_key,offer_code,name,description,price_minor,currency,billing_period,trial_days,features,active,sort_order').order('product_key').order('sort_order'),
         service.from('commercial_accounts').select('id,display_name,created_at').order('created_at', { ascending: false }).limit(500),
         service.from('commercial_product_licenses').select('id,commercial_account_id,product_key,offer_id,status,starts_at,ends_at,source,updated_at').order('updated_at', { ascending: false }).limit(1000),
         service.from('companies').select('id,name'),
+        service.from('commercial_product_license_events').select('id,commercial_account_id,license_id,product_key,actor_id,action,reason,before_state,after_state,command_id,occurred_at').order('occurred_at', { ascending: false }).limit(100),
+        service.from('product_checkout_sessions').select('id,commercial_account_id,offer_id,product_key,amount_minor,currency,billing_period,status,provider,provider_checkout_id,provider_payment_id,created_at,updated_at').order('created_at', { ascending: false }).limit(100),
+        service.from('product_checkout_webhook_events').select('id,provider,provider_event_id,checkout_id,event_type,status,received_at,processed_at').order('received_at', { ascending: false }).limit(100),
       ]);
-      const failed = [products, offers, accounts, licenses, companies].find((item) => item.error);
+      const failed = [products, offers, accounts, licenses, companies, licenseEvents, checkouts, webhookEvents].find((item) => item.error);
       if (failed) throw failed.error;
       const offerMap = new Map((offers.data || []).map((offer: any) => [offer.id, offer]));
       const accountMap = new Map((accounts.data || []).map((account: any) => [account.id, account]));
       const companyMap = new Map((companies.data || []).map((company: any) => [company.id, company.name]));
-      return json({ products: products.data || [], offers: offers.data || [], accounts: accounts.data || [], licenses: (licenses.data || []).map((license: any) => ({ ...license, account_name: accountMap.get(license.commercial_account_id)?.display_name || 'Conta comercial', offer: offerMap.get(license.offer_id) || null, pro_company_name: license.pro_company_id ? companyMap.get(license.pro_company_id) || null : null })) });
+      return json({
+        products: products.data || [], offers: offers.data || [], accounts: accounts.data || [],
+        licenses: (licenses.data || []).map((license: any) => ({ ...license, account_name: accountMap.get(license.commercial_account_id)?.display_name || 'Conta comercial', offer: offerMap.get(license.offer_id) || null, pro_company_name: license.pro_company_id ? companyMap.get(license.pro_company_id) || null : null })),
+        license_events: (licenseEvents.data || []).map((event: any) => ({ ...event, account_name: accountMap.get(event.commercial_account_id)?.display_name || 'Conta comercial' })),
+        checkouts: (checkouts.data || []).map((checkout: any) => ({ ...checkout, account_name: accountMap.get(checkout.commercial_account_id)?.display_name || 'Conta comercial', offer: offerMap.get(checkout.offer_id) || null })),
+        webhook_events: webhookEvents.data || [],
+      });
     }
     if (action === 'product_commerce_set_offer') {
       const offerId = uuid(input.offer_id);
