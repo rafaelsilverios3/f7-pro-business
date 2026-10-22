@@ -52,4 +52,11 @@ export const platformAdminService = {
   productCommerceOverview: () => call('product_commerce_overview'),
   setProductOffer: (payload) => call('product_commerce_set_offer', payload),
   setProductLicense: (payload) => call('product_commerce_set_license', payload),
+  dispatchFoodLicenseSync: async (payload = {}) => {
+    if (!available()) throw new Error('PLATFORM_ADMIN_UNAVAILABLE');
+    const { data, error } = await getSupabaseClient().functions.invoke('product-license-dispatch', { body: payload });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return data;
+  },
 };

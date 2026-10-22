@@ -1,5 +1,17 @@
 project_id = "f7-pro-business"
 
+[functions.product-license-dispatch]
+verify_jwt = true
+
+[functions.product-tenant-link]
+verify_jwt = false
+
+[functions.product-checkout]
+verify_jwt = false
+
+[functions.product-checkout-webhook]
+verify_jwt = false
+
 [db]
 major_version = 17
 
