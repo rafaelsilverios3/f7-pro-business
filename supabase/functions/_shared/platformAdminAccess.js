@@ -8,6 +8,7 @@ const WRITE_ACTIONS = new Set([
   'update_company_plan', 'update_company_status', 'create_warning', 'resolve_warning',
   'update_company_user', 'update_feature', 'update_ai', 'disable_whatsapp',
   'create_plan_grant', 'revoke_plan_grant',
+  'product_commerce_overview', 'product_commerce_set_offer', 'product_commerce_set_license',
   ...ADMIN_MANAGEMENT_ACTIONS,
 ]);
 const AI_FINANCIAL_ACTIONS = new Set([

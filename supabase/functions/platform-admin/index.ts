@@ -68,6 +68,56 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'access') return json({ is_platform_admin: true, role: adminRow.data.role });
+    if (action === 'product_commerce_overview') {
+      const [products, offers, accounts, licenses, companies, licenseEvents, checkouts, webhookEvents, foodDeliveries] = await Promise.all([
+        service.from('product_catalog').select('product_key,name,description,access_url,active,sort_order').order('sort_order'),
+        service.from('product_offers').select('id,product_key,offer_code,name,description,price_minor,currency,billing_period,trial_days,features,active,sort_order').order('product_key').order('sort_order'),
+        service.from('commercial_accounts').select('id,display_name,created_at').order('created_at', { ascending: false }).limit(500),
+        service.from('commercial_product_licenses').select('id,commercial_account_id,product_key,offer_id,status,starts_at,ends_at,source,updated_at').order('updated_at', { ascending: false }).limit(1000),
+        service.from('companies').select('id,name'),
+        service.from('commercial_product_license_events').select('id,commercial_account_id,license_id,product_key,actor_id,action,reason,before_state,after_state,command_id,occurred_at').order('occurred_at', { ascending: false }).limit(100),
+        service.from('product_checkout_sessions').select('id,commercial_account_id,offer_id,product_key,amount_minor,currency,billing_period,status,provider,provider_checkout_id,provider_payment_id,created_at,updated_at').order('created_at', { ascending: false }).limit(100),
+        service.from('product_checkout_webhook_events').select('id,provider,provider_event_id,checkout_id,event_type,status,received_at,processed_at').order('received_at', { ascending: false }).limit(100),
+        service.from('product_license_delivery_outbox').select('id,license_id,commercial_account_id,food_company_id,status,attempts,last_http_status,last_error,remote_license_id,delivered_at,created_at,updated_at').order('created_at', { ascending: false }).limit(100),
+      ]);
+      const failed = [products, offers, accounts, licenses, companies, licenseEvents, checkouts, webhookEvents, foodDeliveries].find((item) => item.error);
+      if (failed) throw failed.error;
+      const offerMap = new Map((offers.data || []).map((offer: any) => [offer.id, offer]));
+      const accountMap = new Map((accounts.data || []).map((account: any) => [account.id, account]));
+      const companyMap = new Map((companies.data || []).map((company: any) => [company.id, company.name]));
+      return json({
+        products: products.data || [], offers: offers.data || [], accounts: accounts.data || [],
+        licenses: (licenses.data || []).map((license: any) => ({ ...license, account_name: accountMap.get(license.commercial_account_id)?.display_name || 'Conta comercial', offer: offerMap.get(license.offer_id) || null, pro_company_name: license.pro_company_id ? companyMap.get(license.pro_company_id) || null : null })),
+        license_events: (licenseEvents.data || []).map((event: any) => ({ ...event, account_name: accountMap.get(event.commercial_account_id)?.display_name || 'Conta comercial' })),
+        checkouts: (checkouts.data || []).map((checkout: any) => ({ ...checkout, account_name: accountMap.get(checkout.commercial_account_id)?.display_name || 'Conta comercial', offer: offerMap.get(checkout.offer_id) || null })),
+        webhook_events: webhookEvents.data || [],
+        food_license_deliveries: (foodDeliveries.data || []).map((row: any) => ({ ...row, account_name: accountMap.get(row.commercial_account_id)?.display_name || 'Conta comercial' })),
+      });
+    }
+    if (action === 'product_commerce_set_offer') {
+      const offerId = uuid(input.offer_id);
+      const result = await service.rpc('product_platform_admin_set_offer', {
+        p_offer_id: offerId, p_product_key: clean(input.product_key, 40), p_offer_code: clean(input.offer_code, 40),
+        p_name: clean(input.name, 100), p_description: clean(input.description, 1000),
+        p_price_minor: input.price_minor === '' || input.price_minor == null ? null : Number(input.price_minor),
+        p_billing_period: clean(input.billing_period, 10), p_trial_days: Number(input.trial_days || 0),
+        p_features: input.features && typeof input.features === 'object' ? input.features : {}, p_active: input.active !== false,
+      });
+      if (result.error) throw result.error;
+      await audit(service, { admin_user_id: actor.id, action: offerId ? 'product.offer.updated' : 'product.offer.created', entity: 'product_offers', entity_id: result.data?.id || null, after_data: result.data, reason: clean(input.reason, 1000) || 'Product offer administration' }, req);
+      return json({ offer: result.data });
+    }
+    if (action === 'product_commerce_set_license') {
+      const accountId = uuid(input.commercial_account_id); const offerId = uuid(input.offer_id); const commandId = uuid(input.command_id);
+      if (!accountId || !offerId || !commandId) return json({ error: 'PRODUCT_LICENSE_INPUT_INVALID' }, 422);
+      const result = await service.rpc('product_platform_admin_set_license', {
+        p_account_id: accountId, p_product_key: clean(input.product_key, 40), p_offer_id: offerId,
+        p_status: clean(input.status, 20), p_starts_at: input.starts_at || new Date().toISOString(),
+        p_ends_at: input.ends_at || null, p_reason: clean(input.reason, 500), p_command_id: commandId, p_actor_id: actor.id,
+      });
+      if (result.error) throw result.error;
+      return json({ license: result.data });
+    }
     if (action === 'overview') {
       const [companies, members, subscriptions, manualGrants, integrations, ai, warnings, logs, catalogPlans, planFeatures, featureOverrides] = await Promise.all([
         service.from('companies').select('id,name,created_at,updated_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(100),
