@@ -1,5 +1,8 @@
 begin;
 
+-- Conceptual rollback: restore the prior enqueue-trigger body after stopping
+-- new license writes; preserve every queued delivery and audit record.
+
 create or replace function public.product_enqueue_food_license_delivery()
 returns trigger language plpgsql security definer
 set search_path=pg_catalog,public

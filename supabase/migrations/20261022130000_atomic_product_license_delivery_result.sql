@@ -1,5 +1,8 @@
 begin;
 
+-- Conceptual rollback: stop dispatcher calls and revoke the result RPC; retain
+-- outbox and attempt history, then restore the previous dispatcher atomically.
+
 create or replace function public.product_license_delivery_record_result(
   p_outbox_id uuid,
   p_attempt_number integer,

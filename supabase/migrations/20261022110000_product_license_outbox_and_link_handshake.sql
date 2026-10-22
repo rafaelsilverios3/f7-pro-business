@@ -1,5 +1,8 @@
 begin;
 
+-- Conceptual rollback: disable delivery and link endpoints, then detach the new
+-- trigger/functions only after pending events are reconciled; retain all audit rows.
+
 -- Durable server-to-server delivery. Secrets and privileged credentials remain
 -- in Edge Function environments; this table stores only signed-event payloads.
 create table if not exists public.product_license_delivery_outbox (
