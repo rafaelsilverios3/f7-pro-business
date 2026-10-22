@@ -14,18 +14,20 @@ test('legacy Food entry permanently canonicalizes without leaving the Business d
 });
 
 test('Food assets and app routes are proxied before the Business SPA fallback', () => {
-  const foodRoutes = config.rewrites.slice(0, 3);
+  const foodRoutes = config.rewrites.slice(0, 4);
   assert.deepEqual(foodRoutes.map((route) => route.source), [
     '/f7-food/assets/:path*',
+    '/f7-food/',
     '/f7-food',
     '/f7-food/:path*',
   ]);
   assert.equal(foodRoutes[0].destination, 'https://f7-food.vercel.app/assets/:path*');
-  assert.equal(foodRoutes[2].destination, 'https://f7-food.vercel.app/f7-food/:path*');
+  assert.equal(foodRoutes[1].destination, 'https://f7-food.vercel.app/f7-food');
+  assert.equal(foodRoutes[3].destination, 'https://f7-food.vercel.app/f7-food/:path*');
   assert.equal(config.rewrites.at(-1).destination, '/index.html');
 });
 
-test('systems catalog uses the proxied canonical Food address', () => {
-  assert.match(publicSite, /const foodAppUrl = '\/f7-food\/';/);
+test('systems catalog opens the Food operation from the proxied canonical address', () => {
+  assert.match(publicSite, /const foodAppUrl = '\/f7-food\?view=operation';/);
   assert.match(appSource, /'\/f7food': 'food-entry'/);
 });
