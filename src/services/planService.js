@@ -7,7 +7,7 @@ export const PLAN_LIMITS = Object.freeze({
 // Keep this browser projection aligned with public.plan_features and the
 // company_has_feature RPC. Intelligence is available on every active plan;
 // marketplace integrations and the remaining entries mirror the catalog.
-export const FEATURE_PLANS = Object.freeze({ automations: 'business', advanced_automations: 'business', atendimento: 'business', advanced_reports: 'business', intelligence: 'free', whatsapp: 'business', ai: 'premium', ai_sales: 'pro', marketplace_integrations: 'pro', opportunity_radar: 'business', supplier_intelligence: 'premium', external_product_intelligence: 'business' });
+export const FEATURE_PLANS = Object.freeze({ automations: 'business', advanced_automations: 'business', atendimento: 'business', advanced_reports: 'business', intelligence: 'free', whatsapp: 'business', ai: 'premium', ai_sales: 'pro', marketplace_integrations: 'pro', opportunity_radar: 'business', supplier_intelligence: 'premium', external_product_intelligence: 'business', business_intelligence: 'business' });
 export function getPlanLimits(plan = 'free') { return PLAN_LIMITS[plan] || PLAN_LIMITS.free; }
 export function canUseFeature(plan, feature) { const required = FEATURE_PLANS[feature]; if (!required) return false; const rank = ['free','pro','business','premium']; return rank.indexOf(plan || 'free') >= rank.indexOf(required); }
 export function canUseSubscriptionFeature(subscription, feature, { provider = 'supabase', fallbackPlan = 'free' } = {}) {

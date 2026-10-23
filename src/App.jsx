@@ -43,6 +43,8 @@ import SalesHub from './pages/SalesHub.jsx';
 import AiSalesAssistant from './pages/AiSalesAssistant.jsx';
 import OpportunityRadar from './pages/OpportunityRadar.jsx';
 import AIObservability from './pages/AIObservability.jsx';
+import BusinessIntelligence from './pages/BusinessIntelligence.jsx';
+import PublicBIReport from './pages/PublicBIReport.jsx';
 import PlatformAdmin from './pages/PlatformAdmin.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
@@ -116,6 +118,7 @@ function RoleGuard({ permission, children }) {
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated, authChecked } = useAuth();
   const location = useLocation();
+  if (location.pathname.startsWith('/f7-bi/compartilhado/')) return <Routes><Route path="/f7-bi/compartilhado/:token" element={<PublicBIReport />} /></Routes>;
   const publicPaths = ['/login', '/register', '/cadastro', '/forgot-password', '/reset-password', '/aceitar-convite'];
   const publicSitePages = {
     '/': 'home',
@@ -212,6 +215,7 @@ const AuthenticatedApp = () => {
           <Route path="/f7-commerce" element={<RoleGuard permission="sales_channels.view"><Commerce /></RoleGuard>} />
           <Route path="/f7-commerce/anuncios" element={<RoleGuard permission="sales_channels.view"><MercadoLivreListings /></RoleGuard>} />
           <Route path="/ai-sales" element={<RoleGuard permission="ai_sales.view"><AiSalesAssistant /></RoleGuard>} />
+          <Route path="/f7-bi" element={<RoleGuard permission="business_intelligence.view"><BusinessIntelligence /></RoleGuard>} />
           <Route path="/opportunity-radar" element={<RoleGuard permission="opportunity_radar.view"><OpportunityRadar /></RoleGuard>} />
           <Route path="/ai-observability" element={<RoleGuard permission="ai_observability.view"><AIObservability /></RoleGuard>} />
           <Route path="/relatorios" element={<RoleGuard permission="reports.view"><Relatorios /></RoleGuard>} />
