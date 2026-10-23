@@ -10,6 +10,14 @@ export function normalizeBIText(value = '') {
   return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 }
 
+export function scopeBIImportItems(items, { companyId, studyId, importId }) {
+  return items.map((item) => {
+    const row = { ...item, company_id: companyId, study_id: studyId, import_id: importId };
+    delete row.id;
+    return row;
+  });
+}
+
 export function parseBINumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const raw = String(value ?? '').replace(/\s/g, '').replace(/R\$/gi, '').replace(/%/g, '');
@@ -405,7 +413,7 @@ export function buildBIAnalysis(items = [], decisions = [], { unit = 'Todas', qu
     && (turn === 'Todos' || normTurn(item.turn_class) === turn.toLowerCase())
     && (status === 'Todos' || (status === 'Sugestão' ? item.eligible_for_suggestion : status === 'Revisão' ? item.review_reasons?.length > 0 : !item.eligible_for_suggestion && !item.review_reasons?.length)));
   const decisionByItem = new Map();
-  for (const decision of [...decisions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))) if (!decisionByItem.has(decision.item_id)) decisionByItem.set(decision.item_id, decision);
+  for (const decision of [...decisions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())) if (!decisionByItem.has(decision.item_id)) decisionByItem.set(decision.item_id, decision);
   const countDistinct = (rows) => new Set(rows.map((row) => row.code)).size;
   const byUnit = [...new Set(items.map((row) => row.unit_name))].sort().map((unitName) => {
     const rows = items.filter((row) => row.unit_name === unitName);
