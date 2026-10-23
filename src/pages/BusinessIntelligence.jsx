@@ -114,7 +114,13 @@ export default function BusinessIntelligence() {
     if (!company?.id || !user?.id) return;
     setBusy(true); setError('');
     try {
-      const created = await createBIStudy({ companyId: company.id, userId: user.id, ...form });
+      const created = await createBIStudy({
+        companyId: company.id,
+        userId: user.id,
+        name: form.name,
+        clientName: form.client_name,
+        description: form.description,
+      });
       setShowStudyForm(false); setForm({ name: '', client_name: '', description: '' });
       const rows = await listBIStudies(company.id); setStudies(rows); setStudy(created); setNotice('Estudo criado. Importe uma planilha para gerar a primeira versão.');
     } catch (cause) { setError(cause.message || 'Não foi possível criar o estudo.'); }
