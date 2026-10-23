@@ -19,7 +19,7 @@ export async function listBIStudies(companyId) {
 }
 
 export async function createBIStudy({ companyId, userId, name, clientName, description }) {
-  const { data, error } = await getSupabaseClient().from('bi_studies').insert({ company_id: companyId, created_by: userId, name: name.trim(), client_name: clientName.trim() || null, description: description.trim() || null }).select('*').single();
+  const { data, error } = await getSupabaseClient().from('bi_studies').insert({ company_id: companyId, created_by: userId, name: String(name ?? '').trim(), client_name: String(clientName ?? '').trim() || null, description: String(description ?? '').trim() || null }).select('*').single();
   throwIfError(error, 'Não foi possível criar o estudo.');
   return data;
 }
