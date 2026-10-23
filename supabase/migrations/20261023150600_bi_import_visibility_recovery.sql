@@ -1,5 +1,9 @@
 begin;
 
+-- Conceptual rollback: restore complete-only row visibility and staging-only
+-- update permissions; stop promoting failed imports and keep their persisted
+-- rows hidden from the analysis surface.
+
 -- Keep BI import rows hidden from other company members while the import is
 -- incomplete, but let the original uploader validate and recover their own
 -- staged/failed version. The completion trigger runs as the calling role and
