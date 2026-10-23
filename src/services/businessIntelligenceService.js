@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/data/providers/supabaseProvider';
+import { scopeBIImportItems } from '@/lib/businessIntelligence';
 
 const PAGE_SIZE = 1000;
 const INSERT_BATCH = 200;
@@ -82,7 +83,7 @@ export async function persistBIImport({ companyId, userId, studyId, file, parsed
 
   try {
     for (let offset = 0; offset < parsed.items.length; offset += INSERT_BATCH) {
-      const batch = parsed.items.slice(offset, offset + INSERT_BATCH).map((item) => ({ ...item, id: undefined, company_id: companyId, study_id: studyId, import_id: record.id }));
+      const batch = scopeBIImportItems(parsed.items.slice(offset, offset + INSERT_BATCH), { companyId, studyId, importId: record.id });
       const { error } = await client.from('bi_items').insert(batch);
       throwIfError(error, `A importação parou no lote ${Math.floor(offset / INSERT_BATCH) + 1}.`);
     }

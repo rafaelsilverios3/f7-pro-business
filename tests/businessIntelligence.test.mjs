@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as XLSX from 'xlsx';
-import { buildBIAnalysis, deriveBIFields, getBIWorkbookSheets, parseBIMonth, parseBIGenericSheet, parseBINumber, validateBIItems } from '../src/lib/businessIntelligence.js';
+import { buildBIAnalysis, deriveBIFields, getBIWorkbookSheets, parseBIMonth, parseBIGenericSheet, parseBINumber, scopeBIImportItems, validateBIItems } from '../src/lib/businessIntelligence.js';
+
+test('import payload omits generated ids and enforces tenant and version scope', () => {
+  const [row] = scopeBIImportItems([{ id: 'preview-id', company_id: 'other-company', code: '0012' }], {
+    companyId: 'company-1',
+    studyId: 'study-1',
+    importId: 'import-1',
+  });
+  assert.equal(Object.hasOwn(row, 'id'), false);
+  assert.equal(row.company_id, 'company-1');
+  assert.equal(row.study_id, 'study-1');
+  assert.equal(row.import_id, 'import-1');
+  assert.equal(row.code, '0012');
+});
 
 test('preserves identifiers and parses localized numbers and month labels', () => {
   assert.equal(parseBINumber('R$ 1.234,56'), 1234.56);
