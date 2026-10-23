@@ -251,3 +251,5 @@ from public.plans p where p.active
 on conflict (plan_id, feature) do update set enabled=excluded.enabled, updated_at=now();
 
 commit;
+
+-- Conceptual rollback: remove the BI navigation, permission/plan mapping, grants, policies, triggers, functions, and tables only after exporting retained BI studies, import versions, decisions, audit history, and shared-report metadata according to the customer's retention policy. Do not delete source company data or unrelated plan feature rows.

@@ -43,7 +43,6 @@ import SalesHub from './pages/SalesHub.jsx';
 import AiSalesAssistant from './pages/AiSalesAssistant.jsx';
 import OpportunityRadar from './pages/OpportunityRadar.jsx';
 import AIObservability from './pages/AIObservability.jsx';
-import BusinessIntelligence from './pages/BusinessIntelligence.jsx';
 import PublicBIReport from './pages/PublicBIReport.jsx';
 import PlatformAdmin from './pages/PlatformAdmin.jsx';
 import Login from './pages/Login.jsx';
@@ -54,6 +53,8 @@ import Invite from './pages/Invite.jsx';
 import Checkout from './pages/Checkout.jsx';
 import ProductCheckout from './pages/ProductCheckout.jsx';
 import SubscriptionBilling from './pages/SubscriptionBilling.jsx';
+
+const BusinessIntelligence = React.lazy(() => import('./pages/BusinessIntelligence.jsx'));
 import TrialExpired from './pages/TrialExpired.jsx';
 import FeatureLocked from './pages/FeatureLocked.jsx';
 import PublicSite from './pages/PublicSite.jsx';
@@ -215,7 +216,7 @@ const AuthenticatedApp = () => {
           <Route path="/f7-commerce" element={<RoleGuard permission="sales_channels.view"><Commerce /></RoleGuard>} />
           <Route path="/f7-commerce/anuncios" element={<RoleGuard permission="sales_channels.view"><MercadoLivreListings /></RoleGuard>} />
           <Route path="/ai-sales" element={<RoleGuard permission="ai_sales.view"><AiSalesAssistant /></RoleGuard>} />
-          <Route path="/f7-bi" element={<RoleGuard permission="business_intelligence.view"><BusinessIntelligence /></RoleGuard>} />
+          <Route path="/f7-bi" element={<RoleGuard permission="business_intelligence.view"><React.Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Carregando Business Intelligence…</div>}><BusinessIntelligence /></React.Suspense></RoleGuard>} />
           <Route path="/opportunity-radar" element={<RoleGuard permission="opportunity_radar.view"><OpportunityRadar /></RoleGuard>} />
           <Route path="/ai-observability" element={<RoleGuard permission="ai_observability.view"><AIObservability /></RoleGuard>} />
           <Route path="/relatorios" element={<RoleGuard permission="reports.view"><Relatorios /></RoleGuard>} />
