@@ -5,9 +5,10 @@ const INSERT_BATCH = 200;
 
 function throwIfError(error, message) {
   if (!error) return;
-  const cause = new Error(message);
-  cause.code = error.code || 'BI_REQUEST_FAILED';
-  cause.details = error.message;
+  const cause = Object.assign(new Error(message), {
+    code: error.code || 'BI_REQUEST_FAILED',
+    details: error.message,
+  });
   throw cause;
 }
 
@@ -114,8 +115,7 @@ export async function callBIShare(payload) {
   const { data, error } = await getSupabaseClient().functions.invoke('f7-bi-share', { body: payload });
   throwIfError(error, data?.code || 'Não foi possível concluir a operação de compartilhamento.');
   if (data?.code && data.code !== 'OK') {
-    const cause = new Error(data.message || data.code);
-    cause.code = data.code;
+    const cause = Object.assign(new Error(data.message || data.code), { code: data.code });
     throw cause;
   }
   return data;
