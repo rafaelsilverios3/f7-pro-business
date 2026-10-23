@@ -2,6 +2,7 @@
 // The feature keys intentionally match company_has_feature/plan_features.
 export const FEATURE_REQUIREMENTS = Object.freeze({
   '/ai-sales': ['PRO', 'AI Sales Assistant', 'ai_sales'],
+  '/f7-bi': ['BUSINESS', 'F7 Business Intelligence', 'business_intelligence'],
   // Intelligence is enabled for every paid/free active plan by the canonical
   // plan_features/company_has_feature matrix.
   '/intelligence': ['FREE', 'F7 Intelligence', 'intelligence'],

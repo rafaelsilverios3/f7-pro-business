@@ -95,3 +95,6 @@ verify_jwt = true
 
 [functions.mercado-pago-company-webhook]
 verify_jwt = false
+
+[functions.f7-bi-share]
+verify_jwt = false
