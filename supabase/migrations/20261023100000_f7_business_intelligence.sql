@@ -62,6 +62,7 @@ create table if not exists public.bi_items (
   source_reference jsonb not null default '{}'::jsonb,
   original_recommendation jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
+  unique (company_id, id),
   unique (import_id, unit_name, code),
   foreign key (company_id, study_id) references public.bi_studies(company_id, id) on delete cascade,
   foreign key (company_id, import_id) references public.bi_imports(company_id, id) on delete cascade
