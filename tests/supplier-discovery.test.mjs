@@ -17,7 +17,7 @@ test('supplier discovery uses Brave research, source evidence and bounded depth'
 
 test('supplier candidates are deterministic and never fabricated without a public URL', () => {
   assert.match(helper, /new URL/);
-  assert.match(helper, /if \(!sourceUrl \|\| !text\(candidate\?\.name/);
+  assert.match(helper, /if \(!sourceUrl \|\| !name \|\| GENERIC_PAGE_TITLE\.test\(name\) \|\| EDITORIAL\.test\(name\)/);
   assert.match(helper, /QUALIFICADO/);
   assert.match(helper, /EM_ANALISE/);
   assert.match(helper, /Preço não encontrado/);
