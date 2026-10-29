@@ -21,6 +21,26 @@
       "destination": "https://f7-food.vercel.app/f7-food/:path*"
     },
     {
+      "source": "/entrecafeerecomecos/api/:path*",
+      "destination": "https://f7-entre-cafe-recomecos.vercel.app/api/:path*"
+    },
+    {
+      "source": "/entrecafeerecomecos/assets/:path*",
+      "destination": "https://f7-entre-cafe-recomecos.vercel.app/assets/:path*"
+    },
+    {
+      "source": "/entrecafeerecomecos/",
+      "destination": "https://f7-entre-cafe-recomecos.vercel.app/entrecafeerecomecos"
+    },
+    {
+      "source": "/entrecafeerecomecos",
+      "destination": "https://f7-entre-cafe-recomecos.vercel.app/entrecafeerecomecos"
+    },
+    {
+      "source": "/entrecafeerecomecos/:path*",
+      "destination": "https://f7-entre-cafe-recomecos.vercel.app/entrecafeerecomecos/:path*"
+    },
+    {
       "source": "/((?!assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
