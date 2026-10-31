@@ -6,13 +6,14 @@ import { resolvePublicAppUrl } from '@/lib/publicAppUrl';
 
 const appUrl = resolvePublicAppUrl(import.meta.env.VITE_PUBLIC_APP_URL, window.location.hostname);
 const foodAppUrl = '/f7-food?view=operation';
+const foodSalesUrl = '/f7-food/planos';
 const trialPath = '/register?returnTo=' + encodeURIComponent('/checkout?plan=pro');
 const contactEmail = import.meta.env.VITE_PUBLIC_CONTACT_EMAIL || '';
 const commercialCodes = new Set(['pro', 'business', 'premium']);
 const trialDescription = 'Teste gratuito de 24 horas. Comece grátis e escolha o plano que acompanha seu crescimento.';
 const products = [
   { name: 'F7 PRO BUSINESS', status: 'Disponível', description: 'Gestão, vendas, CRM, estoque, financeiro, PDV, WhatsApp, automações e inteligência em uma única plataforma.', icon: Store, href: '/pro-business', productKey: 'f7_pro_business' },
-  { name: 'F7 Food', status: 'Disponível', description: 'Gestão gastronômica para cardápio, pedidos, salão e cozinha em uma operação conectada.', icon: Store, href: foodAppUrl, productKey: 'f7_food' },
+  { name: 'F7 Food', status: 'Disponível', description: 'Gestão gastronômica para cardápio, pedidos, salão e cozinha em uma operação conectada.', icon: Store, href: foodSalesUrl, productKey: 'f7_food' },
   { name: 'F7 Opportunity', status: 'Em desenvolvimento', description: 'Inteligência para descobrir produtos, fornecedores, mercados e oportunidades comerciais.', icon: Target, href: null },
   { name: 'F7 Automations', status: 'Em desenvolvimento', description: 'Automação de processos comerciais, atendimento e rotinas empresariais.', icon: Zap, href: null },
 ];
