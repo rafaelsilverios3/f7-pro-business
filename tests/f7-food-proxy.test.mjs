@@ -27,7 +27,10 @@ test('Food assets and app routes are proxied before the Business SPA fallback', 
   assert.equal(config.rewrites.at(-1).destination, '/index.html');
 });
 
-test('systems catalog opens the Food operation from the proxied canonical address', () => {
+test('systems catalog opens the Food commercial presentation and preserves direct operational entry', () => {
   assert.match(publicSite, /const foodAppUrl = '\/f7-food\?view=operation';/);
+  assert.match(publicSite, /const foodSalesUrl = '\/f7-food\/planos';/);
+  assert.match(publicSite, /name: 'F7 Food',[^\n]*href: foodSalesUrl/);
+  assert.match(publicSite, /function FoodEntry\(\) \{[\s\S]*?window\.location\.replace\(foodAppUrl\)/);
   assert.match(appSource, /'\/f7food': 'food-entry'/);
 });
