@@ -129,6 +129,7 @@ const AuthenticatedApp = () => {
     '/produtos': 'products',
     '/pro-business': 'pro-business',
     '/planos': 'plans',
+    '/planos/f7-pro-business': 'pro-plans',
     '/politica-de-privacidade': 'privacy',
     '/termos-de-uso': 'terms',
     '/exclusao-de-dados': 'deletion',

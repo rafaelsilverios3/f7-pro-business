@@ -43,7 +43,7 @@ test('plans are backend-controlled and never require fictitious prices', () => {
   assert.match(site, /Preço a definir/);
   assert.match(checkout, /PLAN_PRICE_NOT_CONFIGURED/);
   assert.match(plans, /eq\('active', true\)/);
-  const plansSection = site.match(/function PlansSection\([\s\S]*?\nfunction Flow/)?.[0] || '';
+  const plansSection = site.match(/function ProPlansSection\([\s\S]*?\nfunction ProductPortfolioSection/)?.[0] || '';
   assert.doesNotMatch(plansSection, /R\$\s*\d/);
 });
 
@@ -59,12 +59,14 @@ test('checkout waits for server-backed plans and handles loading errors before r
 });
 
 test('public plan comparison distinguishes loading, service failure and an empty catalog', () => {
-  const publicPlans = site.match(/function Plans\(\) \{[\s\S]*?\n\}/)?.[0] || '';
-  assert.match(publicPlans, /Carregando planos/);
-  assert.match(publicPlans, /Não foi possível carregar os planos agora/);
+  const publicPlans = site.match(/function PlanCards\([\s\S]*?\n\}/)?.[0] || '';
+  const plansHook = site.match(/function usePublicProPlans\([\s\S]*?\n\}/)?.[0] || '';
+  assert.match(publicPlans, /Carregando catálogo comercial/);
+  assert.match(publicPlans, /Não foi possível carregar o catálogo de preços/);
   assert.match(publicPlans, /Os planos não estão disponíveis no momento/);
-  assert.match(publicPlans, /setReloadKey\(\(key\) => key \+ 1\)/);
-  assert.match(publicPlans, /\.catch\(\(\) =>/);
+  assert.match(publicPlans, /onClick=\{retry\}/);
+  assert.match(plansHook, /setReloadKey\(\(key\) => key \+ 1\)/);
+  assert.match(plansHook, /\.catch\(\(\) =>/);
 });
 
 test('checkout resolves amount from the active plan and keeps provider secrets server-side', () => {
@@ -267,9 +269,12 @@ test('billing authorization and tenant ownership are checked server-side', () =>
 
 test('public plans and authenticated checkout routes are wired without changing Smart Atendimento', () => {
   assert.match(app, /'\/planos': 'plans'/);
+  assert.match(app, /'\/planos\/f7-pro-business': 'pro-plans'/);
   assert.match(app, /path="\/checkout"/);
   assert.match(app, /returnTo=.*location\.pathname/);
-  assert.match(site, /PlansSection/);
+  assert.match(site, /ProPlansSection/);
+  assert.match(site, /function Plans\(\)/);
+  assert.match(site, /function ProPlans\(\)/);
   assert.match(site, /Assinar/);
 });
 
@@ -294,11 +299,11 @@ test('landing hero separates trial and plan discovery CTAs', () => {
   assert.ok(cta, 'landing final CTA must remain identifiable');
   assert.match(hero, /Começar grátis por 24h/);
   assert.match(hero, /trialPath/);
-  assert.match(hero, /to="\/#planos"/);
-  assert.match(hero, /Ver planos/);
+  assert.match(hero, /to="\/planos"/);
+  assert.match(hero, /Conhecer produtos e planos/);
   assert.doesNotMatch(hero, /Acessar plataforma|Conhecer o F7 PRO BUSINESS/);
   assert.match(cta, /Começar grátis por 24h/);
-  assert.match(cta, /to="\/#planos"/);
+  assert.match(cta, /to="\/planos"/);
   assert.doesNotMatch(cta, /Acessar plataforma/);
   assert.match(site, /<a href=\{appUrl\}[^>]*>Entrar<\/a>/);
   assert.match(site, /<Link to="\/pro-business"[^>]*>Conhecer a F7<\/Link>/);
@@ -306,7 +311,7 @@ test('landing hero separates trial and plan discovery CTAs', () => {
   assert.ok(header, 'landing header must remain identifiable');
   assert.match(header, /bg-\[#0b1b35\][^>]*>Entrar<\/a>/);
   assert.doesNotMatch(header, /Começar grátis/);
-  assert.match(site, /id="planos"/);
+  assert.match(site, /id="produtos"/);
   assert.match(scrollToTop, /scrollIntoView\(\{ behavior: "smooth" \}\)/);
 });
 
@@ -317,7 +322,7 @@ test('landing hero uses the office notebook background and overlays the F7 CTAs'
   assert.match(hero, /linear-gradient\(90deg/);
   assert.doesNotMatch(hero, /DashboardMockup/);
   assert.match(hero, /Começar grátis por 24h/);
-  assert.match(hero, /Ver planos/);
+  assert.match(hero, /Conhecer produtos e planos/);
 });
 
 test('commercial funnel preserves plan intent through account and first-company onboarding', () => {
