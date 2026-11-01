@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
 const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const publicSite = await readFile(new URL('../src/pages/PublicSite.jsx', import.meta.url), 'utf8');
+const productCatalog = await readFile(new URL('../src/config/publicProductCatalog.js', import.meta.url), 'utf8');
 
 test('legacy Food entry permanently canonicalizes without leaving the Business domain', () => {
   assert.deepEqual(config.redirects.slice(0, 2), [
@@ -28,24 +29,24 @@ test('Food assets and app routes are proxied before the Business SPA fallback', 
 });
 
 test('systems catalog opens the Food commercial presentation and preserves direct operational entry', () => {
-  assert.match(publicSite, /const foodAppUrl = '\/f7-food\/\?view=operation';/);
-  assert.match(publicSite, /const foodSalesUrl = '\/f7-food\/planos';/);
-  assert.match(publicSite, /name: 'F7 Food',[^\n]*href: foodAppUrl[^\n]*contractHref: foodSalesUrl/);
-  assert.match(publicSite, /contractHref: proProductCheckoutUrl/);
-  assert.match(publicSite, /function FoodEntry\(\) \{[\s\S]*?window\.location\.replace\(foodAppUrl\)/);
+  assert.match(productCatalog, /key: 'f7_food'[\s\S]*?accessPath: '\/f7-food\/\?view=operation'[\s\S]*?plansPath: '\/f7-food\/planos'[\s\S]*?commercialModel: 'assisted'/);
+  assert.match(productCatalog, /key: 'f7_pro_business'[\s\S]*?plansPath: '\/planos\/f7-pro-business'[\s\S]*?commercialModel: 'catalog'[\s\S]*?planCodes: \['pro', 'business', 'premium'\]/);
+  assert.match(publicSite, /productKey === 'f7_food' \? 'Planos e contratação' : 'Conhecer planos e contratação'/);
+  assert.match(publicSite, /function FoodEntry\(\) \{[\s\S]*?window\.location\.replace\(foodProduct\.accessPath\)/);
   assert.match(appSource, /'\/f7food': 'food-entry'/);
+  assert.match(appSource, /'\/planos\/f7-pro-business': 'pro-plans'/);
 });
 
-test('public plans keep PRO billing separate from assisted Food evaluation', () => {
-  const plansSection = publicSite.match(/function PlansSection\([\s\S]*?\nfunction Flow/)?.[0] || '';
-  const publicPlans = publicSite.match(/function Plans\(\) \{[\s\S]*?\n\}/)?.[0] || '';
-  assert.match(plansSection, /commercialCodes\.has\(String\(plan\.code\)\.toLowerCase\(\)\)/);
-  assert.match(plansSection, /Planos F7 PRO Business/);
-  assert.match(plansSection, /\/checkout\?plan=\$\{encodeURIComponent\(plan\.code\)\}/);
-  assert.match(publicPlans, /id="food-plans-heading"/);
-  assert.match(publicPlans, /proposta e a habilitação comercial são assistidas/i);
-  assert.match(publicPlans, /Os planos e preços do F7 PRO Business não se aplicam ao F7 Food/);
-  assert.match(publicPlans, /to=\{foodSalesUrl\}/);
-  assert.match(publicPlans, /to=\{foodAppUrl\}/);
-  assert.doesNotMatch(publicPlans, /price_minor|\/checkout\?plan=/);
+test('root plans page is a multiproduct chooser and Food never uses PRO prices or checkout', () => {
+  assert.match(publicSite, /Escolha o seu produto F7 Business\./);
+  assert.match(publicSite, /Planos PRO, BUSINESS e PREMIUM/);
+  assert.match(publicSite, /\/checkout\?plan=\$\{encodeURIComponent\(plan\.code\)\}/);
+  assert.match(publicSite, /foodProduct\.offerStages\.map/);
+  assert.match(productCatalog, /name: 'Avaliação'/);
+  assert.match(productCatalog, /name: 'Implantação assistida'/);
+  assert.match(productCatalog, /name: 'Proposta comercial'/);
+  assert.match(publicSite, /O Food utiliza licenciamento independente/);
+  assert.match(publicSite, /function ProPlans\(\)/);
+  assert.match(publicSite, /Ver detalhes e comparação dos planos/);
+  assert.doesNotMatch(publicSite.match(/function Plans\(\)[\s\S]*?\n\}/)?.[0] || '', /\/checkout\?plan=/);
 });
