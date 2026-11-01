@@ -22,10 +22,12 @@ test('Food assets and app routes are proxied before the Business SPA fallback', 
     '/f7-food',
     '/f7-food/:path*',
   ]);
-  assert.equal(foodRoutes[0].destination, 'https://f7-food.vercel.app/assets/:path*');
+  assert.equal(foodRoutes[0].destination, 'https://f7-food.vercel.app/f7-food/assets/:path*');
   assert.equal(foodRoutes[1].destination, 'https://f7-food.vercel.app/f7-food');
+  assert.equal(foodRoutes[2].destination, 'https://f7-food.vercel.app/f7-food');
   assert.equal(foodRoutes[3].destination, 'https://f7-food.vercel.app/f7-food/:path*');
   assert.equal(config.rewrites.at(-1).destination, '/index.html');
+  assert.ok(config.rewrites.indexOf(foodRoutes[0]) < config.rewrites.length - 1, 'asset forwarding must run before the institutional SPA fallback');
 });
 
 test('systems catalog opens the Food commercial presentation and preserves direct operational entry', () => {

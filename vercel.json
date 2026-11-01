@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/f7-food/assets/:path*",
-      "destination": "https://f7-food.vercel.app/assets/:path*"
+      "destination": "https://f7-food.vercel.app/f7-food/assets/:path*"
     },
     {
       "source": "/f7-food/",
