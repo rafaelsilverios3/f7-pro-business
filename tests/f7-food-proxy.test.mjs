@@ -34,6 +34,8 @@ test('systems catalog opens the Food commercial presentation and preserves direc
   assert.match(productCatalog, /key: 'f7_food'[\s\S]*?accessPath: '\/f7-food\/\?view=operation'[\s\S]*?plansPath: '\/f7-food\/planos'[\s\S]*?commercialModel: 'assisted'/);
   assert.match(productCatalog, /key: 'f7_pro_business'[\s\S]*?plansPath: '\/planos\/f7-pro-business'[\s\S]*?commercialModel: 'catalog'[\s\S]*?planCodes: \['pro', 'business', 'premium'\]/);
   assert.match(publicSite, /productKey === 'f7_food' \? 'Planos e contratação' : 'Conhecer planos e contratação'/);
+  assert.match(publicSite, /to\.startsWith\('\/f7-food'\) \? <Link to=\{to\} reloadDocument/);
+  assert.match(publicSite, /reloadDocument=\{productKey === 'f7_food'\}/);
   assert.match(publicSite, /function FoodEntry\(\) \{[\s\S]*?window\.location\.replace\(foodProduct\.accessPath\)/);
   assert.match(appSource, /'\/f7food': 'food-entry'/);
   assert.match(appSource, /'\/planos\/f7-pro-business': 'pro-plans'/);
