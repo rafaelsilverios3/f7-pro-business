@@ -28,9 +28,24 @@ test('Food assets and app routes are proxied before the Business SPA fallback', 
 });
 
 test('systems catalog opens the Food commercial presentation and preserves direct operational entry', () => {
-  assert.match(publicSite, /const foodAppUrl = '\/f7-food\?view=operation';/);
+  assert.match(publicSite, /const foodAppUrl = '\/f7-food\/\?view=operation';/);
   assert.match(publicSite, /const foodSalesUrl = '\/f7-food\/planos';/);
-  assert.match(publicSite, /name: 'F7 Food',[^\n]*href: foodSalesUrl/);
+  assert.match(publicSite, /name: 'F7 Food',[^\n]*href: foodAppUrl[^\n]*contractHref: foodSalesUrl/);
+  assert.match(publicSite, /contractHref: proProductCheckoutUrl/);
   assert.match(publicSite, /function FoodEntry\(\) \{[\s\S]*?window\.location\.replace\(foodAppUrl\)/);
   assert.match(appSource, /'\/f7food': 'food-entry'/);
+});
+
+test('public plans keep PRO billing separate from assisted Food evaluation', () => {
+  const plansSection = publicSite.match(/function PlansSection\([\s\S]*?\nfunction Flow/)?.[0] || '';
+  const publicPlans = publicSite.match(/function Plans\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(plansSection, /commercialCodes\.has\(String\(plan\.code\)\.toLowerCase\(\)\)/);
+  assert.match(plansSection, /Planos F7 PRO Business/);
+  assert.match(plansSection, /\/checkout\?plan=\$\{encodeURIComponent\(plan\.code\)\}/);
+  assert.match(publicPlans, /id="food-plans-heading"/);
+  assert.match(publicPlans, /proposta e a habilitação comercial são assistidas/i);
+  assert.match(publicPlans, /Os planos e preços do F7 PRO Business não se aplicam ao F7 Food/);
+  assert.match(publicPlans, /to=\{foodSalesUrl\}/);
+  assert.match(publicPlans, /to=\{foodAppUrl\}/);
+  assert.doesNotMatch(publicPlans, /price_minor|\/checkout\?plan=/);
 });
